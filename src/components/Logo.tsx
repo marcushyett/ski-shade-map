@@ -24,14 +24,13 @@ export default function Logo({ size = 'md' }: LogoProps) {
       >
         <defs>
           <linearGradient id="logo-shade" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#f5f5f5"/>
-            <stop offset="50%" stopColor="#f5f5f5"/>
-            <stop offset="50%" stopColor="#2a2a2a"/>
-            <stop offset="100%" stopColor="#2a2a2a"/>
+            <stop offset="0%" stopColor="#f0f0f0"/>
+            <stop offset="61.8%" stopColor="#f0f0f0"/>
+            <stop offset="61.8%" stopColor="#404040"/>
+            <stop offset="100%" stopColor="#404040"/>
           </linearGradient>
         </defs>
-        <polygon points="16,4.2 27.8,28 4.2,28" fill="url(#logo-shade)"/>
-        <polygon points="16,4.2 19.4,11.3 12.6,11.3" fill="#ffffff" stroke="#e0e0e0" strokeWidth="0.5"/>
+        <polygon points="16,4 28,28 4,28" fill="url(#logo-shade)"/>
       </svg>
       
       {/* SKISHADE text */}

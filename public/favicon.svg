@@ -1,14 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <defs>
     <linearGradient id="shade" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#f5f5f5"/>
-      <stop offset="50%" stop-color="#f5f5f5"/>
-      <stop offset="50%" stop-color="#2a2a2a"/>
-      <stop offset="100%" stop-color="#2a2a2a"/>
+      <stop offset="0%" stop-color="#f0f0f0"/>
+      <stop offset="61.8%" stop-color="#f0f0f0"/>
+      <stop offset="61.8%" stop-color="#404040"/>
+      <stop offset="100%" stop-color="#404040"/>
     </linearGradient>
   </defs>
-  <!-- Mountain peak - using golden ratio: peak at ~38.2% from top -->
-  <polygon points="16,4.2 27.8,28 4.2,28" fill="url(#shade)"/>
-  <!-- Snow cap - golden ratio proportioned -->
-  <polygon points="16,4.2 19.4,11.3 12.6,11.3" fill="#ffffff" stroke="#e0e0e0" stroke-width="0.5"/>
+  <!-- Mountain peak - golden ratio proportions -->
+  <polygon points="16,4 28,28 4,28" fill="url(#shade)"/>
 </svg>
