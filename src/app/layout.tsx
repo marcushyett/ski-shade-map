@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   description: "Interactive map showing sun exposure on ski runs throughout the day",
   keywords: ["ski", "skiing", "sun", "shade", "map", "slopes", "winter sports"],
   authors: [{ name: "Marcus Hyett" }],
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export const viewport: Viewport = {

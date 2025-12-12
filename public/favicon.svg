@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="shade" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="50%" stop-color="#FFD700"/>
+      <stop offset="50%" stop-color="#1a237e"/>
+      <stop offset="100%" stop-color="#1a237e"/>
+    </linearGradient>
+  </defs>
+  <!-- Mountain peak -->
+  <polygon points="16,4 28,28 4,28" fill="url(#shade)"/>
+  <!-- Snow cap -->
+  <polygon points="16,4 20,12 12,12" fill="#ffffff"/>
+</svg>
+
