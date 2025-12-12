@@ -52,6 +52,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const currentSkiAreaId = useRef<string | null>(null);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingUpdateRef = useRef<{ area: SkiAreaDetails; time: Date } | null>(null);
+  const currentSunAzimuth = useRef<number>(0);
+  const currentSkiAreaRef = useRef<SkiAreaDetails | null>(null);
 
   // Initialize map
   useEffect(() => {
@@ -78,6 +80,11 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       onMapReady?.();
     });
 
+    // Update sun indicator on map move/zoom
+    map.current.on('moveend', () => {
+      updateSunIndicatorPosition();
+    });
+
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
@@ -85,6 +92,16 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       map.current?.remove();
       map.current = null;
     };
+  }, []);
+
+  // Update sun indicator position based on current map view
+  const updateSunIndicatorPosition = useCallback(() => {
+    if (!map.current || !currentSkiAreaRef.current) return;
+    
+    const sunIndicatorSource = map.current.getSource('sun-indicator') as maplibregl.GeoJSONSource | undefined;
+    if (sunIndicatorSource) {
+      sunIndicatorSource.setData(createSunIndicator(currentSkiAreaRef.current, currentSunAzimuth.current, map.current));
+    }
   }, []);
 
   // Setup terrain source and hillshade layer
@@ -274,6 +291,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
     const sunPos = getSunPosition(time, area.latitude, area.longitude);
     const isNight = sunPos.altitudeDegrees <= 0;
+    
+    // Store refs for map move updates
+    currentSunAzimuth.current = sunPos.azimuthDegrees;
+    currentSkiAreaRef.current = area;
 
     // Add sun indicator source
     map.current.addSource('sun-indicator', {
@@ -517,6 +538,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
     const sunPos = getSunPosition(time, area.latitude, area.longitude);
     const isNight = sunPos.altitudeDegrees <= 0;
+    
+    // Store refs for map move updates
+    currentSunAzimuth.current = sunPos.azimuthDegrees;
+    currentSkiAreaRef.current = area;
 
     // Update night overlay
     if (map.current.getLayer('night-overlay')) {
