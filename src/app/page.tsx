@@ -96,22 +96,23 @@ const ControlsContent = memo(function ControlsContent({
             </div>
           </div>
 
-          {/* Weather panel */}
+          {/* Trails and lifts list */}
           <div className="flex-shrink-0">
-            <WeatherPanel
-              latitude={skiAreaDetails.latitude}
-              longitude={skiAreaDetails.longitude}
-              selectedTime={selectedTime}
-              onWeatherLoad={onWeatherLoad}
-            />
-          </div>
-
-          <div className="flex-1 overflow-y-auto min-h-0">
             <TrailsLiftsList 
               runs={skiAreaDetails.runs}
               lifts={skiAreaDetails.lifts}
               onSelectRun={onSelectRun}
               onSelectLift={onSelectLift}
+            />
+          </div>
+
+          {/* Weather panel */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <WeatherPanel
+              latitude={skiAreaDetails.latitude}
+              longitude={skiAreaDetails.longitude}
+              selectedTime={selectedTime}
+              onWeatherLoad={onWeatherLoad}
             />
           </div>
         </>
