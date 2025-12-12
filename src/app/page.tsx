@@ -20,6 +20,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import TrailsLiftsList from '@/components/Controls/TrailsLiftsList';
 import WeatherPanel from '@/components/Controls/WeatherPanel';
 import OfflineBanner from '@/components/OfflineBanner';
+import CacheButton from '@/components/CacheButton';
 import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
@@ -307,7 +308,7 @@ export default function Home() {
       />
       
       {/* Mobile header */}
-      <div className="md:hidden controls-panel" style={{ marginTop: (isOffline || wasOffline) ? 36 : 0 }}>
+      <div className="md:hidden controls-panel" style={{ marginTop: (isOffline || wasOffline) ? 44 : 0 }}>
         <div className="flex items-center justify-between">
           <Logo size="sm" />
           <div className="flex items-center gap-2">
@@ -359,7 +360,7 @@ export default function Home() {
       </Drawer>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:flex md:flex-col controls-panel">
+      <div className="hidden md:flex md:flex-col controls-panel" style={{ marginTop: (isOffline || wasOffline) ? 44 : 0 }}>
         <ControlsContent 
           selectedArea={selectedArea}
           skiAreaDetails={skiAreaDetails}
@@ -395,6 +396,18 @@ export default function Home() {
         <div className="legend-container hidden md:block">
           <Legend />
         </div>
+
+        {/* Cache button */}
+        {skiAreaDetails && (
+          <div className="cache-button-container">
+            <CacheButton
+              skiAreaId={skiAreaDetails.id}
+              skiAreaName={skiAreaDetails.name}
+              latitude={skiAreaDetails.latitude}
+              longitude={skiAreaDetails.longitude}
+            />
+          </div>
+        )}
 
         {/* View toggle */}
         <div className="view-toggle-container">

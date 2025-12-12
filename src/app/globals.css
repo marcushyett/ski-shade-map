@@ -349,6 +349,13 @@ h5.ant-typography {
   z-index: 10;
 }
 
+.cache-button-container {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 10;
+}
+
 /* Desktop layout */
 @media (min-width: 768px) {
   .app-container {
@@ -378,6 +385,11 @@ h5.ant-typography {
   .view-toggle-container {
     top: 10px;
     right: 56px;
+  }
+
+  .cache-button-container {
+    top: 10px;
+    left: 10px;
   }
 }
 

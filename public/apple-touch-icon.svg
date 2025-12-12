@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <rect width="180" height="180" fill="#0a0a0a"/>
+  <defs>
+    <linearGradient id="shade" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f0f0f0"/>
+      <stop offset="61.8%" stop-color="#f0f0f0"/>
+      <stop offset="61.8%" stop-color="#404040"/>
+      <stop offset="100%" stop-color="#404040"/>
+    </linearGradient>
+  </defs>
+  <polygon points="90,30 150,150 30,150" fill="url(#shade)"/>
+</svg>
+
