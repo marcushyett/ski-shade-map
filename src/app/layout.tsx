@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { AntdRegistry } from '@ant-design/nextjs-registry';
-import { ConfigProvider } from 'antd';
+import { ConfigProvider, theme } from 'antd';
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ski Shade Map - Find Sunny Slopes",
+  title: "Ski Shade Map",
   description: "Interactive map showing sun exposure on ski runs throughout the day",
   keywords: ["ski", "skiing", "sun", "shade", "map", "slopes", "winter sports"],
   authors: [{ name: "Marcus Hyett" }],
@@ -15,7 +15,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#3b82f6',
+  themeColor: '#0a0a0a',
 };
 
 export default function RootLayout({
@@ -29,10 +29,16 @@ export default function RootLayout({
         <AntdRegistry>
           <ConfigProvider
             theme={{
+              algorithm: theme.darkAlgorithm,
               token: {
-                colorPrimary: '#3b82f6',
-                borderRadius: 8,
-                fontFamily: 'system-ui, -apple-system, sans-serif',
+                colorPrimary: '#ffffff',
+                colorBgBase: '#0a0a0a',
+                colorBgContainer: '#141414',
+                colorBorder: '#262626',
+                colorText: '#e5e5e5',
+                colorTextSecondary: '#a3a3a3',
+                borderRadius: 4,
+                fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
               },
             }}
           >

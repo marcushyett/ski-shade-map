@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Typography, Spin, Alert, Space, Button, Drawer } from 'antd';
-import { MenuOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { 
+  MenuOutlined, 
+  InfoCircleOutlined,
+  EnvironmentOutlined,
+  NodeIndexOutlined,
+  SwapOutlined
+} from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import SkiAreaPicker from '@/components/Controls/SkiAreaPicker';
 import TimeSlider from '@/components/Controls/TimeSlider';
@@ -12,10 +18,18 @@ import type { SkiAreaSummary, SkiAreaDetails } from '@/lib/types';
 
 const { Title, Text, Paragraph } = Typography;
 
+const STORAGE_KEY = 'ski-shade-map-state';
+
+interface StoredState {
+  areaId: string;
+  areaName: string;
+  latitude: number;
+  longitude: number;
+}
+
 export default function Home() {
   const [selectedArea, setSelectedArea] = useState<SkiAreaSummary | null>(null);
   const [skiAreaDetails, setSkiAreaDetails] = useState<SkiAreaDetails | null>(null);
-  // Initialize to noon to avoid hydration mismatch, then update to current time on client
   const [selectedTime, setSelectedTime] = useState<Date>(() => {
     const now = new Date();
     now.setHours(12, 0, 0, 0);
@@ -26,12 +40,50 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
-  // Update time to current after hydration
+  // Load saved state and update time after hydration
   useEffect(() => {
     setIsClient(true);
     setSelectedTime(new Date());
+    
+    // Load last selected area from localStorage
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const state: StoredState = JSON.parse(stored);
+        // Create a minimal SkiAreaSummary to trigger the fetch
+        setSelectedArea({
+          id: state.areaId,
+          name: state.areaName,
+          country: null,
+          region: null,
+          latitude: state.latitude,
+          longitude: state.longitude,
+        });
+      }
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+    setInitialLoadDone(true);
   }, []);
+
+  // Save selected area to localStorage
+  useEffect(() => {
+    if (!initialLoadDone || !selectedArea) return;
+    
+    try {
+      const state: StoredState = {
+        areaId: selectedArea.id,
+        areaName: selectedArea.name,
+        latitude: selectedArea.latitude,
+        longitude: selectedArea.longitude,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  }, [selectedArea, initialLoadDone]);
 
   // Fetch full ski area details when selection changes
   useEffect(() => {
@@ -78,7 +130,7 @@ export default function Home() {
     <Space direction="vertical" size="middle" className="w-full">
       <div>
         <Title level={4} className="m-0 mb-2">
-          ⛷️ Ski Shade Map
+          Ski Shade Map
         </Title>
         <Paragraph type="secondary" className="text-sm m-0">
           Find sunny or shaded slopes at any time of day
@@ -94,11 +146,17 @@ export default function Home() {
       </div>
 
       {skiAreaDetails && (
-        <div className="stats-summary p-3 bg-blue-50 rounded-lg">
+        <div className="stats-summary p-3 rounded-lg">
           <Text strong>{skiAreaDetails.name}</Text>
-          <div className="mt-1 text-sm text-gray-600">
-            <div>🎿 {skiAreaDetails.runs.length} runs</div>
-            <div>🚡 {skiAreaDetails.lifts.length} lifts</div>
+          <div className="mt-2 flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-sm">
+              <NodeIndexOutlined style={{ opacity: 0.6 }} />
+              <Text type="secondary">{skiAreaDetails.runs.length} runs</Text>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <SwapOutlined style={{ opacity: 0.6 }} />
+              <Text type="secondary">{skiAreaDetails.lifts.length} lifts</Text>
+            </div>
           </div>
         </div>
       )}
@@ -127,16 +185,19 @@ export default function Home() {
       {/* Mobile header */}
       <div className="md:hidden controls-panel">
         <div className="flex items-center justify-between">
-          <Title level={5} className="m-0">⛷️ Ski Shade Map</Title>
+          <Title level={5} className="m-0">Ski Shade Map</Title>
           <Button 
             icon={<MenuOutlined />}
             onClick={() => setMobileMenuOpen(true)}
           />
         </div>
         {selectedArea && (
-          <Text type="secondary" className="text-sm">
-            {selectedArea.name}
-          </Text>
+          <div className="flex items-center gap-2 mt-1">
+            <EnvironmentOutlined style={{ opacity: 0.5 }} />
+            <Text type="secondary" className="text-sm">
+              {selectedArea.name}
+            </Text>
+          </div>
         )}
       </div>
 
@@ -160,7 +221,7 @@ export default function Home() {
       <div className="map-container">
         {loading && (
           <div className="loading-overlay">
-            <Spin size="large" tip="Loading ski area..." />
+            <Spin size="large" />
           </div>
         )}
 

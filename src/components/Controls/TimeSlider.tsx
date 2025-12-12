@@ -6,7 +6,9 @@ import {
   PlayCircleOutlined, 
   PauseCircleOutlined,
   SunOutlined,
-  MoonOutlined 
+  MoonOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined
 } from '@ant-design/icons';
 import { format, setHours, setMinutes, startOfDay } from 'date-fns';
 import { getSunTimes, getSunPosition } from '@/lib/suncalc';
@@ -78,13 +80,13 @@ export default function TimeSlider({
 
     return {
       [sunriseMin]: {
-        label: <Tooltip title={`Sunrise ${format(sunTimes.sunrise, 'HH:mm')}`}>🌅</Tooltip>,
+        label: <Tooltip title={`Sunrise ${format(sunTimes.sunrise, 'HH:mm')}`}><ArrowUpOutlined style={{ opacity: 0.6 }} /></Tooltip>,
       },
       [noonMin]: {
-        label: <Tooltip title={`Solar Noon ${format(sunTimes.solarNoon, 'HH:mm')}`}>☀️</Tooltip>,
+        label: <Tooltip title={`Solar Noon ${format(sunTimes.solarNoon, 'HH:mm')}`}><SunOutlined style={{ opacity: 0.6 }} /></Tooltip>,
       },
       [sunsetMin]: {
-        label: <Tooltip title={`Sunset ${format(sunTimes.sunset, 'HH:mm')}`}>🌇</Tooltip>,
+        label: <Tooltip title={`Sunset ${format(sunTimes.sunset, 'HH:mm')}`}><ArrowDownOutlined style={{ opacity: 0.6 }} /></Tooltip>,
       },
     };
   }, [sunTimes]);
@@ -93,29 +95,28 @@ export default function TimeSlider({
   const isSunUp = sunPosition.altitudeDegrees > 0;
 
   return (
-    <div className="time-slider p-4 bg-white rounded-lg shadow">
+    <div className="time-slider p-4 rounded-lg">
       <Space direction="vertical" className="w-full" size="small">
         <div className="flex items-center justify-between">
           <Space>
             {isSunUp ? (
-              <SunOutlined style={{ color: '#faad14', fontSize: 20 }} />
+              <SunOutlined style={{ color: '#faad14', fontSize: 18 }} />
             ) : (
-              <MoonOutlined style={{ color: '#1890ff', fontSize: 20 }} />
+              <MoonOutlined style={{ color: '#666', fontSize: 18 }} />
             )}
-            <Text strong style={{ fontSize: 18 }}>
+            <Text strong style={{ fontSize: 16, fontFamily: 'inherit' }}>
               {mounted ? format(selectedTime, 'HH:mm') : '--:--'}
             </Text>
           </Space>
           
           <Space>
-            <Text type="secondary">
-              {mounted ? `Sun: ${sunPosition.altitudeDegrees.toFixed(1)}° altitude` : ''}
+            <Text type="secondary" className="text-xs">
+              {mounted ? `${sunPosition.altitudeDegrees.toFixed(0)}° alt` : ''}
             </Text>
             <Button
               type="text"
               icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
               onClick={() => setIsPlaying(!isPlaying)}
-              size="large"
             />
           </Space>
         </div>
@@ -130,10 +131,9 @@ export default function TimeSlider({
             formatter: (value) => value !== undefined ? format(sliderToTime(value), 'HH:mm') : '',
           }}
           className="w-full"
-          trackStyle={{ backgroundColor: isSunUp ? '#faad14' : '#1890ff' }}
         />
 
-        <div className="flex justify-between text-xs text-gray-500">
+        <div className="flex justify-between text-xs opacity-50">
           <span>00:00</span>
           <span>06:00</span>
           <span>12:00</span>
@@ -141,7 +141,7 @@ export default function TimeSlider({
           <span>24:00</span>
         </div>
 
-        <div className="quick-times flex gap-2 mt-2">
+        <div className="quick-times flex gap-2 mt-1">
           <Button 
             size="small" 
             onClick={() => onTimeChange(sunTimes.sunrise)}
@@ -171,4 +171,3 @@ export default function TimeSlider({
     </div>
   );
 }
-

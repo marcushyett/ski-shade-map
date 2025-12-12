@@ -38,9 +38,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
-    const style = is3D 
-      ? `https://api.maptiler.com/maps/winter-v2/style.json?key=${MAPTILER_KEY}`
-      : `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${MAPTILER_KEY}`;
+    // Use backdrop style for dark, minimal aesthetic
+    const style = `https://api.maptiler.com/maps/backdrop/style.json?key=${MAPTILER_KEY}`;
 
     map.current = new maplibregl.Map({
       container: mapContainer.current,
@@ -104,9 +103,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
-    const style = is3D 
-      ? `https://api.maptiler.com/maps/winter-v2/style.json?key=${MAPTILER_KEY}`
-      : `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${MAPTILER_KEY}`;
+    // Keep backdrop style for both modes
+    const style = `https://api.maptiler.com/maps/backdrop/style.json?key=${MAPTILER_KEY}`;
 
     map.current.setStyle(style);
     
