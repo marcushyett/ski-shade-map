@@ -6,7 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import type { SkiAreaDetails } from '@/lib/types';
-import type { LineString, Feature, FeatureCollection } from 'geojson';
+import type { LineString, Feature, FeatureCollection, Point, Polygon as GeoPolygon } from 'geojson';
 
 interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
@@ -31,8 +31,11 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const layersInitialized = useRef(false);
   const currentSkiAreaId = useRef<string | null>(null);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingUpdateRef = useRef<{ area: SkiAreaDetails; time: Date } | null>(null);
 
   // Initialize map
   useEffect(() => {
@@ -60,12 +63,15 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
     });
 
     return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
       map.current?.remove();
       map.current = null;
     };
   }, []);
 
-  // Setup terrain source and hillshade layer (once)
+  // Setup terrain source and hillshade layer
   const setupTerrainAndHillshade = useCallback(() => {
     if (!map.current) return;
 
@@ -78,8 +84,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
       });
     }
 
-    // Add hillshade layer for terrain shadows
+    // Add hillshade layer for terrain shadows - add it as first layer
     if (!map.current.getLayer('terrain-hillshade')) {
+      const layers = map.current.getStyle().layers;
+      // Find a good insertion point - after any background/fill layers
+      let insertBefore: string | undefined;
+      for (const layer of layers) {
+        if (layer.type === 'line' || layer.type === 'symbol') {
+          insertBefore = layer.id;
+          break;
+        }
+      }
+      
       map.current.addLayer({
         id: 'terrain-hillshade',
         type: 'hillshade',
@@ -87,12 +103,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
         paint: {
           'hillshade-illumination-direction': 315,
           'hillshade-illumination-anchor': 'map',
-          'hillshade-shadow-color': '#000022',
-          'hillshade-highlight-color': '#ffffff',
+          'hillshade-shadow-color': '#000033',
+          'hillshade-highlight-color': '#ffffee',
           'hillshade-accent-color': '#000000',
-          'hillshade-exaggeration': 0.3,
+          'hillshade-exaggeration': 0.5,
         },
-      }, 'building'); // Insert below buildings if they exist
+      }, insertBefore);
     }
   }, []);
 
@@ -119,7 +135,6 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
   useEffect(() => {
     if (!map.current || !mapLoaded || !skiArea) return;
 
-    // Check if this is a new ski area
     if (currentSkiAreaId.current !== skiArea.id) {
       currentSkiAreaId.current = skiArea.id;
       layersInitialized.current = false;
@@ -134,20 +149,44 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
     }
   }, [skiArea, mapLoaded]);
 
-  // Update shading when time changes (smooth update, no layer recreation)
+  // Debounced update when time changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !skiArea || !layersInitialized.current) return;
 
-    updateShading(skiArea, selectedTime);
+    // Store the pending update
+    pendingUpdateRef.current = { area: skiArea, time: selectedTime };
+    
+    // Show updating indicator
+    setIsUpdating(true);
+
+    // Cancel any pending timeout
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    // Debounce the update - only execute after 50ms of no changes
+    updateTimeoutRef.current = setTimeout(() => {
+      if (pendingUpdateRef.current) {
+        updateShading(pendingUpdateRef.current.area, pendingUpdateRef.current.time);
+        pendingUpdateRef.current = null;
+      }
+      setIsUpdating(false);
+    }, 50);
+
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
   }, [selectedTime, skiArea, mapLoaded]);
 
   // Initialize all layers for a ski area
   const initializeLayers = useCallback((area: SkiAreaDetails, time: Date) => {
     if (!map.current) return;
 
-    // Remove existing layers if any
+    // Remove existing layers
     const layersToRemove = [
-      'sun-direction-glow', 'sun-direction-line',
+      'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny', 'ski-segments-shaded', 
       'ski-runs-line', 'ski-lifts'
     ];
@@ -157,7 +196,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
       }
     });
 
-    const sourcesToRemove = ['sun-direction', 'ski-segments', 'ski-runs', 'ski-lifts'];
+    const sourcesToRemove = ['sun-indicator', 'ski-segments', 'ski-runs', 'ski-lifts'];
     sourcesToRemove.forEach(sourceId => {
       if (map.current?.getSource(sourceId)) {
         map.current.removeSource(sourceId);
@@ -166,37 +205,54 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
 
     const sunPos = getSunPosition(time, area.latitude, area.longitude);
 
-    // Add sun direction source
-    map.current.addSource('sun-direction', {
+    // Add sun indicator source (rays coming from edge of view toward center)
+    map.current.addSource('sun-indicator', {
       type: 'geojson',
-      data: createSunDirectionLine(area, sunPos.azimuthDegrees),
+      data: createSunIndicator(area, sunPos.azimuthDegrees, map.current),
     });
 
-    // Sun direction glow
+    // Sun rays - multiple lines showing light direction
     map.current.addLayer({
-      id: 'sun-direction-glow',
+      id: 'sun-rays',
       type: 'line',
-      source: 'sun-direction',
+      source: 'sun-indicator',
+      filter: ['==', ['get', 'type'], 'ray'],
       paint: {
         'line-color': '#FFD700',
-        'line-width': 8,
-        'line-blur': 6,
-        'line-opacity': sunPos.altitudeDegrees > 0 ? 0.4 : 0,
-        'line-opacity-transition': { duration: 300 },
+        'line-width': ['get', 'width'],
+        'line-opacity': sunPos.altitudeDegrees > 0 ? ['get', 'opacity'] : 0,
+        'line-opacity-transition': { duration: 200 },
       },
     });
 
-    // Sun direction line
+    // Sun icon glow
     map.current.addLayer({
-      id: 'sun-direction-line',
-      type: 'line',
-      source: 'sun-direction',
+      id: 'sun-icon-glow',
+      type: 'circle',
+      source: 'sun-indicator',
+      filter: ['==', ['get', 'type'], 'sun'],
       paint: {
-        'line-color': '#FFD700',
-        'line-width': 2,
-        'line-opacity': sunPos.altitudeDegrees > 0 ? 0.8 : 0,
-        'line-opacity-transition': { duration: 300 },
-        'line-dasharray': [4, 2],
+        'circle-radius': 16,
+        'circle-color': '#FFD700',
+        'circle-blur': 1,
+        'circle-opacity': sunPos.altitudeDegrees > 0 ? 0.6 : 0,
+        'circle-opacity-transition': { duration: 200 },
+      },
+    });
+
+    // Sun icon
+    map.current.addLayer({
+      id: 'sun-icon',
+      type: 'circle',
+      source: 'sun-indicator',
+      filter: ['==', ['get', 'type'], 'sun'],
+      paint: {
+        'circle-radius': 8,
+        'circle-color': '#FFD700',
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 2,
+        'circle-opacity': sunPos.altitudeDegrees > 0 ? 1 : 0,
+        'circle-opacity-transition': { duration: 200 },
       },
     });
 
@@ -222,7 +278,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
         'line-width': 14,
         'line-blur': 3,
         'line-opacity': 0.75,
-        'line-opacity-transition': { duration: 300 },
+        'line-opacity-transition': { duration: 200 },
       },
     });
 
@@ -241,8 +297,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
         'line-width': 14,
         'line-blur': 3,
         'line-opacity': 0.7,
-        'line-opacity-transition': { duration: 300 },
-        'line-color-transition': { duration: 300 },
+        'line-opacity-transition': { duration: 200 },
+        'line-color-transition': { duration: 200 },
       },
     });
 
@@ -313,9 +369,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
       },
     });
 
-    // Add click handlers
     setupClickHandlers();
-
     layersInitialized.current = true;
   }, []);
 
@@ -328,25 +382,25 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
 
     // Update hillshade illumination direction based on sun
     if (map.current.getLayer('terrain-hillshade')) {
-      // MapLibre uses 0-360 where 0 is top (north), going clockwise
-      // Sun azimuth is already in this format
       const illuminationDir = isNight ? 315 : sunPos.azimuthDegrees;
-      const exaggeration = isNight ? 0.1 : Math.min(0.5, 0.2 + (90 - sunPos.altitudeDegrees) / 180);
+      // More exaggeration when sun is low
+      const exaggeration = isNight ? 0.2 : Math.min(0.7, 0.3 + (90 - sunPos.altitudeDegrees) / 120);
       
       map.current.setPaintProperty('terrain-hillshade', 'hillshade-illumination-direction', illuminationDir);
       map.current.setPaintProperty('terrain-hillshade', 'hillshade-exaggeration', exaggeration);
     }
 
-    // Update sun direction line
-    const sunDirectionSource = map.current.getSource('sun-direction') as maplibregl.GeoJSONSource | undefined;
-    if (sunDirectionSource) {
-      sunDirectionSource.setData(createSunDirectionLine(area, sunPos.azimuthDegrees));
+    // Update sun indicator
+    const sunIndicatorSource = map.current.getSource('sun-indicator') as maplibregl.GeoJSONSource | undefined;
+    if (sunIndicatorSource) {
+      sunIndicatorSource.setData(createSunIndicator(area, sunPos.azimuthDegrees, map.current));
     }
 
-    // Update sun direction visibility
-    if (map.current.getLayer('sun-direction-glow')) {
-      map.current.setPaintProperty('sun-direction-glow', 'line-opacity', isNight ? 0 : 0.4);
-      map.current.setPaintProperty('sun-direction-line', 'line-opacity', isNight ? 0 : 0.8);
+    // Update sun visibility
+    if (map.current.getLayer('sun-rays')) {
+      map.current.setPaintProperty('sun-rays', 'line-opacity', isNight ? 0 : ['get', 'opacity']);
+      map.current.setPaintProperty('sun-icon-glow', 'circle-opacity', isNight ? 0 : 0.6);
+      map.current.setPaintProperty('sun-icon', 'circle-opacity', isNight ? 0 : 1);
     }
 
     // Update segments data
@@ -358,20 +412,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
 
     // Update shaded color for night
     if (map.current.getLayer('ski-segments-shaded')) {
-      map.current.setPaintProperty(
-        'ski-segments-shaded', 
-        'line-color', 
-        isNight ? '#0d1b2a' : '#1a237e'
-      );
-      map.current.setPaintProperty(
-        'ski-segments-shaded',
-        'line-opacity',
-        isNight ? 0.85 : 0.7
-      );
+      map.current.setPaintProperty('ski-segments-shaded', 'line-color', isNight ? '#0d1b2a' : '#1a237e');
+      map.current.setPaintProperty('ski-segments-shaded', 'line-opacity', isNight ? 0.85 : 0.7);
     }
   }, []);
 
-  // Setup click handlers for popups
+  // Setup click handlers
   const setupClickHandlers = useCallback(() => {
     if (!map.current) return;
 
@@ -423,46 +469,95 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
   }, []);
 
   return (
-    <div 
-      ref={mapContainer} 
-      className="w-full h-full"
-      style={{ minHeight: '400px' }}
-    />
+    <div className="relative w-full h-full" style={{ minHeight: '400px' }}>
+      <div ref={mapContainer} className="w-full h-full" />
+      
+      {/* Updating indicator */}
+      {isUpdating && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 px-2 py-1 rounded text-xs"
+             style={{ background: 'rgba(0,0,0,0.7)', color: '#FFD700' }}>
+          Updating sun position...
+        </div>
+      )}
+    </div>
   );
 }
 
 /**
- * Create a line showing sun direction
+ * Create sun indicator with rays showing light direction
+ * The sun icon is positioned at the edge of the view, with rays pointing toward center
  */
-function createSunDirectionLine(
+function createSunIndicator(
   area: SkiAreaDetails,
-  sunAzimuth: number
-): FeatureCollection<LineString> {
+  sunAzimuth: number,
+  mapInstance: maplibregl.Map
+): FeatureCollection {
   const center = [area.longitude, area.latitude];
-  const length = 0.012;
+  const bounds = mapInstance.getBounds();
   
+  // Calculate the extent of the view
+  const latSpan = bounds.getNorth() - bounds.getSouth();
+  const lngSpan = bounds.getEast() - bounds.getWest();
+  const maxSpan = Math.max(latSpan, lngSpan);
+  
+  // Position sun at edge of visible area in the direction of sunAzimuth
   const rad = (sunAzimuth * Math.PI) / 180;
-  const endPoint = [
-    center[0] + length * Math.sin(rad),
-    center[1] + length * Math.cos(rad),
-  ];
+  const sunDistance = maxSpan * 0.4; // 40% from center toward edge
   
-  const startOffset = 0.004;
-  const startPoint = [
-    center[0] - startOffset * Math.sin(rad),
-    center[1] - startOffset * Math.cos(rad),
+  const sunPosition: [number, number] = [
+    center[0] + sunDistance * Math.sin(rad),
+    center[1] + sunDistance * Math.cos(rad),
   ];
+
+  const features: Feature[] = [];
+
+  // Add sun point
+  features.push({
+    type: 'Feature',
+    properties: { type: 'sun' },
+    geometry: {
+      type: 'Point',
+      coordinates: sunPosition,
+    } as Point,
+  });
+
+  // Add rays from sun toward center (showing light direction)
+  const numRays = 5;
+  const raySpread = 15; // degrees spread
+  
+  for (let i = 0; i < numRays; i++) {
+    const offset = (i - (numRays - 1) / 2) * (raySpread / (numRays - 1));
+    const rayAngle = sunAzimuth + offset + 180; // Point toward center (opposite to sun position)
+    const rayRad = (rayAngle * Math.PI) / 180;
+    
+    const rayLength = sunDistance * 0.6;
+    const rayEnd: [number, number] = [
+      sunPosition[0] + rayLength * Math.sin(rayRad),
+      sunPosition[1] + rayLength * Math.cos(rayRad),
+    ];
+
+    // Taper: center ray is thickest
+    const distFromCenter = Math.abs(i - (numRays - 1) / 2);
+    const width = 3 - distFromCenter * 0.8;
+    const opacity = 0.5 - distFromCenter * 0.1;
+
+    features.push({
+      type: 'Feature',
+      properties: { 
+        type: 'ray',
+        width,
+        opacity,
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [sunPosition, rayEnd],
+      } as LineString,
+    });
+  }
 
   return {
     type: 'FeatureCollection',
-    features: [{
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates: [startPoint, endPoint],
-      },
-    }],
+    features,
   };
 }
 
@@ -510,7 +605,6 @@ function createRunSegments(
       const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
       const slopeAspect = (bearing + 90) % 360;
       
-      // At night, all segments are shaded
       const isShaded = isNight ? true : calculateSegmentShade(slopeAspect, sunAzimuth, sunAltitude);
 
       features.push({
