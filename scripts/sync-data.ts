@@ -163,10 +163,10 @@ async function downloadFile(url: string, filename: string): Promise<string> {
 async function processStreamedGeoJSON<T>(
   filepath: string,
   filter: (feature: { geometry: any; properties: T }) => boolean,
-  process: (feature: { geometry: any; properties: T }) => Promise<void>,
+  processItem: (feature: { geometry: any; properties: T }) => Promise<void>,
   progressInterval: number = 1000
 ): Promise<number> {
-  let processed = 0;
+  let processedCount = 0;
   let total = 0;
   
   const readStream = createReadStream(filepath);
@@ -182,11 +182,11 @@ async function processStreamedGeoJSON<T>(
         
         if (filter(value)) {
           try {
-            await process(value);
-            processed++;
+            await processItem(value);
+            processedCount++;
             
-            if (processed % progressInterval === 0) {
-              process.stdout.write(`   Processed ${processed} items (scanned ${total})\r`);
+            if (processedCount % progressInterval === 0) {
+              process.stdout.write(`   Processed ${processedCount} items (scanned ${total})\r`);
             }
           } catch (e) {
             // Ignore individual errors
@@ -194,8 +194,8 @@ async function processStreamedGeoJSON<T>(
         }
       })
       .on('end', () => {
-        console.log(`   Processed ${processed} items (scanned ${total} total)     `);
-        resolve(processed);
+        console.log(`   Processed ${processedCount} items (scanned ${total} total)     `);
+        resolve(processedCount);
       })
       .on('error', reject);
   });

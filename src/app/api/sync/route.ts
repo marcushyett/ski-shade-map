@@ -14,6 +14,14 @@ export const maxDuration = 300; // 5 minutes for initial sync
 // Secret key to protect the sync endpoint
 const SYNC_SECRET = process.env.SYNC_SECRET || "dev-sync-key";
 
+interface SkiAreaPlace {
+  iso3166_1Alpha2?: string;
+  iso3166_2?: string;
+  localized?: {
+    en?: { country?: string; region?: string; locality?: string };
+  };
+}
+
 interface SkiAreaProperties {
   id: string;
   name?: string;
@@ -24,6 +32,8 @@ interface SkiAreaProperties {
   generated?: boolean;
   runConvention?: string;
   sources?: unknown[];
+  places?: SkiAreaPlace[];
+  // Legacy format
   location?: {
     iso3166_1Alpha2?: string;
     iso3166_2?: string;
@@ -137,11 +147,20 @@ async function syncSkiAreas(countryFilter: string | null) {
 
   // Filter by country if specified
   if (countryFilter) {
-    areas = areas.filter(
-      (area) =>
-        area.properties?.location?.iso3166_1Alpha2?.toUpperCase() ===
+    areas = areas.filter((area) => {
+      const props = area.properties;
+      // Check new format (places array)
+      if (props?.places?.length) {
+        return props.places.some(
+          (p) => p.iso3166_1Alpha2?.toUpperCase() === countryFilter.toUpperCase()
+        );
+      }
+      // Check legacy format (location object)
+      return (
+        props?.location?.iso3166_1Alpha2?.toUpperCase() ===
         countryFilter.toUpperCase()
-    );
+      );
+    });
   }
 
   // Filter to only downhill ski areas with names
@@ -174,11 +193,17 @@ async function syncSkiAreas(countryFilter: string | null) {
 
         if (!center) return;
 
+        // Extract country/region from places (new format) or location (legacy)
+        const firstPlace = props.places?.[0];
         const country =
+          firstPlace?.localized?.en?.country ||
+          firstPlace?.iso3166_1Alpha2 ||
           props.location?.localized?.en?.country ||
           props.location?.iso3166_1Alpha2 ||
           null;
         const region =
+          firstPlace?.localized?.en?.region ||
+          firstPlace?.iso3166_2 ||
           props.location?.localized?.en?.region ||
           props.location?.iso3166_2 ||
           null;
