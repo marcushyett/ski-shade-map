@@ -783,18 +783,18 @@ h5.ant-typography {
   filter: invert(0.6);
 }
 
-/* Location controls - mobile: bottom left of map */
+/* Location controls - positioned below zoom controls on right */
 .location-controls-container {
   position: absolute;
-  bottom: 80px;
-  left: 10px;
+  top: 95px;
+  right: 10px;
   z-index: 10;
   pointer-events: none;
 }
 
 .location-controls-container .location-controls {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: 4px;
   pointer-events: auto;
 }
@@ -806,26 +806,6 @@ h5.ant-typography {
 
 .location-controls-container .location-btn .anticon {
   font-size: 14px;
-}
-
-/* Desktop: below zoom controls on right side */
-@media (min-width: 768px) {
-  .location-controls-container {
-    top: 100px;
-    bottom: auto;
-    left: auto;
-    right: 10px;
-  }
-  
-  .location-controls-container .location-controls {
-    flex-direction: column;
-    gap: 4px;
-  }
-  
-  .location-controls-container .location-btn {
-    width: 29px;
-    height: 29px;
-  }
 }
 
 /* Shared location marker (person icon - purple/violet) */
