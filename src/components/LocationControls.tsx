@@ -269,7 +269,7 @@ function LocationControlsInner({
         {isTrackingLocation && (
           <Tooltip title="Share my location" placement="left">
             <button
-              className="location-btn share-btn"
+              className="location-btn"
               onClick={handleShareLocation}
             >
               <ShareAltOutlined style={{ fontSize: 14 }} />

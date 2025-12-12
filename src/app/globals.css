@@ -617,8 +617,8 @@ h5.ant-typography {
 }
 
 .location-btn {
-  width: 36px;
-  height: 36px;
+  width: 29px;
+  height: 29px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--background-secondary);
@@ -653,11 +653,6 @@ h5.ant-typography {
 
 .location-btn.has-home:hover {
   background: rgba(249, 115, 22, 0.1);
-}
-
-.location-btn.share-btn {
-  width: 32px;
-  height: 32px;
 }
 
 /* User location marker */
@@ -748,47 +743,75 @@ h5.ant-typography {
   }
 }
 
-/* Location controls - mobile: below search bar with proper spacing */
+/* Style MapLibre navigation controls to match our button style */
+.maplibregl-ctrl-group {
+  background: var(--background-secondary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: none !important;
+}
+
+.maplibregl-ctrl-group button {
+  width: 29px !important;
+  height: 29px !important;
+  background: var(--background-secondary) !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.maplibregl-ctrl-group button:last-child {
+  border-bottom: none !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: var(--background-tertiary) !important;
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(0.6);
+}
+
+/* Location controls - mobile: below search bar, left side */
 .location-controls-container {
   position: absolute;
   top: 42px;
   left: 6px;
-  right: 6px;
   z-index: 10;
-  display: flex;
-  justify-content: flex-end;
   pointer-events: none;
 }
 
 .location-controls-container .location-controls {
+  display: flex;
   flex-direction: row;
-  gap: 6px;
+  gap: 4px;
   pointer-events: auto;
 }
 
 .location-controls-container .location-btn {
-  width: 32px;
-  height: 32px;
+  width: 29px;
+  height: 29px;
 }
 
-/* Desktop: right side, vertical */
+.location-controls-container .location-btn .anticon {
+  font-size: 14px;
+}
+
+/* Desktop: below zoom controls on right side */
 @media (min-width: 768px) {
   .location-controls-container {
-    top: auto;
+    top: 100px;
     left: auto;
-    bottom: 110px;
     right: 10px;
-    display: block;
   }
   
   .location-controls-container .location-controls {
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
   
   .location-controls-container .location-btn {
-    width: 36px;
-    height: 36px;
+    width: 29px;
+    height: 29px;
   }
 }
 
