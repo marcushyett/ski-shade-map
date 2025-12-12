@@ -14,25 +14,22 @@ export default function LoadingSpinner({ size = 32 }: LoadingSpinnerProps) {
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
-          {/* Animated gradient that sweeps across */}
-          <linearGradient id="loading-sweep" x1="-100%" y1="0%" x2="0%" y2="0%">
-            <stop offset="0%" stopColor="#404040"/>
-            <stop offset="40%" stopColor="#404040"/>
+          {/* Sharp-edged gradient that cycles light to dark */}
+          <linearGradient id="loading-sweep" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#f0f0f0"/>
             <stop offset="50%" stopColor="#f0f0f0"/>
-            <stop offset="60%" stopColor="#404040"/>
+            <stop offset="50%" stopColor="#404040"/>
             <stop offset="100%" stopColor="#404040"/>
             <animate 
               attributeName="x1" 
-              from="-100%" 
-              to="100%" 
-              dur="1.5s" 
+              values="0%;-100%;0%"
+              dur="2.5s" 
               repeatCount="indefinite"
             />
             <animate 
               attributeName="x2" 
-              from="0%" 
-              to="200%" 
-              dur="1.5s" 
+              values="100%;0%;100%"
+              dur="2.5s" 
               repeatCount="indefinite"
             />
           </linearGradient>
@@ -42,4 +39,3 @@ export default function LoadingSpinner({ size = 32 }: LoadingSpinnerProps) {
     </div>
   );
 }
-
