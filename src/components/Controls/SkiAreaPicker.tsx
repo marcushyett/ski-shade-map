@@ -9,6 +9,7 @@ import debounce from 'lodash.debounce';
 interface SkiAreaPickerProps {
   onSelect: (skiArea: SkiAreaSummary) => void;
   selectedArea: SkiAreaSummary | null;
+  disabled?: boolean;
 }
 
 interface Country {
@@ -16,7 +17,7 @@ interface Country {
   count: number;
 }
 
-export default function SkiAreaPicker({ onSelect, selectedArea }: SkiAreaPickerProps) {
+export default function SkiAreaPicker({ onSelect, selectedArea, disabled }: SkiAreaPickerProps) {
   const [countries, setCountries] = useState<Country[]>([]);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [skiAreas, setSkiAreas] = useState<SkiAreaSummary[]>([]);
@@ -104,6 +105,7 @@ export default function SkiAreaPicker({ onSelect, selectedArea }: SkiAreaPickerP
           showSearch
           optionFilterProp="children"
           allowClear
+          disabled={disabled}
         >
           {countries.map(c => (
             <Select.Option key={c.country} value={c.country}>
@@ -113,7 +115,7 @@ export default function SkiAreaPicker({ onSelect, selectedArea }: SkiAreaPickerP
         </Select>
 
         <Select
-          placeholder="Search ski areas..."
+          placeholder={disabled ? "Offline - using cached area" : "Search ski areas..."}
           value={selectedArea?.id}
           onChange={(id) => {
             const option = options.find(o => o.value === id);
@@ -127,6 +129,7 @@ export default function SkiAreaPicker({ onSelect, selectedArea }: SkiAreaPickerP
           notFoundContent={loading ? 'Loading...' : 'No ski areas found'}
           suffixIcon={<SearchOutlined />}
           optionLabelProp="label"
+          disabled={disabled}
         >
           {options.map(opt => (
             <Select.Option key={opt.value} value={opt.value} label={opt.label}>

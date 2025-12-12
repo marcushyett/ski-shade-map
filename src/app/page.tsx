@@ -19,8 +19,10 @@ import Logo from '@/components/Logo';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TrailsLiftsList from '@/components/Controls/TrailsLiftsList';
 import WeatherPanel from '@/components/Controls/WeatherPanel';
+import OfflineBanner from '@/components/OfflineBanner';
+import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
-import type { WeatherData, UnitPreferences, HourlyWeather } from '@/lib/weather-types';
+import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 
 const { Text } = Typography;
 
@@ -41,6 +43,7 @@ const ControlsContent = memo(function ControlsContent({
   error,
   weather,
   selectedTime,
+  isOffline,
   onAreaSelect,
   onSelectRun,
   onSelectLift,
@@ -52,6 +55,7 @@ const ControlsContent = memo(function ControlsContent({
   error: string | null;
   weather: WeatherData | null;
   selectedTime: Date;
+  isOffline: boolean;
   onAreaSelect: (area: SkiAreaSummary) => void;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
@@ -69,11 +73,12 @@ const ControlsContent = memo(function ControlsContent({
 
       <div className="flex-shrink-0">
         <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
-          SELECT AREA
+          SELECT AREA {isOffline && <span style={{ color: '#ff4d4f' }}>(offline)</span>}
         </Text>
         <SkiAreaPicker 
           onSelect={onAreaSelect}
           selectedArea={selectedArea}
+          disabled={isOffline}
         />
       </div>
 
@@ -152,6 +157,14 @@ export default function Home() {
     speed: 'kmh',
     length: 'cm',
   });
+  
+  // Offline support
+  const { isOffline, wasOffline, lastOnline, clearOfflineWarning } = useOffline();
+
+  // Register service worker
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
 
   // Load initial state and units
   useEffect(() => {
@@ -285,8 +298,16 @@ export default function Home() {
 
   return (
     <div className="app-container">
+      {/* Offline banner */}
+      <OfflineBanner 
+        isOffline={isOffline}
+        wasOffline={wasOffline}
+        lastOnline={lastOnline}
+        onDismiss={clearOfflineWarning}
+      />
+      
       {/* Mobile header */}
-      <div className="md:hidden controls-panel">
+      <div className="md:hidden controls-panel" style={{ marginTop: (isOffline || wasOffline) ? 36 : 0 }}>
         <div className="flex items-center justify-between">
           <Logo size="sm" />
           <div className="flex items-center gap-2">
@@ -328,6 +349,7 @@ export default function Home() {
           error={error}
           weather={weather}
           selectedTime={selectedTime}
+          isOffline={isOffline}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
@@ -344,6 +366,7 @@ export default function Home() {
           error={error}
           weather={weather}
           selectedTime={selectedTime}
+          isOffline={isOffline}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
