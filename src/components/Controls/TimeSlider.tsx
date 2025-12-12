@@ -12,6 +12,8 @@ import {
 } from '@ant-design/icons';
 import { format, setHours, setMinutes, startOfDay } from 'date-fns';
 import { getSunTimes, getSunPosition } from '@/lib/suncalc';
+import WeatherTimeline from './WeatherTimeline';
+import type { HourlyWeather, UnitPreferences } from '@/lib/weather-types';
 
 const { Text } = Typography;
 
@@ -20,13 +22,17 @@ interface TimeSliderProps {
   longitude: number;
   selectedTime: Date;
   onTimeChange: (time: Date) => void;
+  hourlyWeather?: HourlyWeather[];
+  units?: UnitPreferences;
 }
 
 export default function TimeSlider({ 
   latitude, 
   longitude, 
   selectedTime, 
-  onTimeChange 
+  onTimeChange,
+  hourlyWeather,
+  units = { temperature: 'celsius', speed: 'kmh', length: 'cm' },
 }: TimeSliderProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -89,6 +95,17 @@ export default function TimeSlider({
 
   return (
     <div className="time-slider">
+      {/* Weather timeline */}
+      {hourlyWeather && hourlyWeather.length > 0 && (
+        <div className="mb-2">
+          <WeatherTimeline 
+            hourlyWeather={hourlyWeather} 
+            selectedTime={selectedTime}
+            units={units}
+          />
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
           {isSunUp ? (

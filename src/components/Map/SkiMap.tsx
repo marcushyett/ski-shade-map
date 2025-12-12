@@ -9,12 +9,21 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import type { SkiAreaDetails } from '@/lib/types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 
+interface CloudCover {
+  total: number;
+  low: number;
+  mid: number;
+  high: number;
+  visibility: number;
+}
+
 interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
   selectedTime: Date;
   is3D: boolean;
   onMapReady?: () => void;
   highlightedFeatureId?: string | null;
+  cloudCover?: CloudCover | null;
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -34,7 +43,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -129,6 +138,19 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         },
       });
     }
+
+    // Add cloud/fog overlay layer for reduced visibility
+    if (!map.current.getLayer('cloud-overlay')) {
+      map.current.addLayer({
+        id: 'cloud-overlay',
+        type: 'background',
+        paint: {
+          'background-color': '#e8e8e8',  // Light gray/white mist
+          'background-opacity': 0,
+          'background-opacity-transition': { duration: 500 },
+        },
+      });
+    }
   }, []);
 
   // Handle 3D toggle
@@ -149,6 +171,39 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       duration: 1000,
     });
   }, [is3D, mapLoaded]);
+
+  // Update cloud/visibility overlay based on weather
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    if (!map.current.getLayer('cloud-overlay')) return;
+
+    if (!cloudCover) {
+      map.current.setPaintProperty('cloud-overlay', 'background-opacity', 0);
+      return;
+    }
+
+    // Calculate opacity based on cloud cover and visibility
+    // Low clouds (below 2000m) have the most impact on visibility for skiers
+    // Visibility in meters - less than 5000m starts to be noticeable
+    const lowCloudFactor = cloudCover.low / 100;  // 0-1
+    const visibilityFactor = Math.max(0, 1 - cloudCover.visibility / 10000); // Poor vis = higher factor
+    
+    // Combine factors - low clouds and poor visibility create fog effect
+    const fogIntensity = Math.min(0.5, (lowCloudFactor * 0.3) + (visibilityFactor * 0.3));
+    
+    map.current.setPaintProperty('cloud-overlay', 'background-opacity', fogIntensity);
+    
+    // Also adjust the sun/shade colors when visibility is poor
+    // In heavy cloud/fog, switch to grey tones instead of black/white
+    if (map.current.getLayer('ski-segments-sunny') && cloudCover.total > 70) {
+      // When heavily overcast, make sunny segments grey instead of bright white
+      const sunnyColor = cloudCover.total > 85 ? '#888888' : '#aaaaaa';
+      map.current.setPaintProperty('ski-segments-sunny', 'line-color', sunnyColor);
+    } else if (map.current.getLayer('ski-segments-sunny')) {
+      // Clear weather - bright white for sunny
+      map.current.setPaintProperty('ski-segments-sunny', 'line-color', SUNNY_COLOR);
+    }
+  }, [cloudCover, mapLoaded]);
 
   // Initialize layers when ski area changes
   useEffect(() => {

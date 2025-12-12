@@ -7,7 +7,8 @@ import {
   InfoCircleOutlined,
   EnvironmentOutlined,
   NodeIndexOutlined,
-  SwapOutlined
+  SwapOutlined,
+  CloudOutlined
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import SkiAreaPicker from '@/components/Controls/SkiAreaPicker';
@@ -17,11 +18,14 @@ import Legend from '@/components/Controls/Legend';
 import Logo from '@/components/Logo';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TrailsLiftsList from '@/components/Controls/TrailsLiftsList';
+import WeatherPanel from '@/components/Controls/WeatherPanel';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
+import type { WeatherData, UnitPreferences, HourlyWeather } from '@/lib/weather-types';
 
 const { Text } = Typography;
 
 const STORAGE_KEY = 'ski-shade-map-state';
+const UNITS_STORAGE_KEY = 'ski-shade-units';
 
 interface StoredState {
   areaId: string;
@@ -35,18 +39,24 @@ const ControlsContent = memo(function ControlsContent({
   selectedArea,
   skiAreaDetails,
   error,
+  weather,
+  selectedTime,
   onAreaSelect,
   onSelectRun,
   onSelectLift,
   onErrorClose,
+  onWeatherLoad,
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
   error: string | null;
+  weather: WeatherData | null;
+  selectedTime: Date;
   onAreaSelect: (area: SkiAreaSummary) => void;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
   onErrorClose: () => void;
+  onWeatherLoad: (weather: WeatherData) => void;
 }) {
   return (
     <div className="flex flex-col gap-3 h-full">
@@ -81,6 +91,16 @@ const ControlsContent = memo(function ControlsContent({
                 <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
               </div>
             </div>
+          </div>
+
+          {/* Weather panel */}
+          <div className="flex-shrink-0">
+            <WeatherPanel
+              latitude={skiAreaDetails.latitude}
+              longitude={skiAreaDetails.longitude}
+              selectedTime={selectedTime}
+              onWeatherLoad={onWeatherLoad}
+            />
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0">
@@ -129,7 +149,14 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [units, setUnits] = useState<UnitPreferences>({
+    temperature: 'celsius',
+    speed: 'kmh',
+    length: 'cm',
+  });
 
+  // Load initial state and units
   useEffect(() => {
     setSelectedTime(new Date());
     
@@ -145,6 +172,11 @@ export default function Home() {
           latitude: state.latitude,
           longitude: state.longitude,
         });
+      }
+      
+      const storedUnits = localStorage.getItem(UNITS_STORAGE_KEY);
+      if (storedUnits) {
+        setUnits(JSON.parse(storedUnits));
       }
     } catch (e) {
       // Ignore localStorage errors
@@ -171,6 +203,7 @@ export default function Home() {
   useEffect(() => {
     if (!selectedArea) {
       setSkiAreaDetails(null);
+      setWeather(null);
       return;
     }
 
@@ -200,6 +233,7 @@ export default function Home() {
 
   const handleAreaSelect = useCallback((area: SkiAreaSummary) => {
     setSelectedArea(area);
+    setWeather(null); // Clear weather when changing areas
     setMobileMenuOpen(false);
   }, []);
 
@@ -217,6 +251,10 @@ export default function Home() {
     setError(null);
   }, []);
 
+  const handleWeatherLoad = useCallback((weatherData: WeatherData) => {
+    setWeather(weatherData);
+  }, []);
+
   const mapCenter = useMemo(() => 
     skiAreaDetails 
       ? { lat: skiAreaDetails.latitude, lng: skiAreaDetails.longitude }
@@ -224,17 +262,49 @@ export default function Home() {
     [skiAreaDetails]
   );
 
+  // Get hourly weather for time slider
+  const hourlyWeather = useMemo(() => weather?.hourly || [], [weather]);
+
+  // Get current cloud cover for visibility effects
+  const currentCloudCover = useMemo(() => {
+    if (!weather?.hourly) return null;
+    
+    const currentHour = selectedTime.getHours();
+    const today = selectedTime.toDateString();
+    
+    const hourlyMatch = weather.hourly.find(h => {
+      const d = new Date(h.time);
+      return d.toDateString() === today && d.getHours() === currentHour;
+    });
+    
+    return hourlyMatch ? {
+      total: hourlyMatch.cloudCover,
+      low: hourlyMatch.cloudCoverLow,
+      mid: hourlyMatch.cloudCoverMid,
+      high: hourlyMatch.cloudCoverHigh,
+      visibility: hourlyMatch.visibility,
+    } : null;
+  }, [weather, selectedTime]);
+
   return (
     <div className="app-container">
       {/* Mobile header */}
       <div className="md:hidden controls-panel">
         <div className="flex items-center justify-between">
           <Logo size="sm" />
-          <Button 
-            size="small"
-            icon={<MenuOutlined style={{ fontSize: 12 }} />}
-            onClick={() => setMobileMenuOpen(true)}
-          />
+          <div className="flex items-center gap-2">
+            {weather && (
+              <span style={{ fontSize: 10, color: '#888' }}>
+                <CloudOutlined style={{ marginRight: 2 }} />
+                {weather.current.cloudCover}%
+              </span>
+            )}
+            <Button 
+              size="small"
+              icon={<MenuOutlined style={{ fontSize: 12 }} />}
+              onClick={() => setMobileMenuOpen(true)}
+            />
+          </div>
         </div>
         {selectedArea && (
           <div className="flex items-center gap-1 mt-1">
@@ -259,10 +329,13 @@ export default function Home() {
           selectedArea={selectedArea}
           skiAreaDetails={skiAreaDetails}
           error={error}
+          weather={weather}
+          selectedTime={selectedTime}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
           onErrorClose={handleErrorClose}
+          onWeatherLoad={handleWeatherLoad}
         />
       </Drawer>
 
@@ -272,10 +345,13 @@ export default function Home() {
           selectedArea={selectedArea}
           skiAreaDetails={skiAreaDetails}
           error={error}
+          weather={weather}
+          selectedTime={selectedTime}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
           onErrorClose={handleErrorClose}
+          onWeatherLoad={handleWeatherLoad}
         />
       </div>
 
@@ -292,6 +368,7 @@ export default function Home() {
           selectedTime={selectedTime}
           is3D={is3D}
           highlightedFeatureId={highlightedFeatureId}
+          cloudCover={currentCloudCover}
         />
 
         {/* Legend */}
@@ -311,6 +388,8 @@ export default function Home() {
             longitude={mapCenter.lng}
             selectedTime={selectedTime}
             onTimeChange={setSelectedTime}
+            hourlyWeather={hourlyWeather}
+            units={units}
           />
         </div>
       </div>
