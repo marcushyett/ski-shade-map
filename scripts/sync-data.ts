@@ -315,7 +315,7 @@ async function main() {
   const skiAreas = await prisma.skiArea.findMany({
     select: { id: true, osmId: true },
   });
-  const osmIdToDbId = new Map(skiAreas.map(a => [a.osmId, a.id]));
+  const osmIdToDbId = new Map(skiAreas.map((a: { osmId: string; id: string }) => [a.osmId, a.id]));
   console.log(`   Have ${osmIdToDbId.size} ski areas in database`);
   console.log('');
 
