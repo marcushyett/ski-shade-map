@@ -309,51 +309,65 @@ function WeatherPanelInner({
         </div>
       </div>
 
-      {/* Cloud layers */}
+      {/* Cloud layers with altitude info */}
       <div className="mt-2 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
-        <Text type="secondary" style={{ fontSize: 9 }}>CLOUD LAYERS</Text>
+        <Tooltip title="Sky coverage at each altitude band. 0% = clear, 100% = fully overcast. Low clouds reduce visibility most for skiers.">
+          <Text type="secondary" style={{ fontSize: 9, cursor: 'help' }}>CLOUD LAYERS (% sky covered)</Text>
+        </Tooltip>
         <div className="flex justify-between mt-1" style={{ fontSize: 9 }}>
-          <div className="text-center">
-            <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverHigh}%</Text>
-            <br />
-            <Text type="secondary" style={{ fontSize: 8 }}>High</Text>
-          </div>
-          <div className="text-center">
-            <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverMid}%</Text>
-            <br />
-            <Text type="secondary" style={{ fontSize: 8 }}>Mid</Text>
-          </div>
-          <div className="text-center">
-            <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverLow}%</Text>
-            <br />
-            <Text type="secondary" style={{ fontSize: 8 }}>Low</Text>
-          </div>
+          <Tooltip title="High clouds: Above 6000m (cirrus, thin ice clouds). Usually don't affect skiing visibility.">
+            <div className="text-center cursor-help">
+              <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverHigh}%</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 8 }}>High</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 7 }}>&gt;6km</Text>
+            </div>
+          </Tooltip>
+          <Tooltip title="Mid clouds: 2000-6000m (altostratus, altocumulus). Can create flat light on upper slopes.">
+            <div className="text-center cursor-help">
+              <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverMid}%</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 8 }}>Mid</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 7 }}>2-6km</Text>
+            </div>
+          </Tooltip>
+          <Tooltip title="Low clouds: Below 2000m (stratus, fog). Most impact on ski visibility - you may be skiing in cloud!">
+            <div className="text-center cursor-help">
+              <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverLow}%</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 8 }}>Low</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 7 }}>&lt;2km</Text>
+            </div>
+          </Tooltip>
         </div>
       </div>
 
-      {/* Snow info */}
-      {(current.snowDepth > 0 || current.snowfall > 0) && (
-        <div className="mt-2 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <Text type="secondary" style={{ fontSize: 9 }}>SNOW</Text>
-          <div className="flex justify-between mt-1">
-            <div>
-              <Text style={{ fontSize: 10 }}>Depth: {formatLength(current.snowDepth)}</Text>
-            </div>
-            {current.snowfall > 0 && (
-              <div>
-                <Text style={{ fontSize: 10 }}>New: {formatLength(current.snowfall * 100)}</Text>
-              </div>
-            )}
+      {/* Snow info with elevation context */}
+      <div className="mt-2 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
+        <Tooltip title={`Snow data at resort elevation: ${formatAltitude(weather.elevation)}. Depth varies significantly with altitude - typically more snow at higher elevations.`}>
+          <Text type="secondary" style={{ fontSize: 9, cursor: 'help' }}>SNOW @ {formatAltitude(weather.elevation)}</Text>
+        </Tooltip>
+        <div className="flex justify-between mt-1">
+          <div>
+            <Text style={{ fontSize: 10 }}>Depth: {formatLength(current.snowDepth)}</Text>
           </div>
+          {current.snowfall > 0 && (
+            <div>
+              <Text style={{ fontSize: 10 }}>New: {formatLength(current.snowfall * 100)}</Text>
+            </div>
+          )}
+          {current.snowDepth === 0 && current.snowfall === 0 && (
+            <Text type="secondary" style={{ fontSize: 9 }}>No snow reported</Text>
+          )}
         </div>
-      )}
-
-      {/* Freezing level */}
-      <div className="mt-2">
-        <Text type="secondary" style={{ fontSize: 9 }}>
-          <ThunderboltOutlined style={{ marginRight: 4 }} />
-          Freezing level: {formatAltitude(displayWeather.freezingLevelHeight)}
-        </Text>
+        {displayWeather.freezingLevelHeight > 0 && (
+          <Text type="secondary" style={{ fontSize: 8, display: 'block', marginTop: 2 }}>
+            Snow line: ~{formatAltitude(displayWeather.freezingLevelHeight)}
+          </Text>
+        )}
       </div>
 
       {/* Precipitation probability */}
