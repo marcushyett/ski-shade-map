@@ -512,3 +512,251 @@ h5.ant-typography {
 .ant-empty-image svg {
   fill: var(--foreground-muted) !important;
 }
+
+/* Search bar styles */
+.search-bar-container {
+  position: relative;
+  z-index: 100;
+}
+
+.search-bar-container .ant-input {
+  background-color: var(--background-secondary) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+  font-size: 11px !important;
+}
+
+.search-bar-container .ant-input::placeholder {
+  color: var(--foreground-muted) !important;
+}
+
+.search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 300px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+.search-category {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-category:last-child {
+  border-bottom: none;
+}
+
+.search-category-header {
+  padding: 4px 10px;
+  font-size: 9px;
+  color: var(--foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+}
+
+.search-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  transition: background 0.1s;
+}
+
+.search-item:hover,
+.search-item.selected {
+  background: var(--background-tertiary);
+}
+
+.search-item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.search-item-name {
+  flex: 1;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-item-meta {
+  margin-left: 8px;
+  font-size: 9px;
+  color: var(--foreground-muted);
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.search-no-results {
+  padding: 12px 10px;
+  font-size: 10px;
+  color: var(--foreground-muted);
+  text-align: center;
+}
+
+/* Location controls */
+.location-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.location-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--background-secondary);
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.location-btn:hover {
+  background: var(--background-tertiary);
+  color: var(--foreground);
+  border-color: var(--foreground-muted);
+}
+
+.location-btn.active {
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.location-btn.loading {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.location-btn.has-home {
+  color: #f97316;
+  border-color: #f97316;
+}
+
+.location-btn.has-home:hover {
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.location-btn.share-btn {
+  width: 32px;
+  height: 32px;
+}
+
+/* Location controls container on map */
+.location-controls-container {
+  position: absolute;
+  bottom: 100px;
+  right: 10px;
+  z-index: 10;
+}
+
+@media (min-width: 768px) {
+  .location-controls-container {
+    bottom: 110px;
+    right: 10px;
+  }
+}
+
+/* User location marker */
+.user-location-marker {
+  position: relative;
+  width: 24px;
+  height: 24px;
+}
+
+.user-location-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  background: #3b82f6;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+.user-location-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  background: rgba(59, 130, 246, 0.3);
+  border-radius: 50%;
+  animation: pulse-ring 2s infinite;
+  z-index: 1;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0;
+  }
+}
+
+/* Mountain home marker */
+.mountain-home-marker {
+  cursor: pointer;
+}
+
+.mountain-home-circle {
+  width: 32px;
+  height: 32px;
+  background: #f97316;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.4);
+  transition: transform 0.2s;
+}
+
+.mountain-home-marker:hover .mountain-home-circle {
+  transform: scale(1.1);
+}
+
+/* Search bar on map */
+.map-search-container {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  max-width: calc(100% - 120px);
+  z-index: 15;
+}
+
+@media (min-width: 768px) {
+  .map-search-container {
+    width: 320px;
+    max-width: calc(100% - 180px);
+  }
+}

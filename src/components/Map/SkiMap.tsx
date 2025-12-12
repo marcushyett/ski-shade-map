@@ -23,6 +23,23 @@ interface MapViewState {
   zoom: number;
 }
 
+export interface UserLocationMarker {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+}
+
+export interface MountainHomeMarker {
+  latitude: number;
+  longitude: number;
+  name: string;
+}
+
+export interface MapRef {
+  flyTo: (lat: number, lng: number, zoom?: number) => void;
+  getCenter: () => { lat: number; lng: number } | null;
+}
+
 interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
   selectedTime: Date;
@@ -32,6 +49,9 @@ interface SkiMapProps {
   cloudCover?: CloudCover | null;
   initialView?: MapViewState | null;
   onViewChange?: (view: MapViewState) => void;
+  userLocation?: UserLocationMarker | null;
+  mountainHome?: MountainHomeMarker | null;
+  mapRef?: React.MutableRefObject<MapRef | null>;
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -51,7 +71,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, mapRef }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -62,6 +82,28 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const pendingUpdateRef = useRef<{ area: SkiAreaDetails; time: Date } | null>(null);
   const currentSunAzimuth = useRef<number>(0);
   const currentSkiAreaRef = useRef<SkiAreaDetails | null>(null);
+  const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const mountainHomeMarkerRef = useRef<maplibregl.Marker | null>(null);
+
+  // Expose map methods via ref
+  useEffect(() => {
+    if (mapRef) {
+      mapRef.current = {
+        flyTo: (lat: number, lng: number, zoom?: number) => {
+          map.current?.flyTo({
+            center: [lng, lat],
+            zoom: zoom ?? 15,
+            duration: 1000,
+          });
+        },
+        getCenter: () => {
+          if (!map.current) return null;
+          const center = map.current.getCenter();
+          return { lat: center.lat, lng: center.lng };
+        },
+      };
+    }
+  }, [mapRef, mapLoaded]);
 
   // Initialize map
   useEffect(() => {
@@ -550,6 +592,76 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }
     }
   }, [highlightedFeatureId, mapLoaded, skiArea]);
+
+  // Handle user location marker
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Remove existing marker if location is null
+    if (!userLocation) {
+      if (userLocationMarkerRef.current) {
+        userLocationMarkerRef.current.remove();
+        userLocationMarkerRef.current = null;
+      }
+      return;
+    }
+
+    // Create or update marker
+    if (userLocationMarkerRef.current) {
+      userLocationMarkerRef.current.setLngLat([userLocation.longitude, userLocation.latitude]);
+    } else {
+      // Create custom marker element
+      const el = document.createElement('div');
+      el.className = 'user-location-marker';
+      el.innerHTML = `
+        <div class="user-location-dot"></div>
+        <div class="user-location-pulse"></div>
+      `;
+
+      userLocationMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([userLocation.longitude, userLocation.latitude])
+        .addTo(map.current);
+    }
+  }, [userLocation, mapLoaded]);
+
+  // Handle mountain home marker
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Remove existing marker if home is null
+    if (!mountainHome) {
+      if (mountainHomeMarkerRef.current) {
+        mountainHomeMarkerRef.current.remove();
+        mountainHomeMarkerRef.current = null;
+      }
+      return;
+    }
+
+    // Create or update marker
+    if (mountainHomeMarkerRef.current) {
+      mountainHomeMarkerRef.current.setLngLat([mountainHome.longitude, mountainHome.latitude]);
+    } else {
+      // Create custom marker element with home icon
+      const el = document.createElement('div');
+      el.className = 'mountain-home-marker';
+      el.innerHTML = `
+        <div class="mountain-home-circle">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+          </svg>
+        </div>
+      `;
+      el.title = mountainHome.name;
+
+      mountainHomeMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([mountainHome.longitude, mountainHome.latitude])
+        .setPopup(
+          new maplibregl.Popup({ offset: 25 })
+            .setHTML(`<div style="padding: 4px; font-size: 11px;"><strong>${mountainHome.name}</strong></div>`)
+        )
+        .addTo(map.current);
+    }
+  }, [mountainHome, mapLoaded]);
 
   // Update shading without recreating layers
   const updateShading = useCallback((area: SkiAreaDetails, time: Date) => {

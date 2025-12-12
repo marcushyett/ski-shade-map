@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 import { Typography, Alert, Button, Drawer } from 'antd';
 import { 
   MenuOutlined, 
@@ -11,6 +11,7 @@ import {
   CloudOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
+import type { MapRef, UserLocationMarker, MountainHomeMarker } from '@/components/Map/SkiMap';
 import SkiAreaPicker from '@/components/Controls/SkiAreaPicker';
 import TimeSlider from '@/components/Controls/TimeSlider';
 import ViewToggle from '@/components/Controls/ViewToggle';
@@ -22,6 +23,9 @@ import WeatherPanel from '@/components/Controls/WeatherPanel';
 import OfflineBanner from '@/components/OfflineBanner';
 import CacheButton from '@/components/CacheButton';
 import ShareButton from '@/components/ShareButton';
+import SearchBar from '@/components/SearchBar';
+import LocationControls from '@/components/LocationControls';
+import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
 import { parseUrlState, minutesToDate } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
@@ -164,6 +168,12 @@ export default function Home() {
   });
   const [mapView, setMapView] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
   const [initialMapView, setInitialMapView] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+  
+  // Location features
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [mountainHome, setMountainHome] = useState<MountainHome | null>(null);
+  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const mapRef = useRef<MapRef | null>(null);
   
   // Offline support
   const { isOffline, wasOffline, lastOnline, clearOfflineWarning } = useOffline();
@@ -339,6 +349,33 @@ export default function Home() {
     setWeather(weatherData);
   }, []);
 
+  // Search handlers
+  const handleSelectPlace = useCallback((coordinates: [number, number]) => {
+    mapRef.current?.flyTo(coordinates[1], coordinates[0], 16);
+  }, []);
+
+  // Location handlers
+  const handleGoToLocation = useCallback((lat: number, lng: number, zoom?: number) => {
+    mapRef.current?.flyTo(lat, lng, zoom);
+  }, []);
+
+  const handleMountainHomeChange = useCallback((home: MountainHome | null) => {
+    setMountainHome(home);
+  }, []);
+
+  const handleUserLocationChange = useCallback((location: UserLocation | null) => {
+    setUserLocation(location);
+  }, []);
+
+  // Convert location types for map
+  const userLocationMarker: UserLocationMarker | null = userLocation
+    ? { latitude: userLocation.latitude, longitude: userLocation.longitude, accuracy: userLocation.accuracy }
+    : null;
+
+  const mountainHomeMarker: MountainHomeMarker | null = mountainHome
+    ? { latitude: mountainHome.latitude, longitude: mountainHome.longitude, name: mountainHome.name }
+    : null;
+
   const mapCenter = useMemo(() => 
     skiAreaDetails 
       ? { lat: skiAreaDetails.latitude, lng: skiAreaDetails.longitude }
@@ -465,7 +502,38 @@ export default function Home() {
           cloudCover={currentCloudCover}
           initialView={initialMapView}
           onViewChange={handleViewChange}
+          userLocation={userLocationMarker}
+          mountainHome={mountainHomeMarker}
+          mapRef={mapRef}
         />
+
+        {/* Search bar on map */}
+        {skiAreaDetails && (
+          <div className="map-search-container">
+            <SearchBar
+              runs={skiAreaDetails.runs}
+              lifts={skiAreaDetails.lifts}
+              skiAreaLatitude={skiAreaDetails.latitude}
+              skiAreaLongitude={skiAreaDetails.longitude}
+              onSelectRun={handleSelectRun}
+              onSelectLift={handleSelectLift}
+              onSelectPlace={handleSelectPlace}
+            />
+          </div>
+        )}
+
+        {/* Location controls */}
+        <div className="location-controls-container">
+          <LocationControls
+            onUserLocationChange={handleUserLocationChange}
+            onMountainHomeChange={handleMountainHomeChange}
+            onGoToLocation={handleGoToLocation}
+            mountainHome={mountainHome}
+            userLocation={userLocation}
+            isTrackingLocation={isTrackingLocation}
+            onToggleTracking={setIsTrackingLocation}
+          />
+        </div>
 
         {/* Legend and action buttons */}
         <div className="legend-container hidden md:flex md:items-start md:gap-3">
