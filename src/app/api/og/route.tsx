@@ -43,12 +43,32 @@ export async function GET(request: NextRequest) {
         >
           <div style={{ display: 'flex', alignItems: 'center' }}>
             {/* Brand text */}
+            padding: '20px 40px',
+            backgroundColor: '#000000',
+          }}
+        >
+          {/* Mountain logo */}
+          <svg width="40" height="40" viewBox="0 0 40 40">
+            <defs>
+              <linearGradient id="shade" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#f0f0f0" />
+                <stop offset="61.8%" stopColor="#f0f0f0" />
+                <stop offset="61.8%" stopColor="#404040" />
+                <stop offset="100%" stopColor="#404040" />
+              </linearGradient>
+            </defs>
+            <polygon points="20,5 35,35 5,35" fill="url(#shade)" />
+          </svg>
+          
+          {/* Brand text */}
+          <div style={{ display: 'flex', marginLeft: 16 }}>
             <div
               style={{
                 backgroundColor: '#ffffff',
                 color: '#0a0a0a',
                 padding: '6px 12px',
                 fontSize: 24,
+                padding: '4px 8px',
                 fontWeight: 'bold',
               }}
             >
@@ -61,6 +81,8 @@ export async function GET(request: NextRequest) {
                 border: '1px solid #444',
                 padding: '6px 12px',
                 fontSize: 24,
+                border: '1px solid #333',
+                padding: '4px 8px',
                 fontWeight: 'bold',
               }}
             >
@@ -76,6 +98,9 @@ export async function GET(request: NextRequest) {
         </div>
 
         {/* Main content - Map-like visualization */}
+        </div>
+
+        {/* Main content */}
         <div
           style={{
             flex: 1,
@@ -154,6 +179,75 @@ export async function GET(request: NextRequest) {
               {areaName}
             </div>
           </div>
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '40px',
+            position: 'relative',
+          }}
+        >
+          {/* Background mountains */}
+          <svg
+            width="100%"
+            height="100%"
+            viewBox="0 0 1200 400"
+            style={{ position: 'absolute', bottom: 0, left: 0 }}
+          >
+            <path
+              d="M0,250 L200,150 L350,220 L500,100 L650,180 L800,80 L950,160 L1100,120 L1200,180 L1200,400 L0,400 Z"
+              fill="#1a1a1a"
+            />
+            <path
+              d="M0,300 L150,250 L300,280 L450,200 L600,260 L750,190 L900,240 L1050,210 L1200,250 L1200,400 L0,400 Z"
+              fill="#252525"
+            />
+            
+            {/* Ski runs with sun/shade */}
+            <line x1="400" y1="150" x2="350" y2="350" stroke="#ffffff" strokeWidth="12" opacity="0.8" />
+            <line x1="550" y1="120" x2="600" y2="380" stroke="#1a1a1a" strokeWidth="12" opacity="0.8" />
+            <line x1="700" y1="160" x2="680" y2="400" stroke="#ffffff" strokeWidth="12" opacity="0.8" />
+            <line x1="850" y1="100" x2="900" y2="420" stroke="#1a1a1a" strokeWidth="12" opacity="0.8" />
+          </svg>
+
+          {/* Sun */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 60,
+              right: 80,
+              width: 80,
+              height: 80,
+              borderRadius: '50%',
+              backgroundColor: '#ffffff',
+              boxShadow: '0 0 60px rgba(255,255,255,0.5)',
+            }}
+          />
+
+          {/* Area name */}
+          <div
+            style={{
+              fontSize: 48,
+              fontWeight: 'bold',
+              color: '#ffffff',
+              textAlign: 'center',
+              zIndex: 10,
+              textShadow: '0 2px 20px rgba(0,0,0,0.8)',
+            }}
+          >
+            {areaName}
+          </div>
+
+          {timeDisplay && (
+            <div
+              style={{
+                fontSize: 24,
+                color: '#888888',
+                marginTop: 16,
+                zIndex: 10,
+              }}
+            >
+              Sun position at {timeDisplay}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -169,6 +263,12 @@ export async function GET(request: NextRequest) {
         >
           <div style={{ fontSize: 16, color: '#666' }}>
             See where the sun will be on the slopes
+            padding: '20px 40px',
+            backgroundColor: '#000000',
+          }}
+        >
+          <div style={{ fontSize: 18, color: '#666666' }}>
+            Find sunny or shaded ski slopes throughout the day
           </div>
         </div>
       </div>

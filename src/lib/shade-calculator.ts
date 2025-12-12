@@ -132,3 +132,43 @@ export function getDifficultyColor(difficulty: string | null | undefined): strin
   }
 }
 
+/**
+ * Get difficulty color for sunny segments - BRIGHT and vibrant
+ * High contrast with shaded segments, with lighter/more saturated colors
+ */
+export function getDifficultyColorSunny(difficulty: string | null | undefined): string {
+  switch (difficulty?.toLowerCase()) {
+    case 'novice':
+      return '#81C784'; // Light bright green
+    case 'easy':
+      return '#64B5F6'; // Light bright blue
+    case 'intermediate':
+      return '#FF8A80'; // Light bright red/coral
+    case 'advanced':
+    case 'expert':
+      return '#757575'; // Medium grey for black runs in sun (visible contrast)
+    default:
+      return '#BDBDBD'; // Light gray for unknown
+  }
+}
+
+/**
+ * Get difficulty color for shaded segments (much darker for high contrast)
+ * These are used during daytime for shaded areas AND at night for all runs
+ */
+export function getDifficultyColorShaded(difficulty: string | null | undefined): string {
+  switch (difficulty?.toLowerCase()) {
+    case 'novice':
+      return '#1B5E20'; // Very dark green
+    case 'easy':
+      return '#0D47A1'; // Very dark blue
+    case 'intermediate':
+      return '#7F0000'; // Very dark red
+    case 'advanced':
+    case 'expert':
+      return '#212121'; // Very dark grey (not pure black, so visible)
+    default:
+      return '#424242'; // Dark gray for unknown
+  }
+}
+
