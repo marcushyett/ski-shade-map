@@ -132,3 +132,43 @@ export function getDifficultyColor(difficulty: string | null | undefined): strin
   }
 }
 
+/**
+ * Get difficulty color for sunny segments
+ * For black runs, show a lighter grey since they can't get darker in shade
+ */
+export function getDifficultyColorSunny(difficulty: string | null | undefined): string {
+  switch (difficulty?.toLowerCase()) {
+    case 'novice':
+      return '#4CAF50'; // Green
+    case 'easy':
+      return '#2196F3'; // Blue
+    case 'intermediate':
+      return '#F44336'; // Red
+    case 'advanced':
+    case 'expert':
+      return '#555555'; // Lighter grey for black runs in sun
+    default:
+      return '#9E9E9E'; // Gray for unknown
+  }
+}
+
+/**
+ * Get difficulty color for shaded segments (darker version)
+ * For black runs, keep them black
+ */
+export function getDifficultyColorShaded(difficulty: string | null | undefined): string {
+  switch (difficulty?.toLowerCase()) {
+    case 'novice':
+      return '#2E7D32'; // Darker green
+    case 'easy':
+      return '#1565C0'; // Darker blue
+    case 'intermediate':
+      return '#B71C1C'; // Darker red
+    case 'advanced':
+    case 'expert':
+      return '#1a1a1a'; // Black stays black in shade
+    default:
+      return '#616161'; // Darker gray for unknown
+  }
+}
+

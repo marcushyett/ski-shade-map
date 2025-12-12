@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
-import { getDifficultyColor } from '@/lib/shade-calculator';
+import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded } from '@/lib/shade-calculator';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import type { SkiAreaDetails } from '@/lib/types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
@@ -36,9 +36,7 @@ interface SkiMapProps {
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
 
-// Monochrome sun/shade colors
-const SUNNY_COLOR = '#ffffff';
-const SHADE_COLOR = '#1a1a1a';
+// Night color for when sun is below horizon
 const NIGHT_COLOR = '#0a0a0a';
 
 interface SegmentProperties {
@@ -49,6 +47,8 @@ interface SegmentProperties {
   isShaded: boolean;
   bearing: number;
   slopeAspect: number;
+  sunnyColor: string;
+  shadedColor: string;
 }
 
 export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange }: SkiMapProps) {
@@ -223,15 +223,13 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     
     map.current.setPaintProperty('cloud-overlay', 'background-opacity', fogIntensity);
     
-    // Also adjust the sun/shade colors when visibility is poor
-    // In heavy cloud/fog, switch to grey tones instead of black/white
+    // In heavy cloud/fog, reduce opacity to show muted colors
     if (map.current.getLayer('ski-segments-sunny') && cloudCover.total > 70) {
-      // When heavily overcast, make sunny segments grey instead of bright white
-      const sunnyColor = cloudCover.total > 85 ? '#888888' : '#aaaaaa';
-      map.current.setPaintProperty('ski-segments-sunny', 'line-color', sunnyColor);
+      const opacity = cloudCover.total > 85 ? 0.6 : 0.8;
+      map.current.setPaintProperty('ski-segments-sunny', 'line-opacity', opacity);
     } else if (map.current.getLayer('ski-segments-sunny')) {
-      // Clear weather - bright white for sunny
-      map.current.setPaintProperty('ski-segments-sunny', 'line-color', SUNNY_COLOR);
+      // Clear weather - full opacity
+      map.current.setPaintProperty('ski-segments-sunny', 'line-opacity', 1);
     }
   }, [cloudCover, mapLoaded]);
 
@@ -376,7 +374,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       data: segments,
     });
 
-    // Sunny segments layer - white
+    // Sunny segments layer - uses difficulty color (lighter grey for black runs)
     map.current.addLayer({
       id: 'ski-segments-sunny',
       type: 'line',
@@ -387,15 +385,14 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'line-join': 'round',
       },
       paint: {
-        'line-color': SUNNY_COLOR,
-        'line-width': 14,
-        'line-blur': 2,
-        'line-opacity': 0.85,
+        'line-color': ['get', 'sunnyColor'],
+        'line-width': 4,
+        'line-opacity': 1,
         'line-opacity-transition': { duration: 200 },
       },
     });
 
-    // Shaded segments layer - black/dark
+    // Shaded segments layer - uses darker difficulty color
     map.current.addLayer({
       id: 'ski-segments-shaded',
       type: 'line',
@@ -406,10 +403,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'line-join': 'round',
       },
       paint: {
-        'line-color': isNight ? NIGHT_COLOR : SHADE_COLOR,
-        'line-width': 14,
-        'line-blur': 2,
-        'line-opacity': 0.8,
+        'line-color': isNight ? NIGHT_COLOR : ['get', 'shadedColor'],
+        'line-width': 4,
+        'line-opacity': 1,
         'line-opacity-transition': { duration: 200 },
         'line-color-transition': { duration: 200 },
       },
@@ -436,6 +432,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       data: runsGeoJSON,
     });
 
+    // Runs line layer - invisible but used for click detection
     map.current.addLayer({
       id: 'ski-runs-line',
       type: 'line',
@@ -446,8 +443,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 3,
-        'line-opacity': 1,
+        'line-width': 8, // Wide for easy clicking
+        'line-opacity': 0, // Invisible - segments show the actual colors
       },
     });
 
@@ -514,13 +511,16 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   useEffect(() => {
     if (!map.current || !mapLoaded || !layersInitialized.current) return;
 
-    // Reset all highlights first
-    if (map.current.getLayer('ski-runs-line')) {
-      map.current.setPaintProperty('ski-runs-line', 'line-width', 
-        highlightedFeatureId 
-          ? ['case', ['==', ['get', 'id'], highlightedFeatureId], 6, 3]
-          : 3
-      );
+    // Highlight segments for the selected run
+    const highlightWidth = highlightedFeatureId 
+      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 6, 4]
+      : 4;
+    
+    if (map.current.getLayer('ski-segments-sunny')) {
+      map.current.setPaintProperty('ski-segments-sunny', 'line-width', highlightWidth);
+    }
+    if (map.current.getLayer('ski-segments-shaded')) {
+      map.current.setPaintProperty('ski-segments-shaded', 'line-width', highlightWidth);
     }
 
     if (map.current.getLayer('ski-lifts')) {
@@ -599,7 +599,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
     // Update shaded color for night
     if (map.current.getLayer('ski-segments-shaded')) {
-      map.current.setPaintProperty('ski-segments-shaded', 'line-color', isNight ? NIGHT_COLOR : SHADE_COLOR);
+      map.current.setPaintProperty('ski-segments-shaded', 'line-color', isNight ? NIGHT_COLOR : ['get', 'shadedColor']);
     }
   }, []);
 
@@ -799,6 +799,8 @@ function createRunSegments(
           isShaded,
           bearing,
           slopeAspect,
+          sunnyColor: getDifficultyColorSunny(run.difficulty),
+          shadedColor: getDifficultyColorShaded(run.difficulty),
         },
         geometry: {
           type: 'LineString',
