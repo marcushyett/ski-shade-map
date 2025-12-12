@@ -420,6 +420,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny-glow', 'ski-segments-sunny', 'ski-segments-shaded', 
+      'ski-runs-polygon-fill', 'ski-runs-polygon-outline',
       'ski-runs-line', 'ski-lifts', 'ski-lifts-symbols'
     ];
     layersToRemove.forEach(layerId => {
@@ -428,7 +429,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }
     });
 
-    const sourcesToRemove = ['sun-indicator', 'ski-segments', 'ski-runs', 'ski-lifts'];
+    const sourcesToRemove = ['sun-indicator', 'ski-segments', 'ski-runs', 'ski-runs-polygons', 'ski-lifts'];
     sourcesToRemove.forEach(sourceId => {
       if (map.current?.getSource(sourceId)) {
         map.current.removeSource(sourceId);
@@ -559,7 +560,57 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Runs source and layer
+    // Polygon runs source (for fill) - only runs that are polygons
+    const polygonRunsGeoJSON = {
+      type: 'FeatureCollection' as const,
+      features: area.runs
+        .filter(run => run.geometry.type === 'Polygon')
+        .map(run => ({
+          type: 'Feature' as const,
+          properties: {
+            id: run.id,
+            name: run.name,
+            difficulty: run.difficulty,
+            status: run.status,
+            color: getDifficultyColor(run.difficulty),
+            sunnyColor: getDifficultyColorSunny(run.difficulty),
+            shadedColor: getDifficultyColorShaded(run.difficulty),
+          },
+          geometry: run.geometry,
+        })),
+    };
+
+    if (polygonRunsGeoJSON.features.length > 0) {
+      map.current.addSource('ski-runs-polygons', {
+        type: 'geojson',
+        data: polygonRunsGeoJSON,
+      });
+
+      // Polygon fill layer - low opacity shaded area
+      map.current.addLayer({
+        id: 'ski-runs-polygon-fill',
+        type: 'fill',
+        source: 'ski-runs-polygons',
+        paint: {
+          'fill-color': ['get', 'color'],
+          'fill-opacity': 0.2,
+        },
+      });
+
+      // Polygon outline layer - subtle border
+      map.current.addLayer({
+        id: 'ski-runs-polygon-outline',
+        type: 'line',
+        source: 'ski-runs-polygons',
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': 1,
+          'line-opacity': 0.4,
+        },
+      });
+    }
+
+    // Runs source and layer (all runs for click detection)
     const runsGeoJSON = {
       type: 'FeatureCollection' as const,
       features: area.runs.map(run => ({
@@ -1169,7 +1220,45 @@ function createRunSegments(
     if (run.geometry.type === 'LineString') {
       coords = run.geometry.coordinates;
     } else if (run.geometry.type === 'Polygon') {
-      coords = run.geometry.coordinates[0];
+      // For polygons, calculate a centerline through the polygon
+      // We'll find the longest axis by getting bounding box and creating a line through centroid
+      const ring = run.geometry.coordinates[0];
+      if (ring.length < 3) continue;
+      
+      // Calculate centroid and bounding box
+      let minLat = Infinity, maxLat = -Infinity;
+      let minLng = Infinity, maxLng = -Infinity;
+      let sumLng = 0, sumLat = 0;
+      
+      for (const [lng, lat] of ring) {
+        minLat = Math.min(minLat, lat);
+        maxLat = Math.max(maxLat, lat);
+        minLng = Math.min(minLng, lng);
+        maxLng = Math.max(maxLng, lng);
+        sumLng += lng;
+        sumLat += lat;
+      }
+      
+      const centroidLng = sumLng / ring.length;
+      const centroidLat = sumLat / ring.length;
+      
+      // Determine orientation - create centerline along the longer axis
+      const latRange = maxLat - minLat;
+      const lngRange = maxLng - minLng;
+      
+      if (latRange > lngRange) {
+        // Polygon is taller (N-S oriented) - create vertical centerline
+        coords = [
+          [centroidLng, minLat],
+          [centroidLng, maxLat],
+        ];
+      } else {
+        // Polygon is wider (E-W oriented) - create horizontal centerline
+        coords = [
+          [minLng, centroidLat],
+          [maxLng, centroidLat],
+        ];
+      }
     }
 
     if (coords.length < 2) continue;
