@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#__next,
+main {
+  height: 100%;
+}
+
+/* Ant Design overrides for better mobile experience */
+.ant-select {
+  width: 100% !important;
+}
+
+.ant-slider-mark-text {
+  font-size: 16px !important;
+}
+
+/* Map container */
+.maplibregl-map {
+  font-family: inherit;
+}
+
+.maplibregl-popup-content {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Mobile-first layout */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh; /* For mobile browsers */
+}
+
+.controls-panel {
+  padding: 12px;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  z-index: 10;
+}
+
+.map-container {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+.time-slider-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 8px;
+}
+
+.legend-container {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  max-width: 140px;
+}
+
+.view-toggle-container {
+  position: absolute;
+  top: 8px;
+  right: 60px;
+  z-index: 10;
+}
+
+/* Desktop layout */
+@media (min-width: 768px) {
+  .app-container {
+    flex-direction: row;
+  }
+
+  .controls-panel {
+    width: 320px;
+    border-bottom: none;
+    border-right: 1px solid #e5e7eb;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .time-slider-container {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    max-width: 500px;
+  }
+
+  .legend-container {
+    top: 16px;
+    left: 16px;
+    max-width: 160px;
+  }
+
+  .view-toggle-container {
+    top: 16px;
+    right: 70px;
+  }
+}
+
+/* Loading state */
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+/* Smooth transitions */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}

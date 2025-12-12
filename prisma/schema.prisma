@@ -1,0 +1,75 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model SkiArea {
+  id          String   @id @default(cuid())
+  osmId       String?  @unique
+  name        String
+  country     String?
+  region      String?
+  latitude    Float
+  longitude   Float
+  bounds      Json?    // {minLat, maxLat, minLng, maxLng}
+  geometry    Json?    // GeoJSON geometry
+  properties  Json?    // Additional OSM properties
+  runs        Run[]
+  lifts       Lift[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([country])
+  @@index([name])
+  @@index([latitude, longitude])
+}
+
+model Run {
+  id          String   @id @default(cuid())
+  osmId       String?  @unique
+  name        String?
+  difficulty  String?  // novice, easy, intermediate, advanced, expert
+  status      String?  // open, closed, unknown
+  geometry    Json     // GeoJSON LineString or Polygon
+  properties  Json?
+  skiAreaId   String
+  skiArea     SkiArea  @relation(fields: [skiAreaId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([skiAreaId])
+  @@index([difficulty])
+}
+
+model Lift {
+  id          String   @id @default(cuid())
+  osmId       String?  @unique
+  name        String?
+  liftType    String?  // chairlift, gondola, drag, cable_car, etc.
+  status      String?  // open, closed, unknown
+  capacity    Int?
+  geometry    Json     // GeoJSON LineString
+  properties  Json?
+  skiAreaId   String
+  skiArea     SkiArea  @relation(fields: [skiAreaId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([skiAreaId])
+}
+
+model DataSync {
+  id          String   @id @default(cuid())
+  dataType    String   // ski_areas, runs, lifts
+  lastSync    DateTime
+  recordCount Int
+  status      String   // success, failed, in_progress
+  error       String?
+  createdAt   DateTime @default(now())
+}
