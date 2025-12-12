@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, memo, ReactNode } from 'react';
-import { Typography, Segmented, Spin, Tooltip } from 'antd';
+import { Typography, Segmented, Tooltip } from 'antd';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import {
   CloudOutlined,
   ThunderboltOutlined,
@@ -198,7 +199,7 @@ function WeatherPanelInner({
     return (
       <div className="weather-panel p-2">
         <div className="flex items-center gap-2">
-          <Spin size="small" />
+          <LoadingSpinner size={14} />
           <Text type="secondary" style={{ fontSize: 10 }}>Loading weather...</Text>
         </div>
       </div>
