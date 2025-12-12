@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, memo } from 'react';
+import { useState, useEffect, useCallback, memo, ReactNode } from 'react';
 import { Typography, Segmented, Spin, Tooltip } from 'antd';
 import {
   CloudOutlined,
@@ -9,6 +9,9 @@ import {
   DashboardOutlined,
   ArrowUpOutlined,
   ReloadOutlined,
+  SunOutlined,
+  MoonOutlined,
+  CloudFilled,
 } from '@ant-design/icons';
 import type { WeatherData, UnitPreferences, HourlyWeather } from '@/lib/weather-types';
 import {
@@ -32,6 +35,50 @@ interface WeatherPanelProps {
 }
 
 const UNITS_STORAGE_KEY = 'ski-shade-units';
+
+// Weather icon component using Ant Design icons
+function WeatherIcon({ code, isDay, size = 16 }: { code: number; isDay: boolean; size?: number }): ReactNode {
+  const style = { fontSize: size };
+  
+  // Clear sky
+  if (code === 0 || code === 1) {
+    return isDay ? <SunOutlined style={{ ...style, color: '#faad14' }} /> : <MoonOutlined style={style} />;
+  }
+  // Partly cloudy
+  if (code === 2) {
+    return <CloudOutlined style={style} />;
+  }
+  // Overcast
+  if (code === 3) {
+    return <CloudFilled style={style} />;
+  }
+  // Fog
+  if (code >= 45 && code <= 48) {
+    return <EyeOutlined style={{ ...style, opacity: 0.5 }} />;
+  }
+  // Drizzle / Rain
+  if (code >= 51 && code <= 67) {
+    return <CloudOutlined style={{ ...style, color: '#1890ff' }} />;
+  }
+  // Snow
+  if (code >= 71 && code <= 77) {
+    return <CloudOutlined style={{ ...style, color: '#e8e8e8' }} />;
+  }
+  // Rain showers
+  if (code >= 80 && code <= 82) {
+    return <CloudFilled style={{ ...style, color: '#1890ff' }} />;
+  }
+  // Snow showers
+  if (code >= 85 && code <= 86) {
+    return <CloudFilled style={{ ...style, color: '#e8e8e8' }} />;
+  }
+  // Thunderstorm
+  if (code >= 95) {
+    return <ThunderboltOutlined style={{ ...style, color: '#faad14' }} />;
+  }
+  
+  return <CloudOutlined style={style} />;
+}
 
 function WeatherPanelInner({ 
   latitude, 
@@ -147,21 +194,6 @@ function WeatherPanelInner({
     return directions[index];
   };
 
-  const getWeatherIcon = (code: number, isDay: boolean) => {
-    const info = WEATHER_CODES[code] || { description: 'Unknown', icon: 'cloud' };
-    // Return appropriate icon based on weather code
-    if (code === 0 || code === 1) return isDay ? '☀' : '🌙';
-    if (code === 2) return isDay ? '⛅' : '☁';
-    if (code === 3) return '☁';
-    if (code >= 45 && code <= 48) return '🌫';
-    if (code >= 51 && code <= 67) return '🌧';
-    if (code >= 71 && code <= 77) return '❄';
-    if (code >= 80 && code <= 82) return '🌧';
-    if (code >= 85 && code <= 86) return '❄';
-    if (code >= 95) return '⛈';
-    return '☁';
-  };
-
   if (loading && !weather) {
     return (
       <div className="weather-panel p-2">
@@ -210,7 +242,7 @@ function WeatherPanelInner({
       <div className="current-weather mb-2 p-2 rounded" style={{ background: 'rgba(255,255,255,0.03)' }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span style={{ fontSize: 20 }}>{getWeatherIcon(displayWeather.weatherCode, displayWeather.isDay)}</span>
+            <WeatherIcon code={displayWeather.weatherCode} isDay={displayWeather.isDay} size={20} />
             <div>
               <Text strong style={{ fontSize: 16 }}>{formatTemp(displayWeather.temperature)}</Text>
               <br />
@@ -338,4 +370,3 @@ function WeatherPanelInner({
 
 const WeatherPanel = memo(WeatherPanelInner);
 export default WeatherPanel;
-

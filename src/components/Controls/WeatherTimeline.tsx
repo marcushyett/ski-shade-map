@@ -1,7 +1,15 @@
 'use client';
 
-import { memo, useMemo } from 'react';
+import { memo, useMemo, ReactNode } from 'react';
 import { Tooltip } from 'antd';
+import {
+  SunOutlined,
+  MoonOutlined,
+  CloudOutlined,
+  CloudFilled,
+  EyeOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
 import type { HourlyWeather, UnitPreferences } from '@/lib/weather-types';
 import { WEATHER_CODES, celsiusToFahrenheit, kmhToMph } from '@/lib/weather-types';
 
@@ -9,6 +17,50 @@ interface WeatherTimelineProps {
   hourlyWeather: HourlyWeather[];
   selectedTime: Date;
   units: UnitPreferences;
+}
+
+// Weather icon component using Ant Design icons
+function WeatherIcon({ code, isDay }: { code: number; isDay: boolean }): ReactNode {
+  const style = { fontSize: 12 };
+  
+  // Clear sky
+  if (code === 0 || code === 1) {
+    return isDay ? <SunOutlined style={{ ...style, color: '#faad14' }} /> : <MoonOutlined style={style} />;
+  }
+  // Partly cloudy
+  if (code === 2) {
+    return <CloudOutlined style={style} />;
+  }
+  // Overcast
+  if (code === 3) {
+    return <CloudFilled style={style} />;
+  }
+  // Fog
+  if (code >= 45 && code <= 48) {
+    return <EyeOutlined style={{ ...style, opacity: 0.5 }} />;
+  }
+  // Drizzle / Rain
+  if (code >= 51 && code <= 67) {
+    return <CloudOutlined style={{ ...style, color: '#1890ff' }} />;
+  }
+  // Snow
+  if (code >= 71 && code <= 77) {
+    return <CloudOutlined style={{ ...style, color: '#e8e8e8' }} />;
+  }
+  // Rain showers
+  if (code >= 80 && code <= 82) {
+    return <CloudFilled style={{ ...style, color: '#1890ff' }} />;
+  }
+  // Snow showers
+  if (code >= 85 && code <= 86) {
+    return <CloudFilled style={{ ...style, color: '#e8e8e8' }} />;
+  }
+  // Thunderstorm
+  if (code >= 95) {
+    return <ThunderboltOutlined style={{ ...style, color: '#faad14' }} />;
+  }
+  
+  return <CloudOutlined style={style} />;
 }
 
 function WeatherTimelineInner({ hourlyWeather, selectedTime, units }: WeatherTimelineProps) {
@@ -38,19 +90,6 @@ function WeatherTimelineInner({ hourlyWeather, selectedTime, units }: WeatherTim
       return `${Math.round(celsiusToFahrenheit(c))}°`;
     }
     return `${Math.round(c)}°`;
-  };
-
-  const getWeatherIcon = (code: number, isDay: boolean): string => {
-    if (code === 0 || code === 1) return isDay ? '☀' : '🌙';
-    if (code === 2) return '⛅';
-    if (code === 3) return '☁';
-    if (code >= 45 && code <= 48) return '🌫';
-    if (code >= 51 && code <= 67) return '🌧';
-    if (code >= 71 && code <= 77) return '❄';
-    if (code >= 80 && code <= 82) return '🌧';
-    if (code >= 85 && code <= 86) return '❄';
-    if (code >= 95) return '⛈';
-    return '☁';
   };
 
   const formatHour = (hour: number): string => {
@@ -91,8 +130,8 @@ function WeatherTimelineInner({ hourlyWeather, selectedTime, units }: WeatherTim
                 transition: 'opacity 0.2s',
               }}
             >
-              <div style={{ fontSize: 12 }}>
-                {getWeatherIcon(weather.weatherCode, weather.isDay)}
+              <div>
+                <WeatherIcon code={weather.weatherCode} isDay={weather.isDay} />
               </div>
               <div style={{ fontSize: 9, color: '#ccc' }}>
                 {formatTemp(weather.temperature)}
@@ -110,4 +149,3 @@ function WeatherTimelineInner({ hourlyWeather, selectedTime, units }: WeatherTim
 
 const WeatherTimeline = memo(WeatherTimelineInner);
 export default WeatherTimeline;
-
