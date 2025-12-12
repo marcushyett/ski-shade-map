@@ -723,24 +723,33 @@ h5.ant-typography {
   transform: scale(1.1);
 }
 
-/* Search bar on map - mobile: full width at top */
-.map-search-container {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  right: 6px;
-  z-index: 15;
+/* Mobile header search bar */
+.mobile-header-search {
+  margin-top: 8px;
 }
 
-/* Desktop: centered, narrower */
-@media (min-width: 768px) {
-  .map-search-container {
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    width: 320px;
-    top: 10px;
-  }
+.mobile-header-search .search-bar-container {
+  position: relative;
+}
+
+.mobile-header-search .search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Search bar on map - desktop only */
+.map-search-container {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  top: 10px;
+  z-index: 15;
 }
 
 /* Style MapLibre navigation controls to match our button style */
@@ -771,11 +780,11 @@ h5.ant-typography {
   filter: invert(0.6);
 }
 
-/* Location controls - mobile: below search bar, left side */
+/* Location controls - mobile: top left of map */
 .location-controls-container {
   position: absolute;
-  top: 42px;
-  left: 6px;
+  top: 10px;
+  left: 10px;
   z-index: 10;
   pointer-events: none;
 }

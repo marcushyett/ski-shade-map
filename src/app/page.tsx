@@ -524,12 +524,18 @@ export default function Home() {
             />
           </div>
         </div>
-        {selectedArea && (
-          <div className="flex items-center gap-1 mt-1">
-            <EnvironmentOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-            <Text type="secondary" style={{ fontSize: 10 }}>
-              {selectedArea.name}
-            </Text>
+        {/* Mobile search bar in header */}
+        {skiAreaDetails && (
+          <div className="mobile-header-search">
+            <SearchBar
+              runs={skiAreaDetails.runs}
+              lifts={skiAreaDetails.lifts}
+              skiAreaLatitude={skiAreaDetails.latitude}
+              skiAreaLongitude={skiAreaDetails.longitude}
+              onSelectRun={handleSelectRun}
+              onSelectLift={handleSelectLift}
+              onSelectPlace={handleSelectPlace}
+            />
           </div>
         )}
       </div>
@@ -599,9 +605,9 @@ export default function Home() {
           mapRef={mapRef}
         />
 
-        {/* Search bar on map */}
+        {/* Search bar on map - desktop only */}
         {skiAreaDetails && (
-          <div className="map-search-container">
+          <div className="map-search-container hidden md:block">
             <SearchBar
               runs={skiAreaDetails.runs}
               lifts={skiAreaDetails.lifts}
