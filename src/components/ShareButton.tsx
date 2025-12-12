@@ -46,11 +46,16 @@ function ShareButtonInner({
       params.set('hlt', highlightedFeatureType);
     }
 
+    // Also include the name in URL for display when loading
+    if (skiAreaName) {
+      params.set('name', skiAreaName);
+    }
+
     const shareUrl = `${window.location.origin}?${params.toString()}`;
     
     const shareData = {
       title: `SKISHADE - ${skiAreaName || 'Ski Area'}`,
-      text: `Check out where the sun will be on the slopes at ${skiAreaName || 'this ski area'}! 🎿☀️`,
+      text: `Check out where the sun will be on the slopes at ${skiAreaName || 'this ski area'}.\n\n${shareUrl}`,
       url: shareUrl,
     };
 

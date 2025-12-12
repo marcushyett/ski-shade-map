@@ -4,6 +4,7 @@ import { useEffect, useCallback } from 'react';
 
 interface UrlState {
   areaId: string | null;
+  areaName: string | null;
   lat: number | null;
   lng: number | null;
   zoom: number | null;
@@ -16,6 +17,7 @@ export function parseUrlState(): UrlState {
   if (typeof window === 'undefined') {
     return {
       areaId: null,
+      areaName: null,
       lat: null,
       lng: null,
       zoom: null,
@@ -29,6 +31,7 @@ export function parseUrlState(): UrlState {
   
   return {
     areaId: params.get('area'),
+    areaName: params.get('name'),
     lat: params.has('lat') ? parseFloat(params.get('lat')!) : null,
     lng: params.has('lng') ? parseFloat(params.get('lng')!) : null,
     zoom: params.has('z') ? parseFloat(params.get('z')!) : null,

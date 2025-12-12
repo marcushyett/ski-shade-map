@@ -182,7 +182,7 @@ export default function Home() {
       // Load from URL (shared link)
       setSelectedArea({
         id: urlState.areaId,
-        name: '', // Will be loaded from API
+        name: urlState.areaName || '', // Use name from URL if available
         country: null,
         region: null,
         latitude: urlState.lat || 0,
@@ -288,6 +288,11 @@ export default function Home() {
           runs: data.runs || [],
           lifts: data.lifts || [],
         });
+        
+        // Update selectedArea name if it was empty (from URL state)
+        if (!selectedArea.name && data.name) {
+          setSelectedArea(prev => prev ? { ...prev, name: data.name } : prev);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load ski area');
       } finally {
