@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Slider, Typography, Space, Button, Tooltip } from 'antd';
+import { Slider, Typography, Button, Tooltip } from 'antd';
 import { 
   PlayCircleOutlined, 
   PauseCircleOutlined,
@@ -31,27 +31,22 @@ export default function TimeSlider({
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // Wait for client-side hydration
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Get sun times for the selected date
   const sunTimes = useMemo(() => {
     return getSunTimes(selectedTime, latitude, longitude);
   }, [selectedTime, latitude, longitude]);
 
-  // Get current sun position
   const sunPosition = useMemo(() => {
     return getSunPosition(selectedTime, latitude, longitude);
   }, [selectedTime, latitude, longitude]);
 
-  // Convert time to slider value (minutes from midnight)
   const timeToSlider = (date: Date): number => {
     return date.getHours() * 60 + date.getMinutes();
   };
 
-  // Convert slider value to time
   const sliderToTime = (value: number): Date => {
     const hours = Math.floor(value / 60);
     const minutes = value % 60;
@@ -59,20 +54,18 @@ export default function TimeSlider({
     return setMinutes(setHours(base, hours), minutes);
   };
 
-  // Auto-play animation
   useEffect(() => {
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
       const current = timeToSlider(selectedTime);
-      const next = (current + 10) % (24 * 60); // Jump 10 minutes
+      const next = (current + 10) % (24 * 60);
       onTimeChange(sliderToTime(next));
     }, 200);
 
     return () => clearInterval(interval);
   }, [isPlaying, selectedTime, onTimeChange]);
 
-  // Slider marks for key times
   const marks = useMemo(() => {
     const sunriseMin = timeToSlider(sunTimes.sunrise);
     const sunsetMin = timeToSlider(sunTimes.sunset);
@@ -80,13 +73,13 @@ export default function TimeSlider({
 
     return {
       [sunriseMin]: {
-        label: <Tooltip title={`Sunrise ${format(sunTimes.sunrise, 'HH:mm')}`}><ArrowUpOutlined style={{ opacity: 0.6 }} /></Tooltip>,
+        label: <Tooltip title={`Sunrise ${format(sunTimes.sunrise, 'HH:mm')}`}><ArrowUpOutlined style={{ fontSize: 9, opacity: 0.5 }} /></Tooltip>,
       },
       [noonMin]: {
-        label: <Tooltip title={`Solar Noon ${format(sunTimes.solarNoon, 'HH:mm')}`}><SunOutlined style={{ opacity: 0.6 }} /></Tooltip>,
+        label: <Tooltip title={`Noon ${format(sunTimes.solarNoon, 'HH:mm')}`}><SunOutlined style={{ fontSize: 9, opacity: 0.5 }} /></Tooltip>,
       },
       [sunsetMin]: {
-        label: <Tooltip title={`Sunset ${format(sunTimes.sunset, 'HH:mm')}`}><ArrowDownOutlined style={{ opacity: 0.6 }} /></Tooltip>,
+        label: <Tooltip title={`Sunset ${format(sunTimes.sunset, 'HH:mm')}`}><ArrowDownOutlined style={{ fontSize: 9, opacity: 0.5 }} /></Tooltip>,
       },
     };
   }, [sunTimes]);
@@ -95,79 +88,65 @@ export default function TimeSlider({
   const isSunUp = sunPosition.altitudeDegrees > 0;
 
   return (
-    <div className="time-slider p-4 rounded-lg">
-      <Space direction="vertical" className="w-full" size="small">
-        <div className="flex items-center justify-between">
-          <Space>
-            {isSunUp ? (
-              <SunOutlined style={{ color: '#faad14', fontSize: 18 }} />
-            ) : (
-              <MoonOutlined style={{ color: '#666', fontSize: 18 }} />
-            )}
-            <Text strong style={{ fontSize: 16, fontFamily: 'inherit' }}>
-              {mounted ? format(selectedTime, 'HH:mm') : '--:--'}
-            </Text>
-          </Space>
-          
-          <Space>
-            <Text type="secondary" className="text-xs">
-              {mounted ? `${sunPosition.altitudeDegrees.toFixed(0)}° alt` : ''}
-            </Text>
-            <Button
-              type="text"
-              icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-              onClick={() => setIsPlaying(!isPlaying)}
-            />
-          </Space>
+    <div className="time-slider">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          {isSunUp ? (
+            <SunOutlined style={{ color: '#faad14', fontSize: 12 }} />
+          ) : (
+            <MoonOutlined style={{ color: '#666', fontSize: 12 }} />
+          )}
+          <Text strong style={{ fontSize: 13 }}>
+            {mounted ? format(selectedTime, 'HH:mm') : '--:--'}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 10 }}>
+            {mounted ? `${sunPosition.altitudeDegrees.toFixed(0)}°` : ''}
+          </Text>
         </div>
-
-        <Slider
-          value={currentValue}
-          min={0}
-          max={24 * 60 - 1}
-          marks={marks}
-          onChange={(value) => onTimeChange(sliderToTime(value))}
-          tooltip={{
-            formatter: (value) => value !== undefined ? format(sliderToTime(value), 'HH:mm') : '',
-          }}
-          className="w-full"
+        
+        <Button
+          type="text"
+          size="small"
+          icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+          onClick={() => setIsPlaying(!isPlaying)}
+          style={{ padding: '0 4px', height: 20 }}
         />
+      </div>
 
-        <div className="flex justify-between text-xs opacity-50">
-          <span>00:00</span>
-          <span>06:00</span>
-          <span>12:00</span>
-          <span>18:00</span>
-          <span>24:00</span>
-        </div>
+      <Slider
+        value={currentValue}
+        min={0}
+        max={24 * 60 - 1}
+        marks={marks}
+        onChange={(value) => onTimeChange(sliderToTime(value))}
+        tooltip={{
+          formatter: (value) => value !== undefined ? format(sliderToTime(value), 'HH:mm') : '',
+        }}
+        style={{ margin: '8px 0 16px' }}
+      />
 
-        <div className="quick-times flex gap-2 mt-1">
-          <Button 
-            size="small" 
-            onClick={() => onTimeChange(sunTimes.sunrise)}
-          >
-            Sunrise
-          </Button>
-          <Button 
-            size="small" 
-            onClick={() => onTimeChange(new Date())}
-          >
-            Now
-          </Button>
-          <Button 
-            size="small" 
-            onClick={() => onTimeChange(sunTimes.solarNoon)}
-          >
-            Noon
-          </Button>
-          <Button 
-            size="small" 
-            onClick={() => onTimeChange(sunTimes.sunset)}
-          >
-            Sunset
-          </Button>
-        </div>
-      </Space>
+      <div className="flex justify-between mb-2" style={{ fontSize: 9, opacity: 0.4 }}>
+        <span>00</span>
+        <span>06</span>
+        <span>12</span>
+        <span>18</span>
+        <span>24</span>
+      </div>
+
+      <div className="flex gap-1">
+        <Button size="small" onClick={() => onTimeChange(sunTimes.sunrise)}>
+          Rise
+        </Button>
+        <Button size="small" onClick={() => onTimeChange(new Date())}>
+          Now
+        </Button>
+        <Button size="small" onClick={() => onTimeChange(sunTimes.solarNoon)}>
+          Noon
+        </Button>
+        <Button size="small" onClick={() => onTimeChange(sunTimes.sunset)}>
+          Set
+        </Button>
+      </div>
     </div>
   );
 }

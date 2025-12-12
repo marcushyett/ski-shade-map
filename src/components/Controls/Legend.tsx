@@ -1,8 +1,8 @@
 'use client';
 
-import { Typography, Space, Divider } from 'antd';
+import { Typography, Divider } from 'antd';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 export default function Legend() {
   const difficulties = [
@@ -13,66 +13,58 @@ export default function Legend() {
   ];
 
   return (
-    <div className="legend p-3 rounded-lg">
-      <Title level={5} className="mb-2 mt-0">Legend</Title>
+    <div className="legend">
+      <Text strong style={{ fontSize: 10 }}>LEGEND</Text>
       
-      <div className="mb-2">
-        <Text type="secondary" className="text-xs uppercase tracking-wide">Difficulty</Text>
-        <Space direction="vertical" size={2} className="mt-1">
-          {difficulties.map(d => (
-            <div key={d.name} className="flex items-center gap-2">
-              <div 
-                className="w-4 h-1 rounded"
-                style={{ backgroundColor: d.color }}
-              />
-              <Text className="text-xs">{d.name}</Text>
-            </div>
-          ))}
-        </Space>
+      <Divider />
+      
+      <div className="flex flex-col gap-1">
+        {difficulties.map(d => (
+          <div key={d.name} className="flex items-center gap-1.5">
+            <div 
+              className="w-3 h-0.5"
+              style={{ backgroundColor: d.color, borderRadius: 1 }}
+            />
+            <Text style={{ fontSize: 10 }}>{d.name}</Text>
+          </div>
+        ))}
       </div>
 
-      <Divider className="my-2" />
+      <Divider />
 
-      <div>
-        <Text type="secondary" className="text-xs uppercase tracking-wide">Exposure</Text>
-        <Space direction="vertical" size={4} className="mt-1">
-          <div className="flex items-center gap-2">
-            <div 
-              className="w-6 h-3 rounded"
-              style={{ 
-                backgroundColor: '#FFD700',
-                boxShadow: '0 0 4px rgba(255, 215, 0, 0.6)',
-              }}
-            />
-            <Text className="text-xs">Sunny</Text>
-          </div>
-          <div className="flex items-center gap-2">
-            <div 
-              className="w-6 h-3 rounded"
-              style={{ 
-                backgroundColor: '#1a237e',
-                boxShadow: '0 0 4px rgba(26, 35, 126, 0.4)',
-              }}
-            />
-            <Text className="text-xs">Shaded</Text>
-          </div>
-        </Space>
-      </div>
-
-      <Divider className="my-2" />
-
-      <div>
-        <Text type="secondary" className="text-xs uppercase tracking-wide">Lifts</Text>
-        <div className="flex items-center gap-2 mt-1">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1.5">
           <div 
-            className="w-4 h-0.5"
+            className="w-4 h-2"
             style={{ 
-              backgroundColor: '#666',
-              backgroundImage: 'repeating-linear-gradient(90deg, #666, #666 4px, transparent 4px, transparent 6px)'
+              backgroundColor: '#FFD700',
+              borderRadius: 1,
             }}
           />
-          <Text className="text-xs">Lift Line</Text>
+          <Text style={{ fontSize: 10 }}>Sun</Text>
         </div>
+        <div className="flex items-center gap-1.5">
+          <div 
+            className="w-4 h-2"
+            style={{ 
+              backgroundColor: '#1a237e',
+              borderRadius: 1,
+            }}
+          />
+          <Text style={{ fontSize: 10 }}>Shade</Text>
+        </div>
+      </div>
+
+      <Divider />
+
+      <div className="flex items-center gap-1.5">
+        <div 
+          className="w-3 h-px"
+          style={{ 
+            background: 'repeating-linear-gradient(90deg, #666, #666 2px, transparent 2px, transparent 3px)'
+          }}
+        />
+        <Text style={{ fontSize: 10 }}>Lift</Text>
       </div>
     </div>
   );

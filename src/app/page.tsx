@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Typography, Spin, Alert, Space, Button, Drawer } from 'antd';
+import { Typography, Spin, Alert, Button, Drawer } from 'antd';
 import { 
   MenuOutlined, 
   InfoCircleOutlined,
@@ -16,7 +16,7 @@ import ViewToggle from '@/components/Controls/ViewToggle';
 import Legend from '@/components/Controls/Legend';
 import type { SkiAreaSummary, SkiAreaDetails } from '@/lib/types';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 const STORAGE_KEY = 'ski-shade-map-state';
 
@@ -39,20 +39,15 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isClient, setIsClient] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
 
-  // Load saved state and update time after hydration
   useEffect(() => {
-    setIsClient(true);
     setSelectedTime(new Date());
     
-    // Load last selected area from localStorage
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const state: StoredState = JSON.parse(stored);
-        // Create a minimal SkiAreaSummary to trigger the fetch
         setSelectedArea({
           id: state.areaId,
           name: state.areaName,
@@ -68,7 +63,6 @@ export default function Home() {
     setInitialLoadDone(true);
   }, []);
 
-  // Save selected area to localStorage
   useEffect(() => {
     if (!initialLoadDone || !selectedArea) return;
     
@@ -85,7 +79,6 @@ export default function Home() {
     }
   }, [selectedArea, initialLoadDone]);
 
-  // Fetch full ski area details when selection changes
   useEffect(() => {
     if (!selectedArea) {
       setSkiAreaDetails(null);
@@ -121,24 +114,23 @@ export default function Home() {
     setMobileMenuOpen(false);
   }, []);
 
-  // Default coordinates (French Alps)
   const mapCenter = skiAreaDetails 
     ? { lat: skiAreaDetails.latitude, lng: skiAreaDetails.longitude }
     : { lat: 45.9, lng: 6.8 };
 
   const ControlsContent = () => (
-    <Space direction="vertical" size="middle" className="w-full">
+    <div className="flex flex-col gap-3">
       <div>
-        <Title level={4} className="m-0 mb-2">
-          Ski Shade Map
-        </Title>
-        <Paragraph type="secondary" className="text-sm m-0">
-          Find sunny or shaded slopes at any time of day
-        </Paragraph>
+        <Text strong style={{ fontSize: 13 }}>SKI SHADE MAP</Text>
+        <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 2 }}>
+          Find sunny or shaded slopes
+        </Text>
       </div>
 
       <div>
-        <Text strong className="block mb-2">Select Ski Area</Text>
+        <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
+          SELECT AREA
+        </Text>
         <SkiAreaPicker 
           onSelect={handleAreaSelect}
           selectedArea={selectedArea}
@@ -146,16 +138,16 @@ export default function Home() {
       </div>
 
       {skiAreaDetails && (
-        <div className="stats-summary p-3 rounded-lg">
-          <Text strong>{skiAreaDetails.name}</Text>
-          <div className="mt-2 flex flex-col gap-1">
-            <div className="flex items-center gap-2 text-sm">
-              <NodeIndexOutlined style={{ opacity: 0.6 }} />
-              <Text type="secondary">{skiAreaDetails.runs.length} runs</Text>
+        <div className="stats-summary">
+          <Text strong style={{ fontSize: 11 }}>{skiAreaDetails.name}</Text>
+          <div className="flex gap-4 mt-1">
+            <div className="flex items-center gap-1">
+              <NodeIndexOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+              <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.runs.length} runs</Text>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <SwapOutlined style={{ opacity: 0.6 }} />
-              <Text type="secondary">{skiAreaDetails.lifts.length} lifts</Text>
+            <div className="flex items-center gap-1">
+              <SwapOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+              <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
             </div>
           </div>
         </div>
@@ -170,14 +162,13 @@ export default function Home() {
         />
       )}
 
-      <div className="hidden md:block">
-        <Text type="secondary" className="text-xs">
-          <InfoCircleOutlined className="mr-1" />
-          Shade calculation is based on slope orientation. 
-          Actual conditions may vary based on terrain features.
+      <div className="hidden md:block mt-2">
+        <Text type="secondary" style={{ fontSize: 9 }}>
+          <InfoCircleOutlined style={{ marginRight: 4, fontSize: 9 }} />
+          Shade based on slope orientation. Actual conditions may vary.
         </Text>
       </div>
-    </Space>
+    </div>
   );
 
   return (
@@ -185,29 +176,30 @@ export default function Home() {
       {/* Mobile header */}
       <div className="md:hidden controls-panel">
         <div className="flex items-center justify-between">
-          <Title level={5} className="m-0">Ski Shade Map</Title>
+          <Text strong style={{ fontSize: 12 }}>SKI SHADE MAP</Text>
           <Button 
-            icon={<MenuOutlined />}
+            size="small"
+            icon={<MenuOutlined style={{ fontSize: 12 }} />}
             onClick={() => setMobileMenuOpen(true)}
           />
         </div>
         {selectedArea && (
-          <div className="flex items-center gap-2 mt-1">
-            <EnvironmentOutlined style={{ opacity: 0.5 }} />
-            <Text type="secondary" className="text-sm">
+          <div className="flex items-center gap-1 mt-1">
+            <EnvironmentOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+            <Text type="secondary" style={{ fontSize: 10 }}>
               {selectedArea.name}
             </Text>
           </div>
         )}
       </div>
 
-      {/* Mobile drawer - comes from right to match hamburger position */}
+      {/* Mobile drawer */}
       <Drawer
         title="Settings"
         placement="right"
         onClose={() => setMobileMenuOpen(false)}
         open={mobileMenuOpen}
-        width={300}
+        width={260}
       >
         <ControlsContent />
       </Drawer>
@@ -221,7 +213,7 @@ export default function Home() {
       <div className="map-container">
         {loading && (
           <div className="loading-overlay">
-            <Spin size="large" />
+            <Spin size="small" />
           </div>
         )}
 
