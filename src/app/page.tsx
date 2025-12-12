@@ -79,17 +79,14 @@ const ControlsContent = memo(function ControlsContent({
 
       {skiAreaDetails && (
         <>
-          <div className="stats-summary flex-shrink-0">
-            <Text strong style={{ fontSize: 11 }}>{skiAreaDetails.name}</Text>
-            <div className="flex gap-4 mt-1">
-              <div className="flex items-center gap-1">
-                <NodeIndexOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-                <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.runs.length} runs</Text>
-              </div>
-              <div className="flex items-center gap-1">
-                <SwapOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-                <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
-              </div>
+          <div className="stats-summary flex-shrink-0 flex gap-4">
+            <div className="flex items-center gap-1">
+              <NodeIndexOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+              <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.runs.length} runs</Text>
+            </div>
+            <div className="flex items-center gap-1">
+              <SwapOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+              <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
             </div>
           </div>
 
