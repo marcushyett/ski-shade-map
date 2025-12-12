@@ -748,30 +748,47 @@ h5.ant-typography {
   }
 }
 
-/* Location controls - mobile: below search bar */
+/* Location controls - mobile: below search bar with proper spacing */
 .location-controls-container {
   position: absolute;
-  top: 48px;
+  top: 42px;
+  left: 6px;
   right: 6px;
   z-index: 10;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
 }
 
 .location-controls-container .location-controls {
   flex-direction: row;
-  gap: 4px;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.location-controls-container .location-btn {
+  width: 32px;
+  height: 32px;
 }
 
 /* Desktop: right side, vertical */
 @media (min-width: 768px) {
   .location-controls-container {
     top: auto;
+    left: auto;
     bottom: 110px;
     right: 10px;
+    display: block;
   }
   
   .location-controls-container .location-controls {
     flex-direction: column;
     gap: 6px;
+  }
+  
+  .location-controls-container .location-btn {
+    width: 36px;
+    height: 36px;
   }
 }
 
