@@ -664,16 +664,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       highlightPopupRef.current.remove();
       highlightPopupRef.current = null;
     }
-    // Highlight segments for the selected run
+    
+    // Highlight segments for the selected run using width increase and orange glow
     const highlightWidth = highlightedFeatureId 
-      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 6, 4]
+      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 8, 4]
       : 4;
     const highlightGlowWidth = highlightedFeatureId 
-      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 14, 10]
+      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 20, 10]
       : 10;
+    const highlightGlowOpacity = highlightedFeatureId 
+      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 0.9, 0.6]
+      : 0.6;
     
     if (map.current.getLayer('ski-segments-sunny-glow')) {
       map.current.setPaintProperty('ski-segments-sunny-glow', 'line-width', highlightGlowWidth);
+      map.current.setPaintProperty('ski-segments-sunny-glow', 'line-opacity', highlightGlowOpacity);
     }
     if (map.current.getLayer('ski-segments-sunny')) {
       map.current.setPaintProperty('ski-segments-sunny', 'line-width', highlightWidth);
@@ -681,19 +686,16 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     if (map.current.getLayer('ski-segments-shaded')) {
       map.current.setPaintProperty('ski-segments-shaded', 'line-width', highlightWidth);
     }
-
-    // Remove existing highlight layers
-    if (map.current.getLayer('highlight-glow-outer')) {
-      map.current.removeLayer('highlight-glow-outer');
-    }
-    if (map.current.getLayer('highlight-glow-inner')) {
-      map.current.removeLayer('highlight-glow-inner');
-    }
-    if (map.current.getSource('highlight-source')) {
-      map.current.removeSource('highlight-source');
+    
+    // For lifts, update lift layer width
+    if (map.current.getLayer('ski-lifts')) {
+      const liftWidth = highlightedFeatureId 
+        ? ['case', ['==', ['get', 'id'], highlightedFeatureId], 5, 2]
+        : 2;
+      map.current.setPaintProperty('ski-lifts', 'line-width', liftWidth);
     }
 
-    // Reset line widths when no highlight
+    // Reset when no highlight
     if (!highlightedFeatureId) {
       return;
     }
@@ -706,48 +708,6 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const feature = run || lift;
 
     if (!feature) return;
-
-    // Create a GeoJSON source for the highlighted feature
-    const highlightGeojson: GeoJSON.FeatureCollection = {
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature',
-        properties: { id: feature.id },
-        geometry: feature.geometry,
-      }],
-    };
-
-    // Add the highlight source
-    map.current.addSource('highlight-source', {
-      type: 'geojson',
-      data: highlightGeojson,
-    });
-
-    // Add outer glow layer (wide, semi-transparent orange)
-    map.current.addLayer({
-      id: 'highlight-glow-outer',
-      type: 'line',
-      source: 'highlight-source',
-      paint: {
-        'line-color': '#f97316',
-        'line-width': 16,
-        'line-opacity': 0.4,
-        'line-blur': 8,
-      },
-    });
-
-    // Add inner glow layer (narrower, brighter orange)
-    map.current.addLayer({
-      id: 'highlight-glow-inner',
-      type: 'line',
-      source: 'highlight-source',
-      paint: {
-        'line-color': '#f97316',
-        'line-width': 8,
-        'line-opacity': 0.7,
-        'line-blur': 2,
-      },
-    });
 
     // Get center point of the geometry for popup and zoom
     const geometry = feature.geometry;

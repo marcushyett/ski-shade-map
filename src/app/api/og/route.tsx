@@ -36,57 +36,50 @@ export async function GET(request: NextRequest) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '16px 32px',
+            padding: '20px 40px',
             backgroundColor: '#000000',
             borderBottom: '1px solid #222',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center' }}>
+            {/* Mountain logo */}
+            <svg width="40" height="40" viewBox="0 0 40 40">
+              <defs>
+                <linearGradient id="shade" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#f0f0f0" />
+                  <stop offset="61.8%" stopColor="#f0f0f0" />
+                  <stop offset="61.8%" stopColor="#404040" />
+                  <stop offset="100%" stopColor="#404040" />
+                </linearGradient>
+              </defs>
+              <polygon points="20,5 35,35 5,35" fill="url(#shade)" />
+            </svg>
+            
             {/* Brand text */}
-            padding: '20px 40px',
-            backgroundColor: '#000000',
-          }}
-        >
-          {/* Mountain logo */}
-          <svg width="40" height="40" viewBox="0 0 40 40">
-            <defs>
-              <linearGradient id="shade" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#f0f0f0" />
-                <stop offset="61.8%" stopColor="#f0f0f0" />
-                <stop offset="61.8%" stopColor="#404040" />
-                <stop offset="100%" stopColor="#404040" />
-              </linearGradient>
-            </defs>
-            <polygon points="20,5 35,35 5,35" fill="url(#shade)" />
-          </svg>
-          
-          {/* Brand text */}
-          <div style={{ display: 'flex', marginLeft: 16 }}>
-            <div
-              style={{
-                backgroundColor: '#ffffff',
-                color: '#0a0a0a',
-                padding: '6px 12px',
-                fontSize: 24,
-                padding: '4px 8px',
-                fontWeight: 'bold',
-              }}
-            >
-              SKI
-            </div>
-            <div
-              style={{
-                backgroundColor: '#0a0a0a',
-                color: '#ffffff',
-                border: '1px solid #444',
-                padding: '6px 12px',
-                fontSize: 24,
-                border: '1px solid #333',
-                padding: '4px 8px',
-                fontWeight: 'bold',
-              }}
-            >
-              SHADE
+            <div style={{ display: 'flex', marginLeft: 16 }}>
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  color: '#0a0a0a',
+                  padding: '4px 8px',
+                  fontSize: 24,
+                  fontWeight: 'bold',
+                }}
+              >
+                SKI
+              </div>
+              <div
+                style={{
+                  backgroundColor: '#0a0a0a',
+                  color: '#ffffff',
+                  border: '1px solid #333',
+                  padding: '4px 8px',
+                  fontSize: 24,
+                  fontWeight: 'bold',
+                }}
+              >
+                SHADE
+              </div>
             </div>
           </div>
           
@@ -97,92 +90,17 @@ export async function GET(request: NextRequest) {
           )}
         </div>
 
-        {/* Main content - Map-like visualization */}
-        </div>
-
         {/* Main content */}
         <div
           style={{
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            position: 'relative',
-            background: 'linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%)',
-          }}
-        >
-          {/* Topographic-style contour lines */}
-          <svg
-            width="100%"
-            height="100%"
-            viewBox="0 0 1200 500"
-            style={{ position: 'absolute', top: 0, left: 0 }}
-          >
-            {/* Contour lines */}
-            <path d="M0,400 Q300,350 600,380 T1200,360" fill="none" stroke="#252525" strokeWidth="1" />
-            <path d="M0,350 Q300,300 600,330 T1200,310" fill="none" stroke="#252525" strokeWidth="1" />
-            <path d="M0,300 Q300,250 600,280 T1200,260" fill="none" stroke="#252525" strokeWidth="1" />
-            <path d="M0,250 Q300,200 600,230 T1200,210" fill="none" stroke="#252525" strokeWidth="1" />
-            <path d="M0,200 Q300,150 600,180 T1200,160" fill="none" stroke="#252525" strokeWidth="1" />
-            <path d="M0,150 Q300,100 600,130 T1200,110" fill="none" stroke="#252525" strokeWidth="1" />
-            
-            {/* Ski runs - alternating sunny (white) and shaded (dark) */}
-            <line x1="200" y1="80" x2="150" y2="450" stroke="#ffffff" strokeWidth="16" strokeLinecap="round" opacity="0.9" />
-            <line x1="350" y1="100" x2="400" y2="480" stroke="#1a1a1a" strokeWidth="16" strokeLinecap="round" opacity="0.9" />
-            <line x1="500" y1="60" x2="480" y2="460" stroke="#ffffff" strokeWidth="16" strokeLinecap="round" opacity="0.9" />
-            <line x1="650" y1="90" x2="700" y2="490" stroke="#1a1a1a" strokeWidth="16" strokeLinecap="round" opacity="0.9" />
-            <line x1="800" y1="70" x2="780" y2="450" stroke="#ffffff" strokeWidth="16" strokeLinecap="round" opacity="0.9" />
-            <line x1="950" y1="110" x2="1000" y2="470" stroke="#1a1a1a" strokeWidth="16" strokeLinecap="round" opacity="0.9" />
-            <line x1="1100" y1="80" x2="1080" y2="440" stroke="#ffffff" strokeWidth="16" strokeLinecap="round" opacity="0.9" />
-            
-            {/* Lifts (dashed lines) */}
-            <line x1="280" y1="420" x2="320" y2="120" stroke="#666" strokeWidth="3" strokeDasharray="8,4" />
-            <line x1="580" y1="440" x2="620" y2="100" stroke="#666" strokeWidth="3" strokeDasharray="8,4" />
-            <line x1="880" y1="430" x2="920" y2="110" stroke="#666" strokeWidth="3" strokeDasharray="8,4" />
-          </svg>
-
-          {/* Sun indicator */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 40,
-              right: 60,
-              width: 60,
-              height: 60,
-              borderRadius: '50%',
-              backgroundColor: '#ffffff',
-              boxShadow: '0 0 40px rgba(255,255,255,0.4)',
-            }}
-          />
-
-          {/* Area name overlay */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 80,
-              left: 0,
-              right: 0,
-              display: 'flex',
-              justifyContent: 'center',
-            }}
-          >
-            <div
-              style={{
-                fontSize: 48,
-                fontWeight: 'bold',
-                color: '#ffffff',
-                textShadow: '0 2px 20px rgba(0,0,0,0.9)',
-                padding: '12px 32px',
-                background: 'rgba(0,0,0,0.6)',
-                borderRadius: 4,
-              }}
-            >
-              {areaName}
-            </div>
-          </div>
             alignItems: 'center',
             justifyContent: 'center',
             padding: '40px',
             position: 'relative',
+            background: 'linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%)',
           }}
         >
           {/* Background mountains */}
@@ -201,11 +119,11 @@ export async function GET(request: NextRequest) {
               fill="#252525"
             />
             
-            {/* Ski runs with sun/shade */}
-            <line x1="400" y1="150" x2="350" y2="350" stroke="#ffffff" strokeWidth="12" opacity="0.8" />
-            <line x1="550" y1="120" x2="600" y2="380" stroke="#1a1a1a" strokeWidth="12" opacity="0.8" />
-            <line x1="700" y1="160" x2="680" y2="400" stroke="#ffffff" strokeWidth="12" opacity="0.8" />
-            <line x1="850" y1="100" x2="900" y2="420" stroke="#1a1a1a" strokeWidth="12" opacity="0.8" />
+            {/* Ski runs with sun/shade - single colored lines */}
+            <line x1="400" y1="150" x2="350" y2="350" stroke="#81C784" strokeWidth="6" opacity="0.9" />
+            <line x1="550" y1="120" x2="600" y2="380" stroke="#0D47A1" strokeWidth="6" opacity="0.9" />
+            <line x1="700" y1="160" x2="680" y2="400" stroke="#FF8A80" strokeWidth="6" opacity="0.9" />
+            <line x1="850" y1="100" x2="900" y2="420" stroke="#7F0000" strokeWidth="6" opacity="0.9" />
           </svg>
 
           {/* Sun */}
@@ -256,15 +174,9 @@ export async function GET(request: NextRequest) {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            padding: '12px 32px',
-            backgroundColor: '#000000',
-            borderTop: '1px solid #222',
-          }}
-        >
-          <div style={{ fontSize: 16, color: '#666' }}>
-            See where the sun will be on the slopes
             padding: '20px 40px',
             backgroundColor: '#000000',
+            borderTop: '1px solid #222',
           }}
         >
           <div style={{ fontSize: 18, color: '#666666' }}>
