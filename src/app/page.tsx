@@ -462,14 +462,34 @@ export default function Home() {
           onViewChange={handleViewChange}
         />
 
-        {/* Legend */}
-        <div className="legend-container hidden md:block">
+        {/* Legend and action buttons */}
+        <div className="legend-container hidden md:flex md:items-start md:gap-3">
           <Legend />
+          {skiAreaDetails && (
+            <div className="flex gap-2">
+              <CacheButton
+                skiAreaId={skiAreaDetails.id}
+                skiAreaName={skiAreaDetails.name}
+                latitude={skiAreaDetails.latitude}
+                longitude={skiAreaDetails.longitude}
+              />
+              <ShareButton
+                skiAreaId={skiAreaDetails.id}
+                skiAreaName={skiAreaDetails.name}
+                latitude={mapView?.lat ?? skiAreaDetails.latitude}
+                longitude={mapView?.lng ?? skiAreaDetails.longitude}
+                zoom={mapView?.zoom ?? 14}
+                selectedTime={selectedTime}
+                highlightedFeatureId={highlightedFeatureId}
+                highlightedFeatureType={highlightedFeatureType}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Cache and Share buttons */}
+        {/* Mobile: Cache and Share buttons only (legend hidden on mobile) */}
         {skiAreaDetails && (
-          <div className="cache-button-container">
+          <div className="cache-button-container md:hidden">
             <div className="flex gap-2">
               <CacheButton
                 skiAreaId={skiAreaDetails.id}
