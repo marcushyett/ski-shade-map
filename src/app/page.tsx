@@ -8,7 +8,7 @@ import {
   EnvironmentOutlined,
   NodeIndexOutlined,
   SwapOutlined,
-  CloudOutlined
+  CloudOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import SkiAreaPicker from '@/components/Controls/SkiAreaPicker';
@@ -21,7 +21,9 @@ import TrailsLiftsList from '@/components/Controls/TrailsLiftsList';
 import WeatherPanel from '@/components/Controls/WeatherPanel';
 import OfflineBanner from '@/components/OfflineBanner';
 import CacheButton from '@/components/CacheButton';
+import ShareButton from '@/components/ShareButton';
 import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
+import { parseUrlState, minutesToDate } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 
@@ -153,12 +155,15 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
+  const [highlightedFeatureType, setHighlightedFeatureType] = useState<'run' | 'lift' | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [units, setUnits] = useState<UnitPreferences>({
     temperature: 'celsius',
     speed: 'kmh',
     length: 'cm',
   });
+  const [mapView, setMapView] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+  const [initialMapView, setInitialMapView] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
   
   // Offline support
   const { isOffline, wasOffline, lastOnline, clearOfflineWarning } = useOffline();
@@ -168,24 +173,73 @@ export default function Home() {
     registerServiceWorker();
   }, []);
 
-  // Load initial state and units
+  // Load initial state from URL or localStorage
   useEffect(() => {
-    setSelectedTime(new Date());
+    // First, check URL for shared state
+    const urlState = parseUrlState();
     
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const state: StoredState = JSON.parse(stored);
-        setSelectedArea({
-          id: state.areaId,
-          name: state.areaName,
-          country: null,
-          region: null,
-          latitude: state.latitude,
-          longitude: state.longitude,
-        });
+    if (urlState.areaId) {
+      // Load from URL (shared link)
+      setSelectedArea({
+        id: urlState.areaId,
+        name: '', // Will be loaded from API
+        country: null,
+        region: null,
+        latitude: urlState.lat || 0,
+        longitude: urlState.lng || 0,
+      });
+      
+      // Set initial map view from URL
+      if (urlState.lat && urlState.lng && urlState.zoom) {
+        setInitialMapView({ lat: urlState.lat, lng: urlState.lng, zoom: urlState.zoom });
       }
       
+      // Set time from URL
+      if (urlState.time !== null) {
+        setSelectedTime(minutesToDate(urlState.time));
+      } else {
+        setSelectedTime(new Date());
+      }
+      
+      // Set highlight from URL
+      if (urlState.highlightId && urlState.highlightType) {
+        setHighlightedFeatureId(urlState.highlightId);
+        setHighlightedFeatureType(urlState.highlightType);
+        // Auto-clear highlight after 5 seconds
+        setTimeout(() => {
+          setHighlightedFeatureId(null);
+          setHighlightedFeatureType(null);
+        }, 5000);
+      }
+      
+      // Clear URL params after reading (cleaner URLs on refresh)
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } else {
+      // Load from localStorage
+      setSelectedTime(new Date());
+      
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const state: StoredState = JSON.parse(stored);
+          setSelectedArea({
+            id: state.areaId,
+            name: state.areaName,
+            country: null,
+            region: null,
+            latitude: state.latitude,
+            longitude: state.longitude,
+          });
+        }
+      } catch (e) {
+        // Ignore localStorage errors
+      }
+    }
+    
+    // Load unit preferences
+    try {
       const storedUnits = localStorage.getItem(UNITS_STORAGE_KEY);
       if (storedUnits) {
         setUnits(JSON.parse(storedUnits));
@@ -193,6 +247,7 @@ export default function Home() {
     } catch (e) {
       // Ignore localStorage errors
     }
+    
     setInitialLoadDone(true);
   }, []);
 
@@ -251,12 +306,24 @@ export default function Home() {
 
   const handleSelectRun = useCallback((run: RunData) => {
     setHighlightedFeatureId(run.id);
-    setTimeout(() => setHighlightedFeatureId(null), 3000);
+    setHighlightedFeatureType('run');
+    setTimeout(() => {
+      setHighlightedFeatureId(null);
+      setHighlightedFeatureType(null);
+    }, 3000);
   }, []);
 
   const handleSelectLift = useCallback((lift: LiftData) => {
     setHighlightedFeatureId(lift.id);
-    setTimeout(() => setHighlightedFeatureId(null), 3000);
+    setHighlightedFeatureType('lift');
+    setTimeout(() => {
+      setHighlightedFeatureId(null);
+      setHighlightedFeatureType(null);
+    }, 3000);
+  }, []);
+
+  const handleViewChange = useCallback((view: { lat: number; lng: number; zoom: number }) => {
+    setMapView(view);
   }, []);
 
   const handleErrorClose = useCallback(() => {
@@ -391,6 +458,8 @@ export default function Home() {
           is3D={is3D}
           highlightedFeatureId={highlightedFeatureId}
           cloudCover={currentCloudCover}
+          initialView={initialMapView}
+          onViewChange={handleViewChange}
         />
 
         {/* Legend */}
@@ -398,15 +467,27 @@ export default function Home() {
           <Legend />
         </div>
 
-        {/* Cache button */}
+        {/* Cache and Share buttons */}
         {skiAreaDetails && (
           <div className="cache-button-container">
-            <CacheButton
-              skiAreaId={skiAreaDetails.id}
-              skiAreaName={skiAreaDetails.name}
-              latitude={skiAreaDetails.latitude}
-              longitude={skiAreaDetails.longitude}
-            />
+            <div className="flex gap-2">
+              <CacheButton
+                skiAreaId={skiAreaDetails.id}
+                skiAreaName={skiAreaDetails.name}
+                latitude={skiAreaDetails.latitude}
+                longitude={skiAreaDetails.longitude}
+              />
+              <ShareButton
+                skiAreaId={skiAreaDetails.id}
+                skiAreaName={skiAreaDetails.name}
+                latitude={mapView?.lat ?? skiAreaDetails.latitude}
+                longitude={mapView?.lng ?? skiAreaDetails.longitude}
+                zoom={mapView?.zoom ?? 14}
+                selectedTime={selectedTime}
+                highlightedFeatureId={highlightedFeatureId}
+                highlightedFeatureType={highlightedFeatureType}
+              />
+            </div>
           </div>
         )}
 

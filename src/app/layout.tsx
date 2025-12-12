@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "SKISHADE",
-  description: "Interactive map showing sun exposure on ski runs throughout the day",
+  description: "Find sunny or shaded ski slopes throughout the day. See where the sun will be on the mountain!",
   keywords: ["ski", "skiing", "sun", "shade", "map", "slopes", "winter sports"],
   authors: [{ name: "Marcus Hyett" }],
   manifest: '/manifest.json',
@@ -17,6 +17,26 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon.svg',
     apple: '/apple-touch-icon.svg',
+  },
+  openGraph: {
+    title: 'SKISHADE',
+    description: 'Find sunny or shaded ski slopes throughout the day. See where the sun will be on the mountain!',
+    type: 'website',
+    siteName: 'SKISHADE',
+    images: [
+      {
+        url: '/api/og',
+        width: 1200,
+        height: 630,
+        alt: 'SKISHADE - Find sunny or shaded ski slopes',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'SKISHADE',
+    description: 'Find sunny or shaded ski slopes throughout the day',
+    images: ['/api/og'],
   },
   other: {
     'mobile-web-app-capable': 'yes',

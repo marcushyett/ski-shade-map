@@ -17,6 +17,12 @@ interface CloudCover {
   visibility: number;
 }
 
+interface MapViewState {
+  lat: number;
+  lng: number;
+  zoom: number;
+}
+
 interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
   selectedTime: Date;
@@ -24,6 +30,8 @@ interface SkiMapProps {
   onMapReady?: () => void;
   highlightedFeatureId?: string | null;
   cloudCover?: CloudCover | null;
+  initialView?: MapViewState | null;
+  onViewChange?: (view: MapViewState) => void;
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -43,7 +51,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -80,9 +88,14 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       onMapReady?.();
     });
 
-    // Update sun indicator on map move/zoom
+    // Update sun indicator on map move/zoom and report view changes
     map.current.on('moveend', () => {
       updateSunIndicatorPosition();
+      if (map.current && onViewChange) {
+        const center = map.current.getCenter();
+        const zoom = map.current.getZoom();
+        onViewChange({ lat: center.lat, lng: center.lng, zoom });
+      }
     });
 
     return () => {
@@ -230,15 +243,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       currentSkiAreaId.current = skiArea.id;
       layersInitialized.current = false;
 
+      // Use initial view if provided (from URL state), otherwise fly to ski area center
+      const center = initialView 
+        ? [initialView.lng, initialView.lat] as [number, number]
+        : [skiArea.longitude, skiArea.latitude] as [number, number];
+      const zoom = initialView?.zoom ?? 14;
+
       map.current.flyTo({
-        center: [skiArea.longitude, skiArea.latitude],
-        zoom: 14,
-        duration: 2000,
+        center,
+        zoom,
+        duration: initialView ? 0 : 2000, // Instant if from URL
       });
 
       initializeLayers(skiArea, selectedTime);
     }
-  }, [skiArea, mapLoaded]);
+  }, [skiArea, mapLoaded, initialView]);
 
   // Debounced update when time changes
   useEffect(() => {
