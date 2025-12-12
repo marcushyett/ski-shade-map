@@ -1,19 +1,22 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Input, Typography, Collapse, Tag, Empty } from 'antd';
+import { useState, useMemo, useCallback, memo } from 'react';
+import { Input, Typography, Button } from 'antd';
 import { 
   SearchOutlined, 
   NodeIndexOutlined, 
   SwapOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
+  DownOutlined,
+  RightOutlined,
   QuestionCircleOutlined
 } from '@ant-design/icons';
 import type { RunData, LiftData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 
 const { Text } = Typography;
+
+// Max items to show initially per group
+const INITIAL_LIMIT = 10;
 
 interface TrailsLiftsListProps {
   runs: RunData[];
@@ -22,6 +25,49 @@ interface TrailsLiftsListProps {
   onSelectLift?: (lift: LiftData) => void;
 }
 
+// Memoized run item to prevent re-renders
+const RunItem = memo(function RunItem({ 
+  run, 
+  onClick 
+}: { 
+  run: RunData; 
+  onClick: () => void;
+}) {
+  return (
+    <div 
+      className="flex items-center justify-between py-0.5 px-1 rounded cursor-pointer hover:bg-white/5"
+      onClick={onClick}
+    >
+      <span style={{ fontSize: 10, color: '#e5e5e5' }} className="truncate flex-1 mr-2">
+        {run.name || 'Unnamed'}
+      </span>
+    </div>
+  );
+});
+
+// Memoized lift item
+const LiftItem = memo(function LiftItem({ 
+  lift, 
+  onClick 
+}: { 
+  lift: LiftData; 
+  onClick: () => void;
+}) {
+  return (
+    <div 
+      className="flex items-center justify-between py-0.5 px-1 rounded cursor-pointer hover:bg-white/5"
+      onClick={onClick}
+    >
+      <span style={{ fontSize: 10, color: '#e5e5e5' }} className="truncate flex-1 mr-2">
+        {lift.name || 'Unnamed'}
+      </span>
+      {lift.liftType && (
+        <span style={{ fontSize: 9, color: '#666' }}>{lift.liftType}</span>
+      )}
+    </div>
+  );
+});
+
 export default function TrailsLiftsList({ 
   runs, 
   lifts, 
@@ -29,6 +75,11 @@ export default function TrailsLiftsList({
   onSelectLift 
 }: TrailsLiftsListProps) {
   const [searchText, setSearchText] = useState('');
+  const [runsExpanded, setRunsExpanded] = useState(false);
+  const [liftsExpanded, setLiftsExpanded] = useState(false);
+  const [expandedDifficulties, setExpandedDifficulties] = useState<Set<string>>(new Set());
+  const [showAllRuns, setShowAllRuns] = useState<Record<string, boolean>>({});
+  const [showAllLifts, setShowAllLifts] = useState(false);
 
   // Filter runs and lifts by search
   const filteredRuns = useMemo(() => {
@@ -49,7 +100,7 @@ export default function TrailsLiftsList({
     );
   }, [lifts, searchText]);
 
-  // Group runs by difficulty
+  // Group runs by difficulty - only compute counts initially
   const runsByDifficulty = useMemo(() => {
     const groups: Record<string, RunData[]> = {
       novice: [],
@@ -72,30 +123,6 @@ export default function TrailsLiftsList({
     return groups;
   }, [filteredRuns]);
 
-  // Group lifts by type
-  const liftsByType = useMemo(() => {
-    const groups: Record<string, LiftData[]> = {};
-    
-    filteredLifts.forEach(lift => {
-      const type = lift.liftType || 'Other';
-      if (!groups[type]) groups[type] = [];
-      groups[type].push(lift);
-    });
-    
-    return groups;
-  }, [filteredLifts]);
-
-  const getStatusIcon = (status: string | null) => {
-    switch (status) {
-      case 'open':
-        return <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 10 }} />;
-      case 'closed':
-        return <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 10 }} />;
-      default:
-        return <QuestionCircleOutlined style={{ color: '#666', fontSize: 10 }} />;
-    }
-  };
-
   const difficultyLabels: Record<string, string> = {
     novice: 'Novice',
     easy: 'Easy',
@@ -105,104 +132,31 @@ export default function TrailsLiftsList({
     unknown: 'Unknown',
   };
 
-  const collapseItems = [
-    {
-      key: 'runs',
-      label: (
-        <div className="flex items-center gap-2">
-          <NodeIndexOutlined style={{ fontSize: 12 }} />
-          <Text style={{ fontSize: 11 }}>Runs ({filteredRuns.length})</Text>
-        </div>
-      ),
-      children: (
-        <div className="runs-list">
-          {Object.entries(runsByDifficulty).map(([difficulty, groupRuns]) => {
-            if (groupRuns.length === 0) return null;
-            return (
-              <div key={difficulty} className="mb-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <div 
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: getDifficultyColor(difficulty) }}
-                  />
-                  <Text type="secondary" style={{ fontSize: 10 }}>
-                    {difficultyLabels[difficulty]} ({groupRuns.length})
-                  </Text>
-                </div>
-                <div className="flex flex-col gap-0.5 ml-4">
-                  {groupRuns.map(run => (
-                    <div 
-                      key={run.id}
-                      className="run-item flex items-center justify-between py-0.5 px-1 rounded cursor-pointer hover:bg-white/5"
-                      onClick={() => onSelectRun?.(run)}
-                    >
-                      <Text style={{ fontSize: 10 }} ellipsis={{ tooltip: run.name }}>
-                        {run.name || 'Unnamed'}
-                      </Text>
-                      {getStatusIcon(run.status)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-          {filteredRuns.length === 0 && (
-            <Empty 
-              image={Empty.PRESENTED_IMAGE_SIMPLE} 
-              description={<Text type="secondary" style={{ fontSize: 10 }}>No runs found</Text>}
-            />
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'lifts',
-      label: (
-        <div className="flex items-center gap-2">
-          <SwapOutlined style={{ fontSize: 12 }} />
-          <Text style={{ fontSize: 11 }}>Lifts ({filteredLifts.length})</Text>
-        </div>
-      ),
-      children: (
-        <div className="lifts-list">
-          {Object.entries(liftsByType).map(([type, groupLifts]) => (
-            <div key={type} className="mb-2">
-              <Text type="secondary" style={{ fontSize: 10, textTransform: 'capitalize' }}>
-                {type.replace(/_/g, ' ')} ({groupLifts.length})
-              </Text>
-              <div className="flex flex-col gap-0.5 mt-1">
-                {groupLifts.map(lift => (
-                  <div 
-                    key={lift.id}
-                    className="lift-item flex items-center justify-between py-0.5 px-1 rounded cursor-pointer hover:bg-white/5"
-                    onClick={() => onSelectLift?.(lift)}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <Text style={{ fontSize: 10 }} ellipsis={{ tooltip: lift.name }}>
-                        {lift.name || 'Unnamed'}
-                      </Text>
-                      {lift.capacity && (
-                        <Tag style={{ fontSize: 8, padding: '0 3px', margin: 0 }}>
-                          {lift.capacity}/hr
-                        </Tag>
-                      )}
-                    </div>
-                    {getStatusIcon(lift.status)}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          {filteredLifts.length === 0 && (
-            <Empty 
-              image={Empty.PRESENTED_IMAGE_SIMPLE} 
-              description={<Text type="secondary" style={{ fontSize: 10 }}>No lifts found</Text>}
-            />
-          )}
-        </div>
-      ),
-    },
-  ];
+  const toggleDifficulty = useCallback((diff: string) => {
+    setExpandedDifficulties(prev => {
+      const next = new Set(prev);
+      if (next.has(diff)) {
+        next.delete(diff);
+      } else {
+        next.add(diff);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectRun = useCallback((run: RunData) => {
+    onSelectRun?.(run);
+  }, [onSelectRun]);
+
+  const handleSelectLift = useCallback((lift: LiftData) => {
+    onSelectLift?.(lift);
+  }, [onSelectLift]);
+
+  // Get visible lifts
+  const visibleLifts = useMemo(() => {
+    if (showAllLifts) return filteredLifts;
+    return filteredLifts.slice(0, INITIAL_LIMIT);
+  }, [filteredLifts, showAllLifts]);
 
   return (
     <div className="trails-lifts-list">
@@ -216,18 +170,116 @@ export default function TrailsLiftsList({
         style={{ marginBottom: 8 }}
       />
 
-      <Collapse 
-        items={collapseItems}
-        defaultActiveKey={['runs', 'lifts']}
-        size="small"
-        bordered={false}
-        ghost
-      />
+      {/* Runs Section */}
+      <div className="mb-2">
+        <div 
+          className="flex items-center gap-2 py-1 cursor-pointer hover:bg-white/5 rounded"
+          onClick={() => setRunsExpanded(!runsExpanded)}
+        >
+          {runsExpanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
+          <NodeIndexOutlined style={{ fontSize: 11 }} />
+          <Text style={{ fontSize: 11 }}>Runs ({filteredRuns.length})</Text>
+        </div>
+        
+        {runsExpanded && (
+          <div className="ml-4 mt-1">
+            {Object.entries(runsByDifficulty).map(([difficulty, groupRuns]) => {
+              if (groupRuns.length === 0) return null;
+              const isExpanded = expandedDifficulties.has(difficulty);
+              const showAll = showAllRuns[difficulty];
+              const visibleRuns = showAll ? groupRuns : groupRuns.slice(0, INITIAL_LIMIT);
+              
+              return (
+                <div key={difficulty} className="mb-1">
+                  <div 
+                    className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-white/5 rounded"
+                    onClick={() => toggleDifficulty(difficulty)}
+                  >
+                    {isExpanded ? <DownOutlined style={{ fontSize: 7 }} /> : <RightOutlined style={{ fontSize: 7 }} />}
+                    <div 
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: getDifficultyColor(difficulty) }}
+                    />
+                    <Text type="secondary" style={{ fontSize: 10 }}>
+                      {difficultyLabels[difficulty]} ({groupRuns.length})
+                    </Text>
+                  </div>
+                  
+                  {isExpanded && (
+                    <div className="ml-4">
+                      {visibleRuns.map(run => (
+                        <RunItem 
+                          key={run.id} 
+                          run={run} 
+                          onClick={() => handleSelectRun(run)} 
+                        />
+                      ))}
+                      {groupRuns.length > INITIAL_LIMIT && !showAll && (
+                        <Button 
+                          type="link" 
+                          size="small"
+                          style={{ fontSize: 9, padding: 0, height: 'auto' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowAllRuns(prev => ({ ...prev, [difficulty]: true }));
+                          }}
+                        >
+                          Show {groupRuns.length - INITIAL_LIMIT} more
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {filteredRuns.length === 0 && (
+              <Text type="secondary" style={{ fontSize: 10 }}>No runs found</Text>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Lifts Section */}
+      <div className="mb-2">
+        <div 
+          className="flex items-center gap-2 py-1 cursor-pointer hover:bg-white/5 rounded"
+          onClick={() => setLiftsExpanded(!liftsExpanded)}
+        >
+          {liftsExpanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
+          <SwapOutlined style={{ fontSize: 11 }} />
+          <Text style={{ fontSize: 11 }}>Lifts ({filteredLifts.length})</Text>
+        </div>
+        
+        {liftsExpanded && (
+          <div className="ml-4 mt-1">
+            {visibleLifts.map(lift => (
+              <LiftItem 
+                key={lift.id} 
+                lift={lift} 
+                onClick={() => handleSelectLift(lift)} 
+              />
+            ))}
+            {filteredLifts.length > INITIAL_LIMIT && !showAllLifts && (
+              <Button 
+                type="link" 
+                size="small"
+                style={{ fontSize: 9, padding: 0, height: 'auto' }}
+                onClick={() => setShowAllLifts(true)}
+              >
+                Show {filteredLifts.length - INITIAL_LIMIT} more
+              </Button>
+            )}
+            {filteredLifts.length === 0 && (
+              <Text type="secondary" style={{ fontSize: 10 }}>No lifts found</Text>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* OpenSkiMap credits */}
-      <div className="mt-4 pt-2 border-t border-white/10">
+      <div className="mt-3 pt-2 border-t border-white/10">
         <Text type="secondary" style={{ fontSize: 9 }}>
-          Trail and lift data from{' '}
+          Data from{' '}
           <a 
             href="https://openskimap.org" 
             target="_blank" 
@@ -236,18 +288,14 @@ export default function TrailsLiftsList({
           >
             OpenSkiMap
           </a>
-          {' '}© OpenStreetMap contributors
+          {' '}© OSM
         </Text>
-      </div>
-
-      {/* Status info */}
-      <div className="mt-2">
+        <br />
         <Text type="secondary" style={{ fontSize: 9 }}>
           <QuestionCircleOutlined style={{ marginRight: 4 }} />
-          Real-time status data not available
+          Live status not available
         </Text>
       </div>
     </div>
   );
 }
-
