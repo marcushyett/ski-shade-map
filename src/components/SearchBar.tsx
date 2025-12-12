@@ -37,7 +37,7 @@ interface SearchBarProps {
   skiAreaLongitude?: number;
   onSelectRun?: (run: RunData) => void;
   onSelectLift?: (lift: LiftData) => void;
-  onSelectPlace?: (coordinates: [number, number], name: string) => void;
+  onSelectPlace?: (coordinates: [number, number], name: string, placeType?: PlaceType) => void;
   placeholder?: string;
 }
 
@@ -236,7 +236,7 @@ function SearchBarInner({
         const lift = lifts.find((l) => l.id === result.id);
         if (lift) onSelectLift?.(lift);
       } else if (result.type === 'place' && result.coordinates) {
-        onSelectPlace?.(result.coordinates, result.name);
+        onSelectPlace?.(result.coordinates, result.name, result.placeType);
       }
       
       setSearchText('');

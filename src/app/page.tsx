@@ -161,6 +161,7 @@ export default function Home() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
   const [highlightedFeatureType, setHighlightedFeatureType] = useState<'run' | 'lift' | null>(null);
+  const [searchPlaceMarker, setSearchPlaceMarker] = useState<{ latitude: number; longitude: number; name: string; placeType?: string } | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [units, setUnits] = useState<UnitPreferences>({
     temperature: 'celsius',
@@ -402,8 +403,24 @@ export default function Home() {
   }, []);
 
   // Search handlers
-  const handleSelectPlace = useCallback((coordinates: [number, number]) => {
+  const handleSelectPlace = useCallback((coordinates: [number, number], name: string, placeType?: string) => {
+    // Clear any highlighted feature when selecting a place
+    setHighlightedFeatureId(null);
+    setHighlightedFeatureType(null);
+    
+    // Set the search place marker
+    setSearchPlaceMarker({
+      latitude: coordinates[1],
+      longitude: coordinates[0],
+      name,
+      placeType,
+    });
+    
     mapRef.current?.flyTo(coordinates[1], coordinates[0], 16);
+  }, []);
+
+  const handleClearSearchPlace = useCallback(() => {
+    setSearchPlaceMarker(null);
   }, []);
 
   // Location handlers
@@ -594,6 +611,7 @@ export default function Home() {
           selectedTime={selectedTime}
           is3D={is3D}
           highlightedFeatureId={highlightedFeatureId}
+          highlightedFeatureType={highlightedFeatureType}
           cloudCover={currentCloudCover}
           initialView={initialMapView}
           onViewChange={handleViewChange}
@@ -603,6 +621,8 @@ export default function Home() {
           onRemoveSharedLocation={handleRemoveSharedLocation}
           onSetMountainHome={handleSetMountainHomeFromMap}
           mapRef={mapRef}
+          searchPlaceMarker={searchPlaceMarker}
+          onClearSearchPlace={handleClearSearchPlace}
         />
 
         {/* Search bar on map - desktop only */}

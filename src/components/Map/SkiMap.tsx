@@ -91,7 +91,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, highlightedFeatureType, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, onSetMountainHome, mapRef, searchPlaceMarker, onClearSearchPlace }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, onSetMountainHome, mapRef, searchPlaceMarker, onClearSearchPlace }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -641,44 +641,93 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     layersInitialized.current = true;
   }, []);
 
-  // Handle highlighted feature
+  // Handle highlighted feature with orange glow and popup
   useEffect(() => {
-    if (!map.current || !mapLoaded || !layersInitialized.current) return;
+    if (!map.current || !mapLoaded) return;
 
-    // Reset all highlights first
+    // Remove any existing highlight popup
+    if (highlightPopupRef.current) {
+      highlightPopupRef.current.remove();
+      highlightPopupRef.current = null;
+    }
+
+    // Reset line widths when no highlight
+    if (!highlightedFeatureId) {
+      if (map.current.getLayer('ski-runs-line')) {
+        map.current.setPaintProperty('ski-runs-line', 'line-width', 3);
+        map.current.setPaintProperty('ski-runs-line', 'line-opacity', 1);
+      }
+      if (map.current.getLayer('ski-lifts')) {
+        map.current.setPaintProperty('ski-lifts', 'line-width', 2);
+        map.current.setPaintProperty('ski-lifts', 'line-opacity', 1);
+      }
+      return;
+    }
+
+    if (!skiArea) return;
+
+    const run = skiArea.runs.find(r => r.id === highlightedFeatureId);
+    const lift = skiArea.lifts.find(l => l.id === highlightedFeatureId);
+    const isRun = !!run;
+    const feature = run || lift;
+
+    if (!feature) return;
+
+    // Apply orange glow effect - increase width and add orange color overlay
     if (map.current.getLayer('ski-runs-line')) {
       map.current.setPaintProperty('ski-runs-line', 'line-width', 
-        highlightedFeatureId 
-          ? ['case', ['==', ['get', 'id'], highlightedFeatureId], 6, 3]
-          : 3
+        ['case', ['==', ['get', 'id'], highlightedFeatureId], 8, 3]
       );
     }
-
     if (map.current.getLayer('ski-lifts')) {
       map.current.setPaintProperty('ski-lifts', 'line-width',
-        highlightedFeatureId
-          ? ['case', ['==', ['get', 'id'], highlightedFeatureId], 5, 2]
-          : 2
+        ['case', ['==', ['get', 'id'], highlightedFeatureId], 6, 2]
       );
     }
 
-    // Zoom to highlighted feature if it exists
-    if (highlightedFeatureId && skiArea) {
-      const run = skiArea.runs.find(r => r.id === highlightedFeatureId);
-      const lift = skiArea.lifts.find(l => l.id === highlightedFeatureId);
-      
-      const geometry = run?.geometry || lift?.geometry;
-      if (geometry && geometry.type === 'LineString' && geometry.coordinates.length > 0) {
-        const coords = geometry.coordinates;
-        const midIndex = Math.floor(coords.length / 2);
-        const midPoint = coords[midIndex];
-        
-        map.current.easeTo({
-          center: [midPoint[0], midPoint[1]],
-          zoom: 15,
-          duration: 500,
-        });
-      }
+    // Get center point of the geometry for popup and zoom
+    const geometry = feature.geometry;
+    let centerPoint: [number, number] | null = null;
+
+    if (geometry.type === 'LineString' && geometry.coordinates.length > 0) {
+      const coords = geometry.coordinates as [number, number][];
+      const midIndex = Math.floor(coords.length / 2);
+      centerPoint = coords[midIndex];
+    } else if (geometry.type === 'Polygon' && geometry.coordinates.length > 0) {
+      // For polygons, get the centroid of the first ring
+      const coords = geometry.coordinates[0] as [number, number][];
+      const sumLng = coords.reduce((sum, c) => sum + c[0], 0);
+      const sumLat = coords.reduce((sum, c) => sum + c[1], 0);
+      centerPoint = [sumLng / coords.length, sumLat / coords.length];
+    }
+
+    if (centerPoint) {
+      // Fly to the feature
+      map.current.easeTo({
+        center: centerPoint,
+        zoom: 16,
+        duration: 500,
+      });
+
+      // Show popup with feature info
+      const popupContent = isRun
+        ? `<div class="highlight-popup">
+            <strong>${run.name || 'Unnamed Run'}</strong>
+            ${run.difficulty ? `<br><span style="color: ${getDifficultyColor(run.difficulty)}">● ${run.difficulty}</span>` : ''}
+          </div>`
+        : `<div class="highlight-popup">
+            <strong>${lift?.name || 'Unnamed Lift'}</strong>
+            ${lift?.liftType ? `<br><span style="opacity: 0.7">${lift.liftType}</span>` : ''}
+          </div>`;
+
+      highlightPopupRef.current = new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: false,
+        className: 'search-highlight-popup',
+      })
+        .setLngLat(centerPoint)
+        .setHTML(popupContent)
+        .addTo(map.current);
     }
   }, [highlightedFeatureId, mapLoaded, skiArea]);
 
@@ -807,6 +856,76 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }
     });
   }, [sharedLocations, mapLoaded, onRemoveSharedLocation]);
+
+  // Handle search place marker
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Remove existing marker if null
+    if (!searchPlaceMarker) {
+      if (searchPlaceMarkerRef.current) {
+        searchPlaceMarkerRef.current.remove();
+        searchPlaceMarkerRef.current = null;
+      }
+      return;
+    }
+
+    // Get icon based on place type
+    const getPlaceIcon = (placeType?: string) => {
+      switch (placeType) {
+        case 'hotel':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z"/></svg>';
+        case 'restaurant':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>';
+        case 'shop':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>';
+        case 'road':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M11 8.5v-6h2v6h-2zm-9.5 4h6v-2h-6v2zm9.5 8.5v-6h2v6h-2zm8-10.5h-6v2h6v-2z"/></svg>';
+        case 'building':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/></svg>';
+        default:
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>';
+      }
+    };
+
+    // Remove existing marker first
+    if (searchPlaceMarkerRef.current) {
+      searchPlaceMarkerRef.current.remove();
+      searchPlaceMarkerRef.current = null;
+    }
+
+    // Create custom marker element
+    const el = document.createElement('div');
+    el.className = 'search-place-marker';
+    el.innerHTML = `
+      <div class="search-place-circle">
+        ${getPlaceIcon(searchPlaceMarker.placeType)}
+      </div>
+    `;
+    el.title = searchPlaceMarker.name;
+    
+    // Add click handler to clear the marker
+    el.addEventListener('click', () => {
+      onClearSearchPlace?.();
+    });
+
+    searchPlaceMarkerRef.current = new maplibregl.Marker({ element: el })
+      .setLngLat([searchPlaceMarker.longitude, searchPlaceMarker.latitude])
+      .setPopup(
+        new maplibregl.Popup({ offset: 25, closeOnClick: false, className: 'search-highlight-popup' })
+          .setHTML(`
+            <div class="highlight-popup">
+              <strong>${searchPlaceMarker.name}</strong>
+              ${searchPlaceMarker.placeType ? `<br><span style="opacity: 0.7; text-transform: capitalize">${searchPlaceMarker.placeType}</span>` : ''}
+              <div style="margin-top: 4px; font-size: 9px; color: #888;">Click marker to dismiss</div>
+            </div>
+          `)
+      )
+      .addTo(map.current);
+
+    // Open popup automatically
+    searchPlaceMarkerRef.current.togglePopup();
+  }, [searchPlaceMarker, mapLoaded, onClearSearchPlace]);
 
   // Update shading without recreating layers
   const updateShading = useCallback((area: SkiAreaDetails, time: Date) => {
