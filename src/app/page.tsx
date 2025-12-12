@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Typography, Spin, Alert, Button, Drawer } from 'antd';
+import { Typography, Alert, Button, Drawer } from 'antd';
 import { 
   MenuOutlined, 
   InfoCircleOutlined,
@@ -15,6 +15,7 @@ import TimeSlider from '@/components/Controls/TimeSlider';
 import ViewToggle from '@/components/Controls/ViewToggle';
 import Legend from '@/components/Controls/Legend';
 import Logo from '@/components/Logo';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import type { SkiAreaSummary, SkiAreaDetails } from '@/lib/types';
 
 const { Text } = Typography;
@@ -214,7 +215,7 @@ export default function Home() {
       <div className="map-container">
         {loading && (
           <div className="loading-overlay">
-            <Spin size="small" />
+            <LoadingSpinner size={48} />
           </div>
         )}
 

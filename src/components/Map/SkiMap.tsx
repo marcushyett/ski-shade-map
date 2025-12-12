@@ -5,6 +5,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
 import { getDifficultyColor } from '@/lib/shade-calculator';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import type { SkiAreaDetails } from '@/lib/types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 
@@ -493,9 +494,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
       <div ref={mapContainer} className="w-full h-full" />
       
       {isUpdating && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 px-2 py-1 rounded text-xs"
-             style={{ background: 'rgba(0,0,0,0.8)', color: '#ffffff' }}>
-          Updating...
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-2 py-1 rounded"
+             style={{ background: 'rgba(0,0,0,0.85)' }}>
+          <LoadingSpinner size={16} />
+          <span style={{ fontSize: 10, color: '#888' }}>Updating</span>
         </div>
       )}
     </div>
