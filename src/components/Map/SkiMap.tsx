@@ -47,12 +47,20 @@ export interface MapRef {
   getCenter: () => { lat: number; lng: number } | null;
 }
 
+export interface SearchPlaceMarker {
+  latitude: number;
+  longitude: number;
+  name: string;
+  placeType?: string;
+}
+
 interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
   selectedTime: Date;
   is3D: boolean;
   onMapReady?: () => void;
   highlightedFeatureId?: string | null;
+  highlightedFeatureType?: 'run' | 'lift' | null;
   cloudCover?: CloudCover | null;
   initialView?: MapViewState | null;
   onViewChange?: (view: MapViewState) => void;
@@ -62,6 +70,8 @@ interface SkiMapProps {
   onRemoveSharedLocation?: (id: string) => void;
   onSetMountainHome?: (lat: number, lng: number) => void;
   mapRef?: React.MutableRefObject<MapRef | null>;
+  searchPlaceMarker?: SearchPlaceMarker | null;
+  onClearSearchPlace?: () => void;
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -81,7 +91,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, onSetMountainHome, mapRef }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, highlightedFeatureType, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, onSetMountainHome, mapRef, searchPlaceMarker, onClearSearchPlace }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -97,6 +107,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const longPressCoords = useRef<{ lat: number; lng: number } | null>(null);
+  const highlightPopupRef = useRef<maplibregl.Popup | null>(null);
+  const searchPlaceMarkerRef = useRef<maplibregl.Marker | null>(null);
 
   // Expose map methods via ref
   useEffect(() => {
