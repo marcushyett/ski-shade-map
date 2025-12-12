@@ -660,21 +660,6 @@ h5.ant-typography {
   height: 32px;
 }
 
-/* Location controls container on map */
-.location-controls-container {
-  position: absolute;
-  bottom: 100px;
-  right: 10px;
-  z-index: 10;
-}
-
-@media (min-width: 768px) {
-  .location-controls-container {
-    bottom: 110px;
-    right: 10px;
-  }
-}
-
 /* User location marker */
 .user-location-marker {
   position: relative;
@@ -743,21 +728,50 @@ h5.ant-typography {
   transform: scale(1.1);
 }
 
-/* Search bar on map */
+/* Search bar on map - mobile: full width at top */
 .map-search-container {
   position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 280px;
-  max-width: calc(100% - 120px);
+  top: 6px;
+  left: 6px;
+  right: 6px;
   z-index: 15;
 }
 
+/* Desktop: centered, narrower */
 @media (min-width: 768px) {
   .map-search-container {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
     width: 320px;
-    max-width: calc(100% - 180px);
+    top: 10px;
+  }
+}
+
+/* Location controls - mobile: below search bar */
+.location-controls-container {
+  position: absolute;
+  top: 48px;
+  right: 6px;
+  z-index: 10;
+}
+
+.location-controls-container .location-controls {
+  flex-direction: row;
+  gap: 4px;
+}
+
+/* Desktop: right side, vertical */
+@media (min-width: 768px) {
+  .location-controls-container {
+    top: auto;
+    bottom: 110px;
+    right: 10px;
+  }
+  
+  .location-controls-container .location-controls {
+    flex-direction: column;
+    gap: 6px;
   }
 }
 

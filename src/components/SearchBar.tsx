@@ -8,10 +8,17 @@ import {
   SwapOutlined,
   EnvironmentOutlined,
   CloseOutlined,
+  HomeOutlined,
+  ShopOutlined,
+  CoffeeOutlined,
+  BankOutlined,
+  CarOutlined,
 } from '@ant-design/icons';
 import type { RunData, LiftData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import debounce from 'lodash.debounce';
+
+type PlaceType = 'hotel' | 'restaurant' | 'shop' | 'building' | 'road' | 'other';
 
 interface SearchResult {
   type: 'run' | 'lift' | 'place';
@@ -20,6 +27,7 @@ interface SearchResult {
   difficulty?: string | null;
   liftType?: string | null;
   coordinates?: [number, number];
+  placeType?: PlaceType;
 }
 
 interface SearchBarProps {
@@ -39,6 +47,51 @@ interface NominatimResult {
   display_name: string;
   lat: string;
   lon: string;
+  type: string;
+  class: string;
+}
+
+// Map Nominatim class/type to our place types
+function getPlaceType(osmClass: string, osmType: string): PlaceType {
+  // Hotels and accommodation
+  if (osmClass === 'tourism' && ['hotel', 'hostel', 'motel', 'guest_house', 'chalet', 'apartment'].includes(osmType)) {
+    return 'hotel';
+  }
+  // Restaurants, cafes, food
+  if (osmClass === 'amenity' && ['restaurant', 'cafe', 'fast_food', 'bar', 'pub', 'food_court'].includes(osmType)) {
+    return 'restaurant';
+  }
+  // Shops
+  if (osmClass === 'shop' || (osmClass === 'amenity' && osmType === 'marketplace')) {
+    return 'shop';
+  }
+  // Roads
+  if (osmClass === 'highway' || osmType === 'road' || osmType === 'street') {
+    return 'road';
+  }
+  // Buildings
+  if (osmClass === 'building' || osmClass === 'place' || osmClass === 'amenity') {
+    return 'building';
+  }
+  return 'other';
+}
+
+// Get icon for place type
+function getPlaceIcon(placeType: PlaceType) {
+  switch (placeType) {
+    case 'hotel':
+      return <HomeOutlined style={{ fontSize: 10, color: '#f97316', marginRight: 6 }} />;
+    case 'restaurant':
+      return <CoffeeOutlined style={{ fontSize: 10, color: '#ef4444', marginRight: 6 }} />;
+    case 'shop':
+      return <ShopOutlined style={{ fontSize: 10, color: '#8b5cf6', marginRight: 6 }} />;
+    case 'road':
+      return <CarOutlined style={{ fontSize: 10, color: '#6b7280', marginRight: 6 }} />;
+    case 'building':
+      return <BankOutlined style={{ fontSize: 10, color: '#3b82f6', marginRight: 6 }} />;
+    default:
+      return <EnvironmentOutlined style={{ fontSize: 10, color: '#888', marginRight: 6 }} />;
+  }
 }
 
 async function searchPlaces(
@@ -54,7 +107,7 @@ async function searchPlaces(
       : '';
     
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}${viewbox}&limit=5`,
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}${viewbox}&limit=8&addressdetails=1`,
       {
         headers: {
           'User-Agent': 'SkiShadeMap/1.0',
@@ -70,6 +123,7 @@ async function searchPlaces(
       id: `place-${item.place_id}`,
       name: item.display_name.split(',').slice(0, 2).join(', '),
       coordinates: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number],
+      placeType: getPlaceType(item.class, item.type),
     }));
   } catch {
     return [];
@@ -333,8 +387,15 @@ function SearchBarInner({
                     className={`search-item ${isSelected ? 'selected' : ''}`}
                     onClick={() => handleSelect(place)}
                   >
-                    <EnvironmentOutlined style={{ fontSize: 10, color: '#888', marginRight: 6 }} />
+                    {getPlaceIcon(place.placeType || 'other')}
                     <span className="search-item-name">{place.name}</span>
+                    <span className="search-item-meta">
+                      {place.placeType === 'hotel' && 'Hotel'}
+                      {place.placeType === 'restaurant' && 'Food'}
+                      {place.placeType === 'shop' && 'Shop'}
+                      {place.placeType === 'road' && 'Road'}
+                      {place.placeType === 'building' && 'Building'}
+                    </span>
                   </div>
                 );
               })}

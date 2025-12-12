@@ -60,6 +60,7 @@ interface SkiMapProps {
   mountainHome?: MountainHomeMarker | null;
   sharedLocations?: SharedLocationMarker[];
   onRemoveSharedLocation?: (id: string) => void;
+  onSetMountainHome?: (lat: number, lng: number) => void;
   mapRef?: React.MutableRefObject<MapRef | null>;
 }
 
@@ -80,7 +81,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, onSetMountainHome, mapRef }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -94,6 +95,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const mountainHomeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressCoords = useRef<{ lat: number; lng: number } | null>(null);
 
   // Expose map methods via ref
   useEffect(() => {
@@ -150,9 +153,73 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }
     });
 
+    // Long press to set mountain home (500ms)
+    map.current.on('mousedown', (e) => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+      longPressCoords.current = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+      longPressTimerRef.current = setTimeout(() => {
+        if (longPressCoords.current) {
+          onSetMountainHome?.(longPressCoords.current.lat, longPressCoords.current.lng);
+          longPressCoords.current = null;
+        }
+      }, 500);
+    });
+
+    map.current.on('mouseup', () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    });
+
+    map.current.on('mousemove', () => {
+      // Cancel long press if mouse moves
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    });
+
+    // Touch events for mobile
+    map.current.on('touchstart', (e) => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+      const touch = e.originalEvent.touches?.[0];
+      if (touch && map.current) {
+        const point = map.current.unproject([touch.clientX - map.current.getContainer().getBoundingClientRect().left, touch.clientY - map.current.getContainer().getBoundingClientRect().top]);
+        longPressCoords.current = { lat: point.lat, lng: point.lng };
+        longPressTimerRef.current = setTimeout(() => {
+          if (longPressCoords.current) {
+            onSetMountainHome?.(longPressCoords.current.lat, longPressCoords.current.lng);
+            longPressCoords.current = null;
+          }
+        }, 500);
+      }
+    });
+
+    map.current.on('touchend', () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    });
+
+    map.current.on('touchmove', () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    });
+
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
+      }
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
       }
       map.current?.remove();
       map.current = null;

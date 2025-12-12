@@ -279,7 +279,7 @@ function LocationControlsInner({
 
         {/* Mountain Home Button */}
         <Tooltip 
-          title={mountainHome ? `Go to ${mountainHome.name}` : 'Set Mountain Home'} 
+          title={mountainHome ? `Go to ${mountainHome.name}` : 'Long-press map to set home'} 
           placement="left"
         >
           <button

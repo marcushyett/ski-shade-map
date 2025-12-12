@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
-import { Typography, Alert, Button, Drawer } from 'antd';
+import { Typography, Alert, Button, Drawer, message } from 'antd';
 import { 
   MenuOutlined, 
   InfoCircleOutlined,
@@ -432,6 +432,22 @@ export default function Home() {
     });
   }, []);
 
+  // Handler for setting mountain home from map long-press
+  const handleSetMountainHomeFromMap = useCallback((lat: number, lng: number) => {
+    const home: MountainHome = {
+      latitude: lat,
+      longitude: lng,
+      name: 'Mountain Home',
+    };
+    try {
+      localStorage.setItem('ski-shade-mountain-home', JSON.stringify(home));
+    } catch {
+      // Ignore storage errors
+    }
+    setMountainHome(home);
+    message.success('Mountain Home set! Long press to move it.');
+  }, []);
+
   // Convert location types for map
   const userLocationMarker: UserLocationMarker | null = userLocation
     ? { latitude: userLocation.latitude, longitude: userLocation.longitude, accuracy: userLocation.accuracy }
@@ -579,6 +595,7 @@ export default function Home() {
           mountainHome={mountainHomeMarker}
           sharedLocations={sharedLocationMarkers}
           onRemoveSharedLocation={handleRemoveSharedLocation}
+          onSetMountainHome={handleSetMountainHomeFromMap}
           mapRef={mapRef}
         />
 
