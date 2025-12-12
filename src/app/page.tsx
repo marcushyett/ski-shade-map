@@ -14,6 +14,7 @@ import SkiAreaPicker from '@/components/Controls/SkiAreaPicker';
 import TimeSlider from '@/components/Controls/TimeSlider';
 import ViewToggle from '@/components/Controls/ViewToggle';
 import Legend from '@/components/Controls/Legend';
+import Logo from '@/components/Logo';
 import type { SkiAreaSummary, SkiAreaDetails } from '@/lib/types';
 
 const { Text } = Typography;
@@ -121,8 +122,8 @@ export default function Home() {
   const ControlsContent = () => (
     <div className="flex flex-col gap-3">
       <div>
-        <Text strong style={{ fontSize: 13 }}>SKI SHADE MAP</Text>
-        <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 2 }}>
+        <Logo size="md" />
+        <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 4 }}>
           Find sunny or shaded slopes
         </Text>
       </div>
@@ -176,7 +177,7 @@ export default function Home() {
       {/* Mobile header */}
       <div className="md:hidden controls-panel">
         <div className="flex items-center justify-between">
-          <Text strong style={{ fontSize: 12 }}>SKI SHADE MAP</Text>
+          <Logo size="sm" />
           <Button 
             size="small"
             icon={<MenuOutlined style={{ fontSize: 12 }} />}

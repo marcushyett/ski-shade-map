@@ -37,7 +37,8 @@ export default function Legend() {
           <div 
             className="w-4 h-2"
             style={{ 
-              backgroundColor: '#FFD700',
+              backgroundColor: '#ffffff',
+              border: '1px solid #666',
               borderRadius: 1,
             }}
           />
@@ -47,7 +48,7 @@ export default function Legend() {
           <div 
             className="w-4 h-2"
             style={{ 
-              backgroundColor: '#1a237e',
+              backgroundColor: '#1a1a1a',
               borderRadius: 1,
             }}
           />

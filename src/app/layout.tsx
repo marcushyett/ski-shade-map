@@ -4,7 +4,7 @@ import { ConfigProvider, theme } from 'antd';
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ski Shade Map",
+  title: "SKISHADE",
   description: "Interactive map showing sun exposure on ski runs throughout the day",
   keywords: ["ski", "skiing", "sun", "shade", "map", "slopes", "winter sports"],
   authors: [{ name: "Marcus Hyett" }],
