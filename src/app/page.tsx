@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { Typography, Alert, Button, Drawer } from 'antd';
 import { 
   MenuOutlined, 
@@ -30,10 +30,90 @@ interface StoredState {
   longitude: number;
 }
 
-export interface MapRef {
-  focusOnRun: (run: RunData) => void;
-  focusOnLift: (lift: LiftData) => void;
-}
+// Memoized controls content to prevent re-renders
+const ControlsContent = memo(function ControlsContent({
+  selectedArea,
+  skiAreaDetails,
+  error,
+  onAreaSelect,
+  onSelectRun,
+  onSelectLift,
+  onErrorClose,
+}: {
+  selectedArea: SkiAreaSummary | null;
+  skiAreaDetails: SkiAreaDetails | null;
+  error: string | null;
+  onAreaSelect: (area: SkiAreaSummary) => void;
+  onSelectRun: (run: RunData) => void;
+  onSelectLift: (lift: LiftData) => void;
+  onErrorClose: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 h-full">
+      <div className="flex-shrink-0">
+        <Logo size="md" />
+        <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 4 }}>
+          Find sunny or shaded slopes
+        </Text>
+      </div>
+
+      <div className="flex-shrink-0">
+        <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
+          SELECT AREA
+        </Text>
+        <SkiAreaPicker 
+          onSelect={onAreaSelect}
+          selectedArea={selectedArea}
+        />
+      </div>
+
+      {skiAreaDetails && (
+        <>
+          <div className="stats-summary flex-shrink-0">
+            <Text strong style={{ fontSize: 11 }}>{skiAreaDetails.name}</Text>
+            <div className="flex gap-4 mt-1">
+              <div className="flex items-center gap-1">
+                <NodeIndexOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+                <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.runs.length} runs</Text>
+              </div>
+              <div className="flex items-center gap-1">
+                <SwapOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+                <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <TrailsLiftsList 
+              runs={skiAreaDetails.runs}
+              lifts={skiAreaDetails.lifts}
+              onSelectRun={onSelectRun}
+              onSelectLift={onSelectLift}
+            />
+          </div>
+        </>
+      )}
+
+      {error && (
+        <Alert
+          type="error"
+          message={error}
+          closable
+          onClose={onErrorClose}
+        />
+      )}
+
+      {!skiAreaDetails && (
+        <div className="hidden md:block mt-2">
+          <Text type="secondary" style={{ fontSize: 9 }}>
+            <InfoCircleOutlined style={{ marginRight: 4, fontSize: 9 }} />
+            Select a ski area to view runs and lifts
+          </Text>
+        </div>
+      )}
+    </div>
+  );
+});
 
 export default function Home() {
   const [selectedArea, setSelectedArea] = useState<SkiAreaSummary | null>(null);
@@ -125,7 +205,6 @@ export default function Home() {
 
   const handleSelectRun = useCallback((run: RunData) => {
     setHighlightedFeatureId(run.id);
-    // Clear highlight after 3 seconds
     setTimeout(() => setHighlightedFeatureId(null), 3000);
   }, []);
 
@@ -134,75 +213,15 @@ export default function Home() {
     setTimeout(() => setHighlightedFeatureId(null), 3000);
   }, []);
 
-  const mapCenter = skiAreaDetails 
-    ? { lat: skiAreaDetails.latitude, lng: skiAreaDetails.longitude }
-    : { lat: 45.9, lng: 6.8 };
+  const handleErrorClose = useCallback(() => {
+    setError(null);
+  }, []);
 
-  const ControlsContent = () => (
-    <div className="flex flex-col gap-3 h-full">
-      <div className="flex-shrink-0">
-        <Logo size="md" />
-        <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 4 }}>
-          Find sunny or shaded slopes
-        </Text>
-      </div>
-
-      <div className="flex-shrink-0">
-        <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
-          SELECT AREA
-        </Text>
-        <SkiAreaPicker 
-          onSelect={handleAreaSelect}
-          selectedArea={selectedArea}
-        />
-      </div>
-
-      {skiAreaDetails && (
-        <>
-          <div className="stats-summary flex-shrink-0">
-            <Text strong style={{ fontSize: 11 }}>{skiAreaDetails.name}</Text>
-            <div className="flex gap-4 mt-1">
-              <div className="flex items-center gap-1">
-                <NodeIndexOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-                <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.runs.length} runs</Text>
-              </div>
-              <div className="flex items-center gap-1">
-                <SwapOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-                <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
-              </div>
-            </div>
-          </div>
-
-          {/* Trails and Lifts List */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            <TrailsLiftsList 
-              runs={skiAreaDetails.runs}
-              lifts={skiAreaDetails.lifts}
-              onSelectRun={handleSelectRun}
-              onSelectLift={handleSelectLift}
-            />
-          </div>
-        </>
-      )}
-
-      {error && (
-        <Alert
-          type="error"
-          message={error}
-          closable
-          onClose={() => setError(null)}
-        />
-      )}
-
-      {!skiAreaDetails && (
-        <div className="hidden md:block mt-2">
-          <Text type="secondary" style={{ fontSize: 9 }}>
-            <InfoCircleOutlined style={{ marginRight: 4, fontSize: 9 }} />
-            Select a ski area to view runs and lifts
-          </Text>
-        </div>
-      )}
-    </div>
+  const mapCenter = useMemo(() => 
+    skiAreaDetails 
+      ? { lat: skiAreaDetails.latitude, lng: skiAreaDetails.longitude }
+      : { lat: 45.9, lng: 6.8 },
+    [skiAreaDetails]
   );
 
   return (
@@ -236,12 +255,28 @@ export default function Home() {
         width={280}
         styles={{ body: { padding: 12, display: 'flex', flexDirection: 'column' } }}
       >
-        <ControlsContent />
+        <ControlsContent 
+          selectedArea={selectedArea}
+          skiAreaDetails={skiAreaDetails}
+          error={error}
+          onAreaSelect={handleAreaSelect}
+          onSelectRun={handleSelectRun}
+          onSelectLift={handleSelectLift}
+          onErrorClose={handleErrorClose}
+        />
       </Drawer>
 
       {/* Desktop sidebar */}
       <div className="hidden md:flex md:flex-col controls-panel">
-        <ControlsContent />
+        <ControlsContent 
+          selectedArea={selectedArea}
+          skiAreaDetails={skiAreaDetails}
+          error={error}
+          onAreaSelect={handleAreaSelect}
+          onSelectRun={handleSelectRun}
+          onSelectLift={handleSelectLift}
+          onErrorClose={handleErrorClose}
+        />
       </div>
 
       {/* Map area */}
