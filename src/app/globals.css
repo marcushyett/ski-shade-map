@@ -442,3 +442,62 @@ h5.ant-typography {
 .text-xxs {
   font-size: 9px;
 }
+
+/* Collapse styling */
+.ant-collapse {
+  background: transparent !important;
+  border: none !important;
+}
+
+.ant-collapse-item {
+  border: none !important;
+}
+
+.ant-collapse-header {
+  padding: 4px 0 !important;
+  color: var(--foreground) !important;
+  background: transparent !important;
+}
+
+.ant-collapse-header:hover {
+  background: var(--background-tertiary) !important;
+}
+
+.ant-collapse-content {
+  background: transparent !important;
+  border-top: none !important;
+}
+
+.ant-collapse-content-box {
+  padding: 4px 0 !important;
+}
+
+.ant-collapse-expand-icon {
+  color: var(--foreground-muted) !important;
+}
+
+/* Trails/Lifts list styling */
+.trails-lifts-list .ant-input {
+  background-color: var(--background-secondary) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+  font-size: 10px !important;
+}
+
+.trails-lifts-list .ant-input::placeholder {
+  color: var(--foreground-muted) !important;
+}
+
+.run-item:hover,
+.lift-item:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Empty state */
+.ant-empty-description {
+  color: var(--foreground-muted) !important;
+}
+
+.ant-empty-image svg {
+  fill: var(--foreground-muted) !important;
+}

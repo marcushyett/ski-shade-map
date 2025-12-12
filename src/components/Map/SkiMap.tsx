@@ -14,6 +14,7 @@ interface SkiMapProps {
   selectedTime: Date;
   is3D: boolean;
   onMapReady?: () => void;
+  highlightedFeatureId?: string | null;
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -33,7 +34,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -201,7 +202,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny', 'ski-segments-shaded', 
-      'ski-runs-line', 'ski-lifts'
+      'ski-runs-line', 'ski-lifts', 'ski-lifts-symbols'
     ];
     layersToRemove.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
@@ -375,20 +376,85 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
       data: liftsGeoJSON,
     });
 
+    // Lift lines with status-based coloring
     map.current.addLayer({
       id: 'ski-lifts',
       type: 'line',
       source: 'ski-lifts',
       paint: {
-        'line-color': '#666666',
+        'line-color': [
+          'case',
+          ['==', ['get', 'status'], 'open'], '#52c41a',
+          ['==', ['get', 'status'], 'closed'], '#ff4d4f',
+          '#888888'
+        ],
         'line-width': 2,
-        'line-dasharray': [2, 1],
+        'line-dasharray': [4, 2],
+      },
+    });
+
+    // Lift symbols (circles at stations)
+    map.current.addLayer({
+      id: 'ski-lifts-symbols',
+      type: 'circle',
+      source: 'ski-lifts',
+      paint: {
+        'circle-radius': 3,
+        'circle-color': [
+          'case',
+          ['==', ['get', 'status'], 'open'], '#52c41a',
+          ['==', ['get', 'status'], 'closed'], '#ff4d4f',
+          '#888888'
+        ],
+        'circle-stroke-color': '#000',
+        'circle-stroke-width': 1,
       },
     });
 
     setupClickHandlers();
     layersInitialized.current = true;
   }, []);
+
+  // Handle highlighted feature
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !layersInitialized.current) return;
+
+    // Reset all highlights first
+    if (map.current.getLayer('ski-runs-line')) {
+      map.current.setPaintProperty('ski-runs-line', 'line-width', 
+        highlightedFeatureId 
+          ? ['case', ['==', ['get', 'id'], highlightedFeatureId], 6, 3]
+          : 3
+      );
+    }
+
+    if (map.current.getLayer('ski-lifts')) {
+      map.current.setPaintProperty('ski-lifts', 'line-width',
+        highlightedFeatureId
+          ? ['case', ['==', ['get', 'id'], highlightedFeatureId], 5, 2]
+          : 2
+      );
+    }
+
+    // Zoom to highlighted feature if it exists
+    if (highlightedFeatureId && skiArea) {
+      const run = skiArea.runs.find(r => r.id === highlightedFeatureId);
+      const lift = skiArea.lifts.find(l => l.id === highlightedFeatureId);
+      
+      const geometry = run?.geometry || lift?.geometry;
+      if (geometry && geometry.type === 'LineString' && geometry.coordinates.length > 0) {
+        const coords = geometry.coordinates;
+        const midIndex = Math.floor(coords.length / 2);
+        const midPoint = coords[midIndex];
+        
+        map.current.easeTo({
+          center: [midPoint[0], midPoint[1]],
+          zoom: 15,
+          duration: 500,
+        });
+      }
+    }
+  }, [highlightedFeatureId, mapLoaded, skiArea]);
 
   // Update shading without recreating layers
   const updateShading = useCallback((area: SkiAreaDetails, time: Date) => {

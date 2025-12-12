@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Typography, Alert, Button, Drawer } from 'antd';
 import { 
   MenuOutlined, 
@@ -16,7 +16,8 @@ import ViewToggle from '@/components/Controls/ViewToggle';
 import Legend from '@/components/Controls/Legend';
 import Logo from '@/components/Logo';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import type { SkiAreaSummary, SkiAreaDetails } from '@/lib/types';
+import TrailsLiftsList from '@/components/Controls/TrailsLiftsList';
+import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 
 const { Text } = Typography;
 
@@ -27,6 +28,11 @@ interface StoredState {
   areaName: string;
   latitude: number;
   longitude: number;
+}
+
+export interface MapRef {
+  focusOnRun: (run: RunData) => void;
+  focusOnLift: (lift: LiftData) => void;
 }
 
 export default function Home() {
@@ -42,6 +48,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedTime(new Date());
@@ -116,20 +123,31 @@ export default function Home() {
     setMobileMenuOpen(false);
   }, []);
 
+  const handleSelectRun = useCallback((run: RunData) => {
+    setHighlightedFeatureId(run.id);
+    // Clear highlight after 3 seconds
+    setTimeout(() => setHighlightedFeatureId(null), 3000);
+  }, []);
+
+  const handleSelectLift = useCallback((lift: LiftData) => {
+    setHighlightedFeatureId(lift.id);
+    setTimeout(() => setHighlightedFeatureId(null), 3000);
+  }, []);
+
   const mapCenter = skiAreaDetails 
     ? { lat: skiAreaDetails.latitude, lng: skiAreaDetails.longitude }
     : { lat: 45.9, lng: 6.8 };
 
   const ControlsContent = () => (
-    <div className="flex flex-col gap-3">
-      <div>
+    <div className="flex flex-col gap-3 h-full">
+      <div className="flex-shrink-0">
         <Logo size="md" />
         <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 4 }}>
           Find sunny or shaded slopes
         </Text>
       </div>
 
-      <div>
+      <div className="flex-shrink-0">
         <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
           SELECT AREA
         </Text>
@@ -140,19 +158,31 @@ export default function Home() {
       </div>
 
       {skiAreaDetails && (
-        <div className="stats-summary">
-          <Text strong style={{ fontSize: 11 }}>{skiAreaDetails.name}</Text>
-          <div className="flex gap-4 mt-1">
-            <div className="flex items-center gap-1">
-              <NodeIndexOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-              <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.runs.length} runs</Text>
-            </div>
-            <div className="flex items-center gap-1">
-              <SwapOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-              <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
+        <>
+          <div className="stats-summary flex-shrink-0">
+            <Text strong style={{ fontSize: 11 }}>{skiAreaDetails.name}</Text>
+            <div className="flex gap-4 mt-1">
+              <div className="flex items-center gap-1">
+                <NodeIndexOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+                <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.runs.length} runs</Text>
+              </div>
+              <div className="flex items-center gap-1">
+                <SwapOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+                <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
+              </div>
             </div>
           </div>
-        </div>
+
+          {/* Trails and Lifts List */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <TrailsLiftsList 
+              runs={skiAreaDetails.runs}
+              lifts={skiAreaDetails.lifts}
+              onSelectRun={handleSelectRun}
+              onSelectLift={handleSelectLift}
+            />
+          </div>
+        </>
       )}
 
       {error && (
@@ -164,12 +194,14 @@ export default function Home() {
         />
       )}
 
-      <div className="hidden md:block mt-2">
-        <Text type="secondary" style={{ fontSize: 9 }}>
-          <InfoCircleOutlined style={{ marginRight: 4, fontSize: 9 }} />
-          Shade based on slope orientation. Actual conditions may vary.
-        </Text>
-      </div>
+      {!skiAreaDetails && (
+        <div className="hidden md:block mt-2">
+          <Text type="secondary" style={{ fontSize: 9 }}>
+            <InfoCircleOutlined style={{ marginRight: 4, fontSize: 9 }} />
+            Select a ski area to view runs and lifts
+          </Text>
+        </div>
+      )}
     </div>
   );
 
@@ -201,13 +233,14 @@ export default function Home() {
         placement="right"
         onClose={() => setMobileMenuOpen(false)}
         open={mobileMenuOpen}
-        width={260}
+        width={280}
+        styles={{ body: { padding: 12, display: 'flex', flexDirection: 'column' } }}
       >
         <ControlsContent />
       </Drawer>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:block controls-panel">
+      <div className="hidden md:flex md:flex-col controls-panel">
         <ControlsContent />
       </div>
 
@@ -223,6 +256,7 @@ export default function Home() {
           skiArea={skiAreaDetails}
           selectedTime={selectedTime}
           is3D={is3D}
+          highlightedFeatureId={highlightedFeatureId}
         />
 
         {/* Legend */}
