@@ -315,7 +315,8 @@ h5.ant-typography {
   padding: 8px 10px;
   background: var(--background);
   border-bottom: 1px solid var(--border);
-  z-index: 10;
+  z-index: 100;
+  position: relative;
 }
 
 .map-container {
@@ -726,6 +727,8 @@ h5.ant-typography {
 /* Mobile header search bar */
 .mobile-header-search {
   margin-top: 8px;
+  position: relative;
+  z-index: 200;
 }
 
 .mobile-header-search .search-bar-container {
@@ -738,7 +741,7 @@ h5.ant-typography {
   left: 0;
   right: 0;
   z-index: 1000;
-  max-height: 300px;
+  max-height: 60vh;
   overflow-y: auto;
 }
 
