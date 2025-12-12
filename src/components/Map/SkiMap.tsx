@@ -6,7 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import type { SkiAreaDetails } from '@/lib/types';
-import type { LineString, Polygon } from 'geojson';
+import type { LineString, Polygon, Feature, FeatureCollection } from 'geojson';
 
 interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
@@ -17,10 +17,22 @@ interface SkiMapProps {
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
 
+// Segment properties for per-segment shading
+interface SegmentProperties {
+  runId: string;
+  runName: string | null;
+  difficulty: string | null;
+  segmentIndex: number;
+  isShaded: boolean;
+  bearing: number;
+  slopeAspect: number;
+}
+
 export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const terrainAdded = useRef(false);
 
   // Initialize map
   useEffect(() => {
@@ -45,6 +57,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
 
     map.current.on('load', () => {
       setMapLoaded(true);
+      if (is3D) {
+        addTerrain();
+      }
       onMapReady?.();
     });
 
@@ -52,6 +67,37 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
       map.current?.remove();
       map.current = null;
     };
+  }, []);
+
+  // Add 3D terrain
+  const addTerrain = useCallback(() => {
+    if (!map.current || terrainAdded.current) return;
+    
+    // Add terrain source
+    if (!map.current.getSource('terrain')) {
+      map.current.addSource('terrain', {
+        type: 'raster-dem',
+        url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`,
+        tileSize: 256,
+      });
+    }
+
+    // Enable terrain with exaggeration
+    map.current.setTerrain({
+      source: 'terrain',
+      exaggeration: 1.5, // Make mountains more pronounced
+    });
+
+    terrainAdded.current = true;
+  }, []);
+
+  // Remove terrain
+  const removeTerrain = useCallback(() => {
+    if (!map.current) return;
+    
+    // Disable terrain
+    map.current.setTerrain(null);
+    terrainAdded.current = false;
   }, []);
 
   // Handle 3D toggle
@@ -64,8 +110,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
 
     map.current.setStyle(style);
     
-    // Re-add layers after style change
+    // Re-add layers and terrain after style change
     map.current.once('style.load', () => {
+      terrainAdded.current = false;
+      if (is3D) {
+        addTerrain();
+      }
       if (skiArea) {
         addSkiAreaLayers(skiArea);
       }
@@ -75,7 +125,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
       pitch: is3D ? 60 : 0,
       duration: 1000,
     });
-  }, [is3D, mapLoaded]);
+  }, [is3D, mapLoaded, addTerrain]);
 
   // Update ski area display
   useEffect(() => {
@@ -84,7 +134,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
     // Fly to ski area
     map.current.flyTo({
       center: [skiArea.longitude, skiArea.latitude],
-      zoom: 13,
+      zoom: 14,
       duration: 2000,
     });
 
@@ -102,19 +152,55 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
     if (!map.current) return;
 
     // Remove existing layers
-    ['ski-runs-shade', 'ski-runs-line', 'ski-lifts'].forEach(layerId => {
+    ['ski-segments-sunny', 'ski-segments-shaded', 'ski-runs-line', 'ski-lifts'].forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
         map.current.removeLayer(layerId);
       }
     });
 
-    ['ski-runs', 'ski-lifts'].forEach(sourceId => {
+    ['ski-segments', 'ski-runs', 'ski-lifts'].forEach(sourceId => {
       if (map.current?.getSource(sourceId)) {
         map.current.removeSource(sourceId);
       }
     });
 
-    // Add runs source
+    // Create segments from runs for per-segment shading
+    const segments = createRunSegments(area, selectedTime, area.latitude, area.longitude);
+
+    map.current.addSource('ski-segments', {
+      type: 'geojson',
+      data: segments,
+    });
+
+    // Add sunny segments layer (bright, wide, golden glow)
+    map.current.addLayer({
+      id: 'ski-segments-sunny',
+      type: 'line',
+      source: 'ski-segments',
+      filter: ['==', ['get', 'isShaded'], false],
+      paint: {
+        'line-color': '#FFD700', // Bright gold
+        'line-width': 12,
+        'line-blur': 2,
+        'line-opacity': 0.8,
+      },
+    });
+
+    // Add shaded segments layer (dark blue shadow)
+    map.current.addLayer({
+      id: 'ski-segments-shaded',
+      type: 'line',
+      source: 'ski-segments',
+      filter: ['==', ['get', 'isShaded'], true],
+      paint: {
+        'line-color': '#1a237e', // Dark blue
+        'line-width': 12,
+        'line-blur': 2,
+        'line-opacity': 0.7,
+      },
+    });
+
+    // Add runs source for the colored difficulty line on top
     const runsGeoJSON = {
       type: 'FeatureCollection' as const,
       features: area.runs.map(run => ({
@@ -135,27 +221,15 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
       data: runsGeoJSON,
     });
 
-    // Add shade layer (will be updated based on sun position)
-    map.current.addLayer({
-      id: 'ski-runs-shade',
-      type: 'line',
-      source: 'ski-runs',
-      paint: {
-        'line-color': 'rgba(50, 50, 100, 0.5)',
-        'line-width': 8,
-        'line-blur': 3,
-      },
-    });
-
-    // Add runs layer
+    // Add runs layer (thin difficulty-colored line on top)
     map.current.addLayer({
       id: 'ski-runs-line',
       type: 'line',
       source: 'ski-runs',
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 4,
-        'line-opacity': 0.9,
+        'line-width': 3,
+        'line-opacity': 1,
       },
     });
 
@@ -237,57 +311,38 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
     map.current.on('mouseleave', 'ski-runs-line', () => {
       if (map.current) map.current.getCanvas().style.cursor = '';
     });
-
-    updateShading(area, selectedTime);
   }, [selectedTime]);
 
   const updateShading = (area: SkiAreaDetails, time: Date) => {
     if (!map.current) return;
 
     const sunPos = getSunPosition(time, area.latitude, area.longitude);
-    const sunAzimuth = sunPos.azimuthDegrees;
-    const sunAltitude = sunPos.altitudeDegrees;
 
-    // Calculate shade for each run based on its orientation
-    const runsWithShade = area.runs.map(run => {
-      const isShaded = calculateRunShade(run.geometry, sunAzimuth, sunAltitude);
-      return {
-        type: 'Feature' as const,
-        properties: {
-          id: run.id,
-          name: run.name,
-          difficulty: run.difficulty,
-          status: run.status,
-          color: getDifficultyColor(run.difficulty),
-          isShaded,
-        },
-        geometry: run.geometry,
-      };
-    });
-
-    // Update the shade layer colors
-    if (map.current.getLayer('ski-runs-shade')) {
-      const source = map.current.getSource('ski-runs') as maplibregl.GeoJSONSource | undefined;
-      if (source && typeof source.setData === 'function') {
-        source.setData({
-          type: 'FeatureCollection',
-          features: runsWithShade,
-        });
+    // If sun is below horizon, make everything dark
+    if (sunPos.altitudeDegrees <= 0) {
+      if (map.current.getLayer('ski-segments-sunny')) {
+        map.current.setFilter('ski-segments-sunny', ['==', 1, 0]); // Hide all sunny
+        map.current.setFilter('ski-segments-shaded', ['==', 1, 1]); // Show all as shaded
+        map.current.setPaintProperty('ski-segments-shaded', 'line-color', '#0d1b2a');
+        map.current.setPaintProperty('ski-segments-shaded', 'line-opacity', 0.9);
       }
+      return;
+    }
 
-      // If sun is below horizon, everything is shaded
-      if (sunAltitude <= 0) {
-        map.current.setPaintProperty('ski-runs-shade', 'line-color', 'rgba(30, 30, 80, 0.7)');
-        map.current.setPaintProperty('ski-runs-shade', 'line-width', 10);
-      } else {
-        map.current.setPaintProperty('ski-runs-shade', 'line-color', [
-          'case',
-          ['get', 'isShaded'],
-          'rgba(50, 50, 120, 0.6)',
-          'rgba(255, 220, 100, 0.4)',
-        ]);
-        map.current.setPaintProperty('ski-runs-shade', 'line-width', 8);
-      }
+    // Recalculate segments with new sun position
+    const segments = createRunSegments(area, time, area.latitude, area.longitude);
+
+    const source = map.current.getSource('ski-segments') as maplibregl.GeoJSONSource | undefined;
+    if (source && typeof source.setData === 'function') {
+      source.setData(segments);
+    }
+
+    // Reset filters and styling
+    if (map.current.getLayer('ski-segments-sunny')) {
+      map.current.setFilter('ski-segments-sunny', ['==', ['get', 'isShaded'], false]);
+      map.current.setFilter('ski-segments-shaded', ['==', ['get', 'isShaded'], true]);
+      map.current.setPaintProperty('ski-segments-shaded', 'line-color', '#1a237e');
+      map.current.setPaintProperty('ski-segments-shaded', 'line-opacity', 0.7);
     }
   };
 
@@ -301,63 +356,99 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady }: SkiM
 }
 
 /**
- * Calculate if a run is likely in shade based on its orientation and sun position
- * This is a simplified model - true shade would require DEM data
+ * Create segments from runs for per-segment shade calculation
+ * Each segment is a short piece of the run that can be individually shaded
  */
-function calculateRunShade(
-  geometry: LineString | Polygon,
+function createRunSegments(
+  area: SkiAreaDetails,
+  time: Date,
+  latitude: number,
+  longitude: number
+): FeatureCollection<LineString, SegmentProperties> {
+  const sunPos = getSunPosition(time, latitude, longitude);
+  const sunAzimuth = sunPos.azimuthDegrees;
+  const sunAltitude = sunPos.altitudeDegrees;
+
+  const features: Feature<LineString, SegmentProperties>[] = [];
+
+  for (const run of area.runs) {
+    let coords: number[][] = [];
+    
+    if (run.geometry.type === 'LineString') {
+      coords = run.geometry.coordinates;
+    } else if (run.geometry.type === 'Polygon') {
+      coords = run.geometry.coordinates[0];
+    }
+
+    if (coords.length < 2) continue;
+
+    // Create a segment for each pair of consecutive points
+    for (let i = 0; i < coords.length - 1; i++) {
+      const segmentCoords = [coords[i], coords[i + 1]];
+      
+      // Calculate bearing for this segment
+      const [lng1, lat1] = coords[i];
+      const [lng2, lat2] = coords[i + 1];
+      
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const lat1Rad = lat1 * Math.PI / 180;
+      const lat2Rad = lat2 * Math.PI / 180;
+      
+      const y = Math.sin(dLng) * Math.cos(lat2Rad);
+      const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - 
+                Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+      
+      const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+      
+      // Slope aspect is perpendicular to bearing (slope faces right side of run direction)
+      const slopeAspect = (bearing + 90) % 360;
+      
+      // Calculate if this segment is shaded
+      const isShaded = calculateSegmentShade(slopeAspect, sunAzimuth, sunAltitude);
+
+      features.push({
+        type: 'Feature',
+        properties: {
+          runId: run.id,
+          runName: run.name,
+          difficulty: run.difficulty,
+          segmentIndex: i,
+          isShaded,
+          bearing,
+          slopeAspect,
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: segmentCoords,
+        },
+      });
+    }
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  };
+}
+
+/**
+ * Calculate if a segment is in shade based on its aspect and sun position
+ */
+function calculateSegmentShade(
+  slopeAspect: number,
   sunAzimuth: number,
   sunAltitude: number
 ): boolean {
   if (sunAltitude <= 0) return true; // Night time
 
-  // Get coordinates
-  let coords: number[][] = [];
-  if (geometry.type === 'LineString') {
-    coords = geometry.coordinates;
-  } else if (geometry.type === 'Polygon') {
-    coords = geometry.coordinates[0];
-  }
+  // Calculate angle difference between sun direction and slope aspect
+  let angleDiff = Math.abs(sunAzimuth - slopeAspect);
+  if (angleDiff > 180) angleDiff = 360 - angleDiff;
 
-  if (coords.length < 2) return false;
+  // Slope is shaded if it faces away from the sun (angle > 90 degrees)
+  // Also shaded if sun is very low (< 15 degrees) and angle is > 60 degrees
+  const shadedByOrientation = angleDiff > 90;
+  const shadedByLowSun = sunAltitude < 15 && angleDiff > 60;
 
-  // Calculate average bearing of the run
-  let totalBearing = 0;
-  let segments = 0;
-
-  for (let i = 0; i < coords.length - 1; i++) {
-    const [lng1, lat1] = coords[i];
-    const [lng2, lat2] = coords[i + 1];
-    
-    // Calculate bearing
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const lat1Rad = lat1 * Math.PI / 180;
-    const lat2Rad = lat2 * Math.PI / 180;
-    
-    const y = Math.sin(dLng) * Math.cos(lat2Rad);
-    const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - 
-              Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
-    
-    const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-    totalBearing += bearing;
-    segments++;
-  }
-
-  const avgBearing = totalBearing / segments;
-  
-  // Slope aspect is perpendicular to bearing (assume slope faces right side of run)
-  const slopeAspect = (avgBearing + 90) % 360;
-  
-  // Calculate angle between sun and slope aspect
-  // If sun is behind the slope, it's shaded
-  const angleDiff = Math.abs(sunAzimuth - slopeAspect);
-  const normalizedDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
-  
-  // If sun is more than 90 degrees from slope face, it's likely shaded
-  // Also consider sun altitude - low sun creates more shade
-  const shadedByOrientation = normalizedDiff > 90;
-  const shadedByAltitude = sunAltitude < 20 && normalizedDiff > 60;
-  
-  return shadedByOrientation || shadedByAltitude;
+  return shadedByOrientation || shadedByLowSun;
 }
-

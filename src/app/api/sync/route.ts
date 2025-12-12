@@ -152,7 +152,8 @@ async function syncSkiAreas(countryFilter: string | null) {
       // Check new format (places array)
       if (props?.places?.length) {
         return props.places.some(
-          (p) => p.iso3166_1Alpha2?.toUpperCase() === countryFilter.toUpperCase()
+          (p) =>
+            p.iso3166_1Alpha2?.toUpperCase() === countryFilter.toUpperCase()
         );
       }
       // Check legacy format (location object)

@@ -35,20 +35,26 @@ export default function Legend() {
 
       <div>
         <Text type="secondary" className="text-xs">Sun Exposure</Text>
-        <Space direction="vertical" size={2} className="mt-1">
+        <Space direction="vertical" size={4} className="mt-1">
           <div className="flex items-center gap-2">
             <div 
-              className="w-4 h-2 rounded"
-              style={{ backgroundColor: 'rgba(255, 220, 100, 0.6)' }}
+              className="w-6 h-3 rounded"
+              style={{ 
+                backgroundColor: '#FFD700',
+                boxShadow: '0 0 4px rgba(255, 215, 0, 0.6)',
+              }}
             />
-            <Text className="text-xs">Sunny</Text>
+            <Text className="text-xs font-medium">☀️ Sunny</Text>
           </div>
           <div className="flex items-center gap-2">
             <div 
-              className="w-4 h-2 rounded"
-              style={{ backgroundColor: 'rgba(50, 50, 120, 0.6)' }}
+              className="w-6 h-3 rounded"
+              style={{ 
+                backgroundColor: '#1a237e',
+                boxShadow: '0 0 4px rgba(26, 35, 126, 0.4)',
+              }}
             />
-            <Text className="text-xs">Shaded</Text>
+            <Text className="text-xs font-medium">🌑 Shaded</Text>
           </div>
         </Space>
       </div>
@@ -71,4 +77,3 @@ export default function Legend() {
     </div>
   );
 }
-

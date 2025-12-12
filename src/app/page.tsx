@@ -128,10 +128,10 @@ export default function Home() {
         )}
       </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer - comes from right to match hamburger position */}
       <Drawer
         title="Settings"
-        placement="left"
+        placement="right"
         onClose={() => setMobileMenuOpen(false)}
         open={mobileMenuOpen}
         width={300}
