@@ -27,6 +27,12 @@ export default function TimeSlider({
   onTimeChange 
 }: TimeSliderProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Wait for client-side hydration
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Get sun times for the selected date
   const sunTimes = useMemo(() => {
@@ -97,13 +103,13 @@ export default function TimeSlider({
               <MoonOutlined style={{ color: '#1890ff', fontSize: 20 }} />
             )}
             <Text strong style={{ fontSize: 18 }}>
-              {format(selectedTime, 'HH:mm')}
+              {mounted ? format(selectedTime, 'HH:mm') : '--:--'}
             </Text>
           </Space>
           
           <Space>
             <Text type="secondary">
-              Sun: {sunPosition.altitudeDegrees.toFixed(1)}° altitude
+              {mounted ? `Sun: ${sunPosition.altitudeDegrees.toFixed(1)}° altitude` : ''}
             </Text>
             <Button
               type="text"

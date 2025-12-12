@@ -15,11 +15,23 @@ const { Title, Text, Paragraph } = Typography;
 export default function Home() {
   const [selectedArea, setSelectedArea] = useState<SkiAreaSummary | null>(null);
   const [skiAreaDetails, setSkiAreaDetails] = useState<SkiAreaDetails | null>(null);
-  const [selectedTime, setSelectedTime] = useState<Date>(new Date());
+  // Initialize to noon to avoid hydration mismatch, then update to current time on client
+  const [selectedTime, setSelectedTime] = useState<Date>(() => {
+    const now = new Date();
+    now.setHours(12, 0, 0, 0);
+    return now;
+  });
   const [is3D, setIs3D] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  // Update time to current after hydration
+  useEffect(() => {
+    setIsClient(true);
+    setSelectedTime(new Date());
+  }, []);
 
   // Fetch full ski area details when selection changes
   useEffect(() => {
