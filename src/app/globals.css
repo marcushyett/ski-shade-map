@@ -786,7 +786,7 @@ h5.ant-typography {
 /* Location controls - positioned below zoom controls on right */
 .location-controls-container {
   position: absolute;
-  top: 95px;
+  top: 110px;
   right: 10px;
   z-index: 10;
   pointer-events: none;
