@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Select, Input, Space, Tag, Typography } from 'antd';
+import { Select, Space, Tag } from 'antd';
 import { SearchOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import type { SkiAreaSummary } from '@/lib/types';
 import debounce from 'lodash.debounce';
-
-const { Text } = Typography;
 
 interface SkiAreaPickerProps {
   onSelect: (skiArea: SkiAreaSummary) => void;
@@ -79,6 +77,22 @@ export default function SkiAreaPicker({ onSelect, selectedArea }: SkiAreaPickerP
     debouncedSearch(value);
   };
 
+  // Build options with the selected area included if not in list
+  const options = skiAreas.map(area => ({
+    value: area.id,
+    label: area.name,
+    area,
+  }));
+
+  // If selectedArea exists but isn't in the current list, add it
+  if (selectedArea && !skiAreas.find(a => a.id === selectedArea.id)) {
+    options.unshift({
+      value: selectedArea.id,
+      label: selectedArea.name,
+      area: selectedArea,
+    });
+  }
+
   return (
     <div className="ski-area-picker">
       <Space direction="vertical" size="small" className="w-full">
@@ -102,8 +116,8 @@ export default function SkiAreaPicker({ onSelect, selectedArea }: SkiAreaPickerP
           placeholder="Search ski areas..."
           value={selectedArea?.id}
           onChange={(id) => {
-            const area = skiAreas.find(a => a.id === id);
-            if (area) onSelect(area);
+            const option = options.find(o => o.value === id);
+            if (option) onSelect(option.area);
           }}
           className="w-full"
           showSearch
@@ -112,34 +126,23 @@ export default function SkiAreaPicker({ onSelect, selectedArea }: SkiAreaPickerP
           onSearch={handleSearch}
           notFoundContent={loading ? 'Loading...' : 'No ski areas found'}
           suffixIcon={<SearchOutlined />}
+          optionLabelProp="label"
         >
-          {skiAreas.map(area => (
-            <Select.Option key={area.id} value={area.id}>
+          {options.map(opt => (
+            <Select.Option key={opt.value} value={opt.value} label={opt.label}>
               <Space>
-                <EnvironmentOutlined />
-                <span>{area.name}</span>
-                {area.region && (
-                  <Tag color="blue" style={{ marginLeft: 8 }}>
-                    {area.region}
+                <EnvironmentOutlined style={{ opacity: 0.5 }} />
+                <span style={{ color: '#e5e5e5' }}>{opt.label}</span>
+                {opt.area.region && (
+                  <Tag style={{ marginLeft: 4, fontSize: 10 }}>
+                    {opt.area.region}
                   </Tag>
                 )}
               </Space>
             </Select.Option>
           ))}
         </Select>
-
-        {selectedArea && (
-          <div className="selected-area-info p-2 bg-gray-50 rounded">
-            <Text strong>{selectedArea.name}</Text>
-            {selectedArea.region && (
-              <Text type="secondary" className="ml-2">
-                {selectedArea.region}, {selectedArea.country}
-              </Text>
-            )}
-          </div>
-        )}
       </Space>
     </div>
   );
 }
-
