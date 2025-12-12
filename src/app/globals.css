@@ -780,10 +780,10 @@ h5.ant-typography {
   filter: invert(0.6);
 }
 
-/* Location controls - mobile: top left of map */
+/* Location controls - mobile: bottom left of map */
 .location-controls-container {
   position: absolute;
-  top: 10px;
+  bottom: 80px;
   left: 10px;
   z-index: 10;
   pointer-events: none;
@@ -809,6 +809,7 @@ h5.ant-typography {
 @media (min-width: 768px) {
   .location-controls-container {
     top: 100px;
+    bottom: auto;
     left: auto;
     right: 10px;
   }
