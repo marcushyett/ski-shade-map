@@ -35,6 +35,13 @@ export interface MountainHomeMarker {
   name: string;
 }
 
+export interface SharedLocationMarker {
+  latitude: number;
+  longitude: number;
+  name: string;
+  id: string;
+}
+
 export interface MapRef {
   flyTo: (lat: number, lng: number, zoom?: number) => void;
   getCenter: () => { lat: number; lng: number } | null;
@@ -51,6 +58,8 @@ interface SkiMapProps {
   onViewChange?: (view: MapViewState) => void;
   userLocation?: UserLocationMarker | null;
   mountainHome?: MountainHomeMarker | null;
+  sharedLocations?: SharedLocationMarker[];
+  onRemoveSharedLocation?: (id: string) => void;
   mapRef?: React.MutableRefObject<MapRef | null>;
 }
 
@@ -71,7 +80,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, mapRef }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -84,6 +93,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const currentSkiAreaRef = useRef<SkiAreaDetails | null>(null);
   const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const mountainHomeMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
 
   // Expose map methods via ref
   useEffect(() => {
@@ -662,6 +672,62 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         .addTo(map.current);
     }
   }, [mountainHome, mapLoaded]);
+
+  // Handle shared location markers
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    const currentMarkerIds = new Set(sharedLocations?.map(l => l.id) || []);
+    
+    // Remove markers that are no longer in the list
+    sharedLocationMarkersRef.current.forEach((marker, id) => {
+      if (!currentMarkerIds.has(id)) {
+        marker.remove();
+        sharedLocationMarkersRef.current.delete(id);
+      }
+    });
+
+    // Add or update markers
+    sharedLocations?.forEach(location => {
+      const existingMarker = sharedLocationMarkersRef.current.get(location.id);
+      
+      if (existingMarker) {
+        existingMarker.setLngLat([location.longitude, location.latitude]);
+      } else {
+        // Create custom marker element with person icon
+        const el = document.createElement('div');
+        el.className = 'shared-location-marker';
+        el.innerHTML = `
+          <div class="shared-location-circle">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+          </div>
+        `;
+        el.title = location.name + ' (click to dismiss)';
+        
+        // Add click handler to remove marker
+        el.addEventListener('click', () => {
+          onRemoveSharedLocation?.(location.id);
+        });
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([location.longitude, location.latitude])
+          .setPopup(
+            new maplibregl.Popup({ offset: 25, closeOnClick: false })
+              .setHTML(`
+                <div style="padding: 6px; font-size: 11px;">
+                  <strong>${location.name}</strong>
+                  <div style="margin-top: 4px; font-size: 9px; color: #888;">Click marker to dismiss</div>
+                </div>
+              `)
+          )
+          .addTo(map.current!);
+        
+        sharedLocationMarkersRef.current.set(location.id, marker);
+      }
+    });
+  }, [sharedLocations, mapLoaded, onRemoveSharedLocation]);
 
   // Update shading without recreating layers
   const updateShading = useCallback((area: SkiAreaDetails, time: Date) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 
 interface UrlState {
   areaId: string | null;
@@ -11,6 +11,18 @@ interface UrlState {
   time: number | null; // minutes from midnight
   highlightId: string | null;
   highlightType: 'run' | 'lift' | null;
+  // Shared location marker
+  sharedLat: number | null;
+  sharedLng: number | null;
+  sharedName: string | null;
+}
+
+export interface SharedLocation {
+  latitude: number;
+  longitude: number;
+  name: string;
+  expiresAt: number; // timestamp when this marker should be removed (end of day)
+  id: string;
 }
 
 export function parseUrlState(): UrlState {
@@ -24,6 +36,9 @@ export function parseUrlState(): UrlState {
       time: null,
       highlightId: null,
       highlightType: null,
+      sharedLat: null,
+      sharedLng: null,
+      sharedName: null,
     };
   }
 
@@ -38,6 +53,10 @@ export function parseUrlState(): UrlState {
     time: params.has('t') ? parseInt(params.get('t')!, 10) : null,
     highlightId: params.get('hl'),
     highlightType: params.get('hlt') as 'run' | 'lift' | null,
+    // Shared location parameters (slat, slng, sname)
+    sharedLat: params.has('slat') ? parseFloat(params.get('slat')!) : null,
+    sharedLng: params.has('slng') ? parseFloat(params.get('slng')!) : null,
+    sharedName: params.get('sname'),
   };
 }
 

@@ -30,6 +30,8 @@ interface LocationControlsProps {
   userLocation: UserLocation | null;
   isTrackingLocation: boolean;
   onToggleTracking: (tracking: boolean) => void;
+  skiAreaId?: string | null;
+  skiAreaName?: string | null;
 }
 
 const MOUNTAIN_HOME_STORAGE_KEY = 'ski-shade-mountain-home';
@@ -42,6 +44,8 @@ function LocationControlsInner({
   userLocation,
   isTrackingLocation,
   onToggleTracking,
+  skiAreaId,
+  skiAreaName,
 }: LocationControlsProps) {
   const [showHomeModal, setShowHomeModal] = useState(false);
   const [homeName, setHomeName] = useState('');
@@ -113,22 +117,40 @@ function LocationControlsInner({
     );
   }, [isTrackingLocation, userLocation, onUserLocationChange, onGoToLocation, onToggleTracking]);
 
-  // Share current location
+  // Share current location - creates an app link with location marker
   const handleShareLocation = useCallback(async () => {
     if (!userLocation) {
       message.info('Enable location first to share');
       return;
     }
 
-    const lat = userLocation.latitude.toFixed(6);
-    const lng = userLocation.longitude.toFixed(6);
-    const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-    const shareText = `I'm at: ${lat}, ${lng}\n${mapsUrl}`;
+    // Build URL with shared location parameters
+    const params = new URLSearchParams();
+    
+    // Include ski area if available
+    if (skiAreaId) {
+      params.set('area', skiAreaId);
+    }
+    if (skiAreaName) {
+      params.set('name', skiAreaName);
+    }
+    
+    // Set map center to the shared location
+    params.set('lat', userLocation.latitude.toFixed(6));
+    params.set('lng', userLocation.longitude.toFixed(6));
+    params.set('z', '16');
+    
+    // Shared location marker parameters
+    params.set('slat', userLocation.latitude.toFixed(6));
+    params.set('slng', userLocation.longitude.toFixed(6));
+    params.set('sname', 'Someone shared their location');
 
+    const shareUrl = `${window.location.origin}?${params.toString()}`;
+    
     const shareData = {
-      title: 'My Location',
-      text: shareText,
-      url: mapsUrl,
+      title: 'SKISHADE - My Location',
+      text: `I'm on the mountain! Check where I am:\n\n${shareUrl}`,
+      url: shareUrl,
     };
 
     if (navigator.share && navigator.canShare?.(shareData)) {
@@ -142,12 +164,12 @@ function LocationControlsInner({
 
     // Fallback to clipboard
     try {
-      await navigator.clipboard.writeText(shareText);
-      message.success('Location copied to clipboard!');
+      await navigator.clipboard.writeText(shareUrl);
+      message.success('Location link copied to clipboard!');
     } catch {
-      message.info(`Location: ${lat}, ${lng}`);
+      message.info('Copy this link: ' + shareUrl);
     }
-  }, [userLocation]);
+  }, [userLocation, skiAreaId, skiAreaName]);
 
   // Set Mountain Home - use current location or prompt for location
   const handleSetMountainHome = useCallback(() => {

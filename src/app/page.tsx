@@ -11,7 +11,7 @@ import {
   CloudOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
-import type { MapRef, UserLocationMarker, MountainHomeMarker } from '@/components/Map/SkiMap';
+import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
 import SkiAreaPicker from '@/components/Controls/SkiAreaPicker';
 import TimeSlider from '@/components/Controls/TimeSlider';
 import ViewToggle from '@/components/Controls/ViewToggle';
@@ -27,7 +27,7 @@ import SearchBar from '@/components/SearchBar';
 import LocationControls from '@/components/LocationControls';
 import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
-import { parseUrlState, minutesToDate } from '@/hooks/useUrlState';
+import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 
@@ -35,6 +35,7 @@ const { Text } = Typography;
 
 const STORAGE_KEY = 'ski-shade-map-state';
 const UNITS_STORAGE_KEY = 'ski-shade-units';
+const SHARED_LOCATIONS_STORAGE_KEY = 'ski-shade-shared-locations';
 
 interface StoredState {
   areaId: string;
@@ -173,6 +174,7 @@ export default function Home() {
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [mountainHome, setMountainHome] = useState<MountainHome | null>(null);
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [sharedLocations, setSharedLocations] = useState<SharedLocation[]>([]);
   const mapRef = useRef<MapRef | null>(null);
   
   // Offline support
@@ -222,6 +224,37 @@ export default function Home() {
         }, 5000);
       }
       
+      // Handle shared location from URL
+      if (urlState.sharedLat && urlState.sharedLng) {
+        // Calculate end of day expiry
+        const now = new Date();
+        const endOfDay = new Date(now);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        const newSharedLocation: SharedLocation = {
+          latitude: urlState.sharedLat,
+          longitude: urlState.sharedLng,
+          name: urlState.sharedName || 'Shared Location',
+          expiresAt: endOfDay.getTime(),
+          id: `shared-${Date.now()}`,
+        };
+        
+        // Load existing shared locations and add new one
+        try {
+          const stored = localStorage.getItem(SHARED_LOCATIONS_STORAGE_KEY);
+          const existing: SharedLocation[] = stored ? JSON.parse(stored) : [];
+          
+          // Filter out expired locations and add new one
+          const validLocations = existing.filter(loc => loc.expiresAt > Date.now());
+          validLocations.push(newSharedLocation);
+          
+          localStorage.setItem(SHARED_LOCATIONS_STORAGE_KEY, JSON.stringify(validLocations));
+          setSharedLocations(validLocations);
+        } catch {
+          setSharedLocations([newSharedLocation]);
+        }
+      }
+      
       // Clear URL params after reading (cleaner URLs on refresh)
       if (typeof window !== 'undefined') {
         window.history.replaceState({}, '', window.location.pathname);
@@ -256,6 +289,25 @@ export default function Home() {
       }
     } catch (e) {
       // Ignore localStorage errors
+    }
+    
+    // Load shared locations from storage (if not already loaded from URL)
+    if (!urlState.sharedLat) {
+      try {
+        const stored = localStorage.getItem(SHARED_LOCATIONS_STORAGE_KEY);
+        if (stored) {
+          const locations: SharedLocation[] = JSON.parse(stored);
+          // Filter out expired locations
+          const validLocations = locations.filter(loc => loc.expiresAt > Date.now());
+          if (validLocations.length !== locations.length) {
+            // Update storage with only valid locations
+            localStorage.setItem(SHARED_LOCATIONS_STORAGE_KEY, JSON.stringify(validLocations));
+          }
+          setSharedLocations(validLocations);
+        }
+      } catch {
+        // Ignore storage errors
+      }
     }
     
     setInitialLoadDone(true);
@@ -367,6 +419,19 @@ export default function Home() {
     setUserLocation(location);
   }, []);
 
+  // Handler to remove a shared location
+  const handleRemoveSharedLocation = useCallback((id: string) => {
+    setSharedLocations(prev => {
+      const updated = prev.filter(loc => loc.id !== id);
+      try {
+        localStorage.setItem(SHARED_LOCATIONS_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Ignore storage errors
+      }
+      return updated;
+    });
+  }, []);
+
   // Convert location types for map
   const userLocationMarker: UserLocationMarker | null = userLocation
     ? { latitude: userLocation.latitude, longitude: userLocation.longitude, accuracy: userLocation.accuracy }
@@ -375,6 +440,14 @@ export default function Home() {
   const mountainHomeMarker: MountainHomeMarker | null = mountainHome
     ? { latitude: mountainHome.latitude, longitude: mountainHome.longitude, name: mountainHome.name }
     : null;
+
+  // Convert shared locations for map
+  const sharedLocationMarkers: SharedLocationMarker[] = sharedLocations.map(loc => ({
+    latitude: loc.latitude,
+    longitude: loc.longitude,
+    name: loc.name,
+    id: loc.id,
+  }));
 
   const mapCenter = useMemo(() => 
     skiAreaDetails 
@@ -504,6 +577,8 @@ export default function Home() {
           onViewChange={handleViewChange}
           userLocation={userLocationMarker}
           mountainHome={mountainHomeMarker}
+          sharedLocations={sharedLocationMarkers}
+          onRemoveSharedLocation={handleRemoveSharedLocation}
           mapRef={mapRef}
         />
 
@@ -532,6 +607,8 @@ export default function Home() {
             userLocation={userLocation}
             isTrackingLocation={isTrackingLocation}
             onToggleTracking={setIsTrackingLocation}
+            skiAreaId={skiAreaDetails?.id}
+            skiAreaName={skiAreaDetails?.name}
           />
         </div>
 
