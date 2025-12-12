@@ -4,12 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
     "test:watch": "jest --watch",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx scripts/seed.ts",
+    "sync": "curl -X POST http://localhost:3000/api/sync?type=all\\&force=true -H 'Authorization: Bearer dev-sync-key'",
+    "sync:france": "curl -X POST http://localhost:3000/api/sync?type=all\\&country=FR\\&force=true -H 'Authorization: Bearer dev-sync-key'"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",

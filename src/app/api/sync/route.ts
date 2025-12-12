@@ -69,8 +69,33 @@ export async function POST(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const dataType = searchParams.get('type') || 'all';
   const countryFilter = searchParams.get('country'); // e.g., 'FR' for France
+  const force = searchParams.get('force') === 'true';
 
   try {
+    // Check if sync is needed (unless force=true)
+    if (!force) {
+      const lastSync = await prisma.dataSync.findFirst({
+        where: { 
+          dataType: 'ski_areas',
+          status: 'success'
+        },
+        orderBy: { lastSync: 'desc' }
+      });
+
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      if (lastSync && lastSync.lastSync > thirtyDaysAgo) {
+        return NextResponse.json({
+          skipped: true,
+          message: 'Sync skipped - last sync was less than 30 days ago. Use force=true to override.',
+          lastSync: lastSync.lastSync.toISOString(),
+          recordCount: lastSync.recordCount,
+          nextSyncAfter: new Date(lastSync.lastSync.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        });
+      }
+    }
+
     if (dataType === 'all' || dataType === 'ski_areas') {
       await syncSkiAreas(countryFilter);
     }
