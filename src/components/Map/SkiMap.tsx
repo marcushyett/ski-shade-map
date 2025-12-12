@@ -651,16 +651,19 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       highlightPopupRef.current = null;
     }
 
+    // Remove existing highlight layers
+    if (map.current.getLayer('highlight-glow-outer')) {
+      map.current.removeLayer('highlight-glow-outer');
+    }
+    if (map.current.getLayer('highlight-glow-inner')) {
+      map.current.removeLayer('highlight-glow-inner');
+    }
+    if (map.current.getSource('highlight-source')) {
+      map.current.removeSource('highlight-source');
+    }
+
     // Reset line widths when no highlight
     if (!highlightedFeatureId) {
-      if (map.current.getLayer('ski-runs-line')) {
-        map.current.setPaintProperty('ski-runs-line', 'line-width', 3);
-        map.current.setPaintProperty('ski-runs-line', 'line-opacity', 1);
-      }
-      if (map.current.getLayer('ski-lifts')) {
-        map.current.setPaintProperty('ski-lifts', 'line-width', 2);
-        map.current.setPaintProperty('ski-lifts', 'line-opacity', 1);
-      }
       return;
     }
 
@@ -673,17 +676,47 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
     if (!feature) return;
 
-    // Apply orange glow effect - increase width and add orange color overlay
-    if (map.current.getLayer('ski-runs-line')) {
-      map.current.setPaintProperty('ski-runs-line', 'line-width', 
-        ['case', ['==', ['get', 'id'], highlightedFeatureId], 8, 3]
-      );
-    }
-    if (map.current.getLayer('ski-lifts')) {
-      map.current.setPaintProperty('ski-lifts', 'line-width',
-        ['case', ['==', ['get', 'id'], highlightedFeatureId], 6, 2]
-      );
-    }
+    // Create a GeoJSON source for the highlighted feature
+    const highlightGeojson: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: { id: feature.id },
+        geometry: feature.geometry,
+      }],
+    };
+
+    // Add the highlight source
+    map.current.addSource('highlight-source', {
+      type: 'geojson',
+      data: highlightGeojson,
+    });
+
+    // Add outer glow layer (wide, semi-transparent orange)
+    map.current.addLayer({
+      id: 'highlight-glow-outer',
+      type: 'line',
+      source: 'highlight-source',
+      paint: {
+        'line-color': '#f97316',
+        'line-width': 16,
+        'line-opacity': 0.4,
+        'line-blur': 8,
+      },
+    });
+
+    // Add inner glow layer (narrower, brighter orange)
+    map.current.addLayer({
+      id: 'highlight-glow-inner',
+      type: 'line',
+      source: 'highlight-source',
+      paint: {
+        'line-color': '#f97316',
+        'line-width': 8,
+        'line-opacity': 0.7,
+        'line-blur': 2,
+      },
+    });
 
     // Get center point of the geometry for popup and zoom
     const geometry = feature.geometry;
