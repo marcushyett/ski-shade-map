@@ -32,6 +32,8 @@ interface SkiMapProps {
   cloudCover?: CloudCover | null;
   initialView?: MapViewState | null;
   onViewChange?: (view: MapViewState) => void;
+  favouriteIds?: string[];
+  onToggleFavourite?: (runId: string) => void;
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -51,7 +53,7 @@ interface SegmentProperties {
   slopeAspect: number;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, favouriteIds = [], onToggleFavourite }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -62,6 +64,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const pendingUpdateRef = useRef<{ area: SkiAreaDetails; time: Date } | null>(null);
   const currentSunAzimuth = useRef<number>(0);
   const currentSkiAreaRef = useRef<SkiAreaDetails | null>(null);
+  const favouriteIdsRef = useRef<string[]>([]);
+  const onToggleFavouriteRef = useRef(onToggleFavourite);
+  
+  // Keep refs updated
+  favouriteIdsRef.current = favouriteIds;
+  onToggleFavouriteRef.current = onToggleFavourite;
 
   // Initialize map
   useEffect(() => {
@@ -293,7 +301,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny', 'ski-segments-shaded', 
-      'ski-runs-line', 'ski-lifts', 'ski-lifts-symbols'
+      'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-symbols'
     ];
     layersToRemove.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
@@ -451,6 +459,24 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
+    // Favourite runs orange outline layer
+    map.current.addLayer({
+      id: 'ski-runs-favourite',
+      type: 'line',
+      source: 'ski-runs',
+      filter: ['in', ['get', 'id'], ['literal', favouriteIdsRef.current]],
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#ff8c00', // Orange color
+        'line-width': 7,
+        'line-opacity': 0.8,
+        'line-blur': 1,
+      },
+    }, 'ski-runs-line'); // Place below the main run line
+
     // Lifts source and layer
     const liftsGeoJSON = {
       type: 'FeatureCollection' as const,
@@ -551,6 +577,17 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     }
   }, [highlightedFeatureId, mapLoaded, skiArea]);
 
+  // Update favourite runs layer filter when favouriteIds change
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !layersInitialized.current) return;
+
+    if (map.current.getLayer('ski-runs-favourite')) {
+      map.current.setFilter('ski-runs-favourite', 
+        ['in', ['get', 'id'], ['literal', favouriteIds]]
+      );
+    }
+  }, [favouriteIds, mapLoaded]);
+
   // Update shading without recreating layers
   const updateShading = useCallback((area: SkiAreaDetails, time: Date) => {
     if (!map.current) return;
@@ -612,18 +649,57 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       
       const feature = e.features[0];
       const props = feature.properties;
+      const runId = props.id;
+      const isFavourite = favouriteIdsRef.current.includes(runId);
       
-      new maplibregl.Popup()
+      const popup = new maplibregl.Popup()
         .setLngLat(e.lngLat)
         .setHTML(`
-          <div style="padding: 6px;">
+          <div style="padding: 6px; min-width: 150px;">
             <strong>${props.name || 'Unnamed Run'}</strong>
             <br/>
             <span style="color: ${props.color}">● ${props.difficulty || 'Unknown'}</span>
             ${props.status ? `<br/><small>Status: ${props.status}</small>` : ''}
+            <hr style="margin: 6px 0; border: none; border-top: 1px solid #333;" />
+            <button 
+              id="toggle-favourite-${runId}"
+              style="
+                width: 100%;
+                padding: 6px 10px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                font-weight: 500;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                background: ${isFavourite ? 'rgba(255, 140, 0, 0.2)' : 'rgba(250, 173, 20, 0.1)'};
+                color: ${isFavourite ? '#ff8c00' : '#faad14'};
+                border: 1px solid ${isFavourite ? '#ff8c00' : '#faad14'};
+                transition: all 0.2s;
+              "
+              onmouseover="this.style.background='${isFavourite ? 'rgba(255, 140, 0, 0.3)' : 'rgba(250, 173, 20, 0.2)'}'"
+              onmouseout="this.style.background='${isFavourite ? 'rgba(255, 140, 0, 0.2)' : 'rgba(250, 173, 20, 0.1)'}'"
+            >
+              <span style="font-size: 14px;">${isFavourite ? '★' : '☆'}</span>
+              ${isFavourite ? 'Remove from Favourites' : 'Add to Favourites'}
+            </button>
           </div>
         `)
         .addTo(map.current);
+      
+      // Add click handler after popup is added to DOM
+      setTimeout(() => {
+        const btn = document.getElementById(`toggle-favourite-${runId}`);
+        if (btn) {
+          btn.addEventListener('click', () => {
+            onToggleFavouriteRef.current?.(runId);
+            popup.remove();
+          });
+        }
+      }, 0);
     });
 
     map.current.on('click', 'ski-lifts', (e) => {

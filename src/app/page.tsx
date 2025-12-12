@@ -19,6 +19,8 @@ import Logo from '@/components/Logo';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TrailsLiftsList from '@/components/Controls/TrailsLiftsList';
 import WeatherPanel from '@/components/Controls/WeatherPanel';
+import FavouritesPanel from '@/components/Controls/FavouritesPanel';
+import { useFavourites } from '@/hooks/useFavourites';
 import OfflineBanner from '@/components/OfflineBanner';
 import CacheButton from '@/components/CacheButton';
 import ShareButton from '@/components/ShareButton';
@@ -47,11 +49,13 @@ const ControlsContent = memo(function ControlsContent({
   weather,
   selectedTime,
   isOffline,
+  favourites,
   onAreaSelect,
   onSelectRun,
   onSelectLift,
   onErrorClose,
   onWeatherLoad,
+  onRemoveFavourite,
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
@@ -59,11 +63,13 @@ const ControlsContent = memo(function ControlsContent({
   weather: WeatherData | null;
   selectedTime: Date;
   isOffline: boolean;
+  favourites: { id: string; name: string | null; difficulty: string | null; skiAreaId: string; skiAreaName: string }[];
   onAreaSelect: (area: SkiAreaSummary) => void;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
   onErrorClose: () => void;
   onWeatherLoad: (weather: WeatherData) => void;
+  onRemoveFavourite: (runId: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-3 h-full">
@@ -109,12 +115,25 @@ const ControlsContent = memo(function ControlsContent({
           </div>
 
           {/* Weather panel */}
-          <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="flex-shrink-0">
             <WeatherPanel
               latitude={skiAreaDetails.latitude}
               longitude={skiAreaDetails.longitude}
               selectedTime={selectedTime}
               onWeatherLoad={onWeatherLoad}
+            />
+          </div>
+
+          {/* Favourites panel - shows favourite runs with sunniest times */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <FavouritesPanel
+              favourites={favourites}
+              runs={skiAreaDetails.runs}
+              latitude={skiAreaDetails.latitude}
+              longitude={skiAreaDetails.longitude}
+              hourlyWeather={weather?.hourly}
+              onSelectRun={onSelectRun}
+              onRemoveFavourite={onRemoveFavourite}
             />
           </div>
         </>
@@ -167,6 +186,14 @@ export default function Home() {
   
   // Offline support
   const { isOffline, wasOffline, lastOnline, clearOfflineWarning } = useOffline();
+
+  // Favourites support
+  const { 
+    favourites, 
+    favouriteIds, 
+    toggleFavourite, 
+    removeFavourite 
+  } = useFavourites(skiAreaDetails?.id || null, skiAreaDetails?.name || null);
 
   // Register service worker
   useEffect(() => {
@@ -331,6 +358,15 @@ export default function Home() {
     setMapView(view);
   }, []);
 
+  const handleToggleFavourite = useCallback((runId: string) => {
+    if (!skiAreaDetails) return;
+    
+    const run = skiAreaDetails.runs.find(r => r.id === runId);
+    if (run) {
+      toggleFavourite(run);
+    }
+  }, [skiAreaDetails, toggleFavourite]);
+
   const handleErrorClose = useCallback(() => {
     setError(null);
   }, []);
@@ -424,11 +460,13 @@ export default function Home() {
           weather={weather}
           selectedTime={selectedTime}
           isOffline={isOffline}
+          favourites={favourites}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
+          onRemoveFavourite={removeFavourite}
         />
       </Drawer>
 
@@ -441,11 +479,13 @@ export default function Home() {
           weather={weather}
           selectedTime={selectedTime}
           isOffline={isOffline}
+          favourites={favourites}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
+          onRemoveFavourite={removeFavourite}
         />
       </div>
 
@@ -465,6 +505,8 @@ export default function Home() {
           cloudCover={currentCloudCover}
           initialView={initialMapView}
           onViewChange={handleViewChange}
+          favouriteIds={favouriteIds}
+          onToggleFavourite={handleToggleFavourite}
         />
 
         {/* Legend and action buttons */}
