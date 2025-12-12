@@ -36,8 +36,6 @@ interface SkiMapProps {
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
 
-// Night color for when sun is below horizon
-const NIGHT_COLOR = '#0a0a0a';
 
 interface SegmentProperties {
   runId: string;
@@ -290,7 +288,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Remove existing layers
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
-      'ski-segments-sunny', 'ski-segments-shaded', 
+      'ski-segments-sunny-glow', 'ski-segments-sunny', 'ski-segments-shaded', 
       'ski-runs-line', 'ski-lifts', 'ski-lifts-symbols'
     ];
     layersToRemove.forEach(layerId => {
@@ -374,7 +372,26 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       data: segments,
     });
 
-    // Sunny segments layer - uses difficulty color (lighter grey for black runs)
+    // Sunny segments glow layer - creates a bright halo effect behind sunny runs
+    map.current.addLayer({
+      id: 'ski-segments-sunny-glow',
+      type: 'line',
+      source: 'ski-segments',
+      filter: ['==', ['get', 'isShaded'], false],
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#ffffff',
+        'line-width': 10,
+        'line-blur': 4,
+        'line-opacity': isNight ? 0 : 0.6,
+        'line-opacity-transition': { duration: 200 },
+      },
+    });
+
+    // Sunny segments layer - uses bright difficulty colors
     map.current.addLayer({
       id: 'ski-segments-sunny',
       type: 'line',
@@ -387,12 +404,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       paint: {
         'line-color': ['get', 'sunnyColor'],
         'line-width': 4,
-        'line-opacity': 1,
+        'line-opacity': isNight ? 0 : 1,
         'line-opacity-transition': { duration: 200 },
       },
     });
 
-    // Shaded segments layer - uses darker difficulty color
+    // Shaded segments layer - uses darker difficulty color (also used at night)
     map.current.addLayer({
       id: 'ski-segments-shaded',
       type: 'line',
@@ -403,7 +420,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'line-join': 'round',
       },
       paint: {
-        'line-color': isNight ? NIGHT_COLOR : ['get', 'shadedColor'],
+        'line-color': ['get', 'shadedColor'],
         'line-width': 4,
         'line-opacity': 1,
         'line-opacity-transition': { duration: 200 },
@@ -515,7 +532,13 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const highlightWidth = highlightedFeatureId 
       ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 6, 4]
       : 4;
+    const highlightGlowWidth = highlightedFeatureId 
+      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 14, 10]
+      : 10;
     
+    if (map.current.getLayer('ski-segments-sunny-glow')) {
+      map.current.setPaintProperty('ski-segments-sunny-glow', 'line-width', highlightGlowWidth);
+    }
     if (map.current.getLayer('ski-segments-sunny')) {
       map.current.setPaintProperty('ski-segments-sunny', 'line-width', highlightWidth);
     }
@@ -597,10 +620,14 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       segmentsSource.setData(segments);
     }
 
-    // Update shaded color for night
-    if (map.current.getLayer('ski-segments-shaded')) {
-      map.current.setPaintProperty('ski-segments-shaded', 'line-color', isNight ? NIGHT_COLOR : ['get', 'shadedColor']);
+    // Hide sunny segments and glow at night, show shaded colors for all runs
+    if (map.current.getLayer('ski-segments-sunny-glow')) {
+      map.current.setPaintProperty('ski-segments-sunny-glow', 'line-opacity', isNight ? 0 : 0.6);
     }
+    if (map.current.getLayer('ski-segments-sunny')) {
+      map.current.setPaintProperty('ski-segments-sunny', 'line-opacity', isNight ? 0 : 1);
+    }
+    // Shaded segments always show their difficulty colors (no NIGHT_COLOR override)
   }, []);
 
   // Setup click handlers

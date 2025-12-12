@@ -133,42 +133,42 @@ export function getDifficultyColor(difficulty: string | null | undefined): strin
 }
 
 /**
- * Get difficulty color for sunny segments
- * For black runs, show a lighter grey since they can't get darker in shade
+ * Get difficulty color for sunny segments - BRIGHT and vibrant
+ * High contrast with shaded segments, with lighter/more saturated colors
  */
 export function getDifficultyColorSunny(difficulty: string | null | undefined): string {
   switch (difficulty?.toLowerCase()) {
     case 'novice':
-      return '#4CAF50'; // Green
+      return '#81C784'; // Light bright green
     case 'easy':
-      return '#2196F3'; // Blue
+      return '#64B5F6'; // Light bright blue
     case 'intermediate':
-      return '#F44336'; // Red
+      return '#FF8A80'; // Light bright red/coral
     case 'advanced':
     case 'expert':
-      return '#555555'; // Lighter grey for black runs in sun
+      return '#757575'; // Medium grey for black runs in sun (visible contrast)
     default:
-      return '#9E9E9E'; // Gray for unknown
+      return '#BDBDBD'; // Light gray for unknown
   }
 }
 
 /**
- * Get difficulty color for shaded segments (darker version)
- * For black runs, keep them black
+ * Get difficulty color for shaded segments (much darker for high contrast)
+ * These are used during daytime for shaded areas AND at night for all runs
  */
 export function getDifficultyColorShaded(difficulty: string | null | undefined): string {
   switch (difficulty?.toLowerCase()) {
     case 'novice':
-      return '#2E7D32'; // Darker green
+      return '#1B5E20'; // Very dark green
     case 'easy':
-      return '#1565C0'; // Darker blue
+      return '#0D47A1'; // Very dark blue
     case 'intermediate':
-      return '#B71C1C'; // Darker red
+      return '#7F0000'; // Very dark red
     case 'advanced':
     case 'expert':
-      return '#1a1a1a'; // Black stays black in shade
+      return '#212121'; // Very dark grey (not pure black, so visible)
     default:
-      return '#616161'; // Darker gray for unknown
+      return '#424242'; // Dark gray for unknown
   }
 }
 
