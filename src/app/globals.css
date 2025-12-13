@@ -363,13 +363,6 @@ h5.ant-typography {
   z-index: 10;
 }
 
-.map-layer-toggle-container {
-  position: absolute;
-  bottom: 180px;
-  left: 6px;
-  z-index: 10;
-}
-
 .cache-button-container {
   position: absolute;
   top: 6px;
@@ -406,11 +399,6 @@ h5.ant-typography {
   .view-toggle-container {
     top: 10px;
     right: 56px;
-  }
-
-  .map-layer-toggle-container {
-    bottom: 200px;
-    left: 10px;
   }
 
   .cache-button-container {

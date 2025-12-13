@@ -8,7 +8,6 @@ import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded }
 import LoadingSpinner from '@/components/LoadingSpinner';
 import type { SkiAreaDetails } from '@/lib/types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
-import type { MapOverlayMode } from '@/components/Controls/MapLayerToggle';
 
 interface CloudCover {
   total: number;
@@ -59,7 +58,6 @@ interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
   selectedTime: Date;
   is3D: boolean;
-  overlayMode?: MapOverlayMode;
   onMapReady?: () => void;
   highlightedFeatureId?: string | null;
   highlightedFeatureType?: 'run' | 'lift' | null;
@@ -94,7 +92,7 @@ interface SegmentProperties {
   shadedColor: string;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, overlayMode = 'shadow', onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, isEditingHome = false, onSetHomeLocation }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, isEditingHome = false, onSetHomeLocation }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -120,7 +118,6 @@ export default function SkiMap({ skiArea, selectedTime, is3D, overlayMode = 'sha
   const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const highlightPopupRef = useRef<maplibregl.Popup | null>(null);
   const searchPlaceMarkerRef = useRef<maplibregl.Marker | null>(null);
-  const currentOverlayModeRef = useRef<MapOverlayMode>('shadow');
 
   // Expose map methods via ref
   useEffect(() => {
@@ -312,55 +309,6 @@ export default function SkiMap({ skiArea, selectedTime, is3D, overlayMode = 'sha
     }
   }, [cloudCover, mapLoaded]);
 
-  // Handle overlay mode changes (satellite, avalanche, etc.)
-  useEffect(() => {
-    if (!map.current || !mapLoaded) return;
-    
-    const prevMode = currentOverlayModeRef.current;
-    currentOverlayModeRef.current = overlayMode;
-    
-    // Handle satellite mode - change basemap
-    if (overlayMode === 'satellite' && prevMode !== 'satellite') {
-      const satelliteStyle = `https://api.maptiler.com/maps/satellite/style.json?key=${MAPTILER_KEY}`;
-      map.current.setStyle(satelliteStyle);
-      layersInitialized.current = false;
-    } else if (prevMode === 'satellite' && overlayMode !== 'satellite') {
-      const backdropStyle = `https://api.maptiler.com/maps/backdrop/style.json?key=${MAPTILER_KEY}`;
-      map.current.setStyle(backdropStyle);
-      layersInitialized.current = false;
-    }
-    
-    // Re-add terrain after style change
-    map.current.once('style.load', () => {
-      if (!map.current) return;
-      
-      // Re-add terrain source
-      if (!map.current.getSource('terrain-dem')) {
-        map.current.addSource('terrain-dem', {
-          type: 'raster-dem',
-          url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`,
-          tileSize: 256,
-        });
-      }
-      
-      // Re-setup terrain if 3D mode is enabled
-      if (is3D) {
-        map.current.setTerrain({
-          source: 'terrain-dem',
-          exaggeration: 1.5,
-        });
-      }
-      
-      // Force re-initialization of ski area layers
-      if (skiArea && currentSkiAreaId.current === skiArea.id) {
-        layersInitialized.current = false;
-        // Trigger re-render by updating
-        setMapLoaded(true);
-      }
-    });
-    
-  }, [overlayMode, mapLoaded, is3D, skiArea]);
-
   // Initialize layers when ski area changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !skiArea) return;
@@ -422,7 +370,6 @@ export default function SkiMap({ skiArea, selectedTime, is3D, overlayMode = 'sha
       'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-symbols',
       'ski-segments-sunny-glow',
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded', 'ski-runs-polygon-outline',
-      'ski-runs-labels', 'ski-lifts-labels',
     ];
     layersToRemove.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
@@ -764,53 +711,6 @@ export default function SkiMap({ skiArea, selectedTime, is3D, overlayMode = 'sha
         ],
         'circle-stroke-color': '#000',
         'circle-stroke-width': 1,
-      },
-    });
-
-    // Run name labels - show when zoomed in
-    map.current.addLayer({
-      id: 'ski-runs-labels',
-      type: 'symbol',
-      source: 'ski-runs',
-      minzoom: 14, // Only show at zoom 14+
-      layout: {
-        'symbol-placement': 'line-center',
-        'text-field': ['get', 'name'],
-        'text-size': 11,
-        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-        'text-max-width': 10,
-        'text-allow-overlap': false,
-        'text-ignore-placement': false,
-      },
-      paint: {
-        'text-color': '#ffffff',
-        'text-halo-color': '#000000',
-        'text-halo-width': 1.5,
-        'text-halo-blur': 0.5,
-      },
-    });
-
-    // Lift name labels - show when zoomed in
-    map.current.addLayer({
-      id: 'ski-lifts-labels',
-      type: 'symbol',
-      source: 'ski-lifts',
-      minzoom: 13, // Show lift names slightly earlier
-      layout: {
-        'symbol-placement': 'line-center',
-        'text-field': ['get', 'name'],
-        'text-size': 12,
-        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-        'text-max-width': 12,
-        'text-allow-overlap': false,
-        'text-ignore-placement': false,
-        'text-offset': [0, -1], // Offset slightly above the line
-      },
-      paint: {
-        'text-color': '#333333',
-        'text-halo-color': '#ffffff',
-        'text-halo-width': 2,
-        'text-halo-blur': 0.5,
       },
     });
 
