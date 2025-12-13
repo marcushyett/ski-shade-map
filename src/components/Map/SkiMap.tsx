@@ -370,6 +370,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-symbols',
       'ski-segments-sunny-glow',
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded', 'ski-runs-polygon-outline',
+      'ski-runs-labels', 'ski-runs-arrows', 'ski-lifts-labels',
     ];
     layersToRemove.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
@@ -711,6 +712,104 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         ],
         'circle-stroke-color': '#000',
         'circle-stroke-width': 1,
+      },
+    });
+
+    // Run/piste name labels along the line - only when zoomed in
+    map.current.addLayer({
+      id: 'ski-runs-labels',
+      type: 'symbol',
+      source: 'ski-runs',
+      minzoom: 14.5,
+      layout: {
+        'symbol-placement': 'line',
+        'text-field': ['get', 'name'],
+        'text-size': 11,
+        'text-font': ['Open Sans Italic', 'Arial Unicode MS Regular'],
+        'text-max-angle': 30,
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'symbol-spacing': 250,
+        'text-pitch-alignment': 'viewport',
+        'text-rotation-alignment': 'map',
+      },
+      paint: {
+        'text-color': [
+          'match',
+          ['get', 'difficulty'],
+          'novice', '#22c55e',
+          'easy', '#3b82f6', 
+          'intermediate', '#dc2626',
+          'advanced', '#1a1a1a',
+          'expert', '#f97316',
+          'freeride', '#f59e0b',
+          '#666666'
+        ],
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
+        'text-halo-blur': 0.5,
+      },
+    });
+
+    // Direction arrows on runs (text arrows pointing downhill)
+    map.current.addLayer({
+      id: 'ski-runs-arrows',
+      type: 'symbol',
+      source: 'ski-runs',
+      minzoom: 14.5,
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 80,
+        'text-field': '›', // Arrow character
+        'text-size': 16,
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-rotation-alignment': 'map',
+        'text-pitch-alignment': 'viewport',
+        'text-keep-upright': false,
+      },
+      paint: {
+        'text-color': [
+          'match',
+          ['get', 'difficulty'],
+          'novice', '#22c55e',
+          'easy', '#3b82f6', 
+          'intermediate', '#dc2626',
+          'advanced', '#1a1a1a',
+          'expert', '#f97316',
+          'freeride', '#f59e0b',
+          '#666666'
+        ],
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1,
+        'text-opacity': 0.7,
+      },
+    });
+
+    // Lift name labels along the line
+    map.current.addLayer({
+      id: 'ski-lifts-labels',
+      type: 'symbol',
+      source: 'ski-lifts',
+      minzoom: 13.5,
+      layout: {
+        'symbol-placement': 'line-center',
+        'text-field': ['get', 'name'],
+        'text-size': 10,
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-max-angle': 30,
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'text-pitch-alignment': 'viewport',
+        'text-rotation-alignment': 'map',
+        'text-letter-spacing': 0.05,
+      },
+      paint: {
+        'text-color': '#333333',
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 2,
+        'text-halo-blur': 0.5,
       },
     });
 
