@@ -123,27 +123,38 @@ function SunIcon({ level }: { level: SunLevel }) {
   return null;
 }
 
-// Sun distribution chart - shows hourly sun percentages
+// Sun distribution chart - shows hourly sun percentages from 7am to 6pm
 function SunDistributionChart({ hourlyData }: { hourlyData: HourlySunData[] }) {
-  if (hourlyData.length === 0) {
-    return (
-      <div style={{ fontSize: 9, color: '#666', textAlign: 'center', padding: '8px 0' }}>
-        No sun data available
-      </div>
-    );
+  // Fixed range: 7am (7) to 6pm (18)
+  const START_HOUR = 7;
+  const END_HOUR = 18;
+  
+  // Create a map of hour to percentage
+  const hourMap: Record<number, number> = {};
+  hourlyData.forEach(data => {
+    hourMap[data.hour] = data.percentage;
+  });
+  
+  // Generate bars for each hour in the fixed range
+  const hours: { hour: number; percentage: number }[] = [];
+  for (let h = START_HOUR; h <= END_HOUR; h++) {
+    hours.push({
+      hour: h,
+      percentage: hourMap[h] ?? 0, // 0 if no data (before sunrise or after sunset)
+    });
   }
   
   return (
     <div className="sun-distribution-chart" style={{ padding: '4px 0' }}>
       <div className="flex items-end gap-px" style={{ height: 40 }}>
-        {hourlyData.map((data, i) => (
+        {hours.map((data, i) => (
           <Tooltip key={i} title={`${data.hour}:00 - ${Math.round(data.percentage)}% sun`}>
             <div
               style={{
                 flex: 1,
-                height: `${data.percentage}%`,
+                height: `${Math.max(data.percentage, 2)}%`,
                 minHeight: 2,
-                background: data.percentage > 75 ? '#faad14' : data.percentage > 50 ? '#d4a017' : data.percentage > 25 ? '#8b7500' : '#333',
+                background: data.percentage > 75 ? '#faad14' : data.percentage > 50 ? '#d4a017' : data.percentage > 25 ? '#8b7500' : '#222',
                 borderRadius: '2px 2px 0 0',
                 cursor: 'help',
               }}
@@ -152,8 +163,9 @@ function SunDistributionChart({ hourlyData }: { hourlyData: HourlySunData[] }) {
         ))}
       </div>
       <div className="flex justify-between" style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
-        <span>{hourlyData[0]?.hour}:00</span>
-        <span>{hourlyData[hourlyData.length - 1]?.hour}:00</span>
+        <span>7am</span>
+        <span>12pm</span>
+        <span>6pm</span>
       </div>
     </div>
   );
@@ -289,7 +301,7 @@ const FavouriteItem = memo(function FavouriteItem({
     <div className="favourite-item mb-1">
       {/* Header row */}
       <div 
-        className="flex items-center gap-1.5 py-0.5 px-1 cursor-pointer hover:bg-white/5 rounded group"
+        className="flex items-center gap-1.5 py-0.5 px-1 cursor-pointer hover:bg-white/5 rounded"
         onClick={onToggleExpand}
       >
         {isExpanded ? <DownOutlined style={{ fontSize: 7, color: '#666' }} /> : <RightOutlined style={{ fontSize: 7, color: '#666' }} />}
@@ -306,14 +318,6 @@ const FavouriteItem = memo(function FavouriteItem({
             <span style={{ marginLeft: 2 }}>{sunnyTime}</span>
           </span>
         )}
-        <button
-          className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5"
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#666' }}
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          title="Remove"
-        >
-          <DeleteOutlined style={{ fontSize: 9 }} />
-        </button>
       </div>
       
       {/* Expanded content */}
@@ -346,20 +350,35 @@ const FavouriteItem = memo(function FavouriteItem({
             </div>
           )}
           
-          {/* Go to run button */}
-          <button
-            onClick={(e) => { e.stopPropagation(); onSelect(); }}
-            className="w-full py-1 px-2 rounded text-center hover:bg-white/10 transition-colors"
-            style={{ 
-              fontSize: 10, 
-              color: '#faad14', 
-              background: 'rgba(250, 173, 20, 0.1)',
-              border: '1px solid rgba(250, 173, 20, 0.3)',
-              cursor: 'pointer',
-            }}
-          >
-            Go to run on map
-          </button>
+          {/* Action buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); onSelect(); }}
+              className="flex-1 py-1 px-2 rounded text-center hover:bg-white/10 transition-colors"
+              style={{ 
+                fontSize: 10, 
+                color: '#faad14', 
+                background: 'rgba(250, 173, 20, 0.1)',
+                border: '1px solid rgba(250, 173, 20, 0.3)',
+                cursor: 'pointer',
+              }}
+            >
+              Go to map
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              className="py-1 px-3 rounded text-center hover:bg-white/10 transition-colors"
+              style={{ 
+                fontSize: 10, 
+                color: '#ff4d4f', 
+                background: 'rgba(255, 77, 79, 0.1)',
+                border: '1px solid rgba(255, 77, 79, 0.3)',
+                cursor: 'pointer',
+              }}
+            >
+              <DeleteOutlined style={{ fontSize: 10 }} />
+            </button>
+          </div>
         </div>
       )}
     </div>
