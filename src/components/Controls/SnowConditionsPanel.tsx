@@ -23,9 +23,6 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
   }
   
   const mainCondition = getConditionInfo(summary.overallCondition);
-  // Color based on percentage: green (70%+), neutral gray (40-70%), red (<40%)
-  const scoreColor = summary.overallScore >= 70 ? '#22c55e' : summary.overallScore >= 40 ? '#a3a3a3' : '#ef4444';
-  const scoreDelta = Math.round(summary.overallScore - 50);
   
   return (
     <div className="snow-conditions-panel">
@@ -37,10 +34,7 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
         {expanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
         <Text type="secondary" style={{ fontSize: 9 }}>SNOW</Text>
         <ConditionIcon iconType={mainCondition.iconType} style={{ fontSize: 12, color: mainCondition.color }} />
-        <span style={{ fontSize: 11, color: scoreColor, fontWeight: 600 }}>
-          {scoreDelta >= 0 ? '+' : ''}{scoreDelta}%
-        </span>
-        <span style={{ fontSize: 10, color: '#888' }}>
+        <span style={{ fontSize: 11, color: mainCondition.color, fontWeight: 600 }}>
           {mainCondition.label}
         </span>
       </div>
@@ -120,17 +114,15 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
             {showHowItWorks && (
               <div style={{ marginTop: 6, color: '#888', lineHeight: 1.4 }}>
                 <div style={{ marginBottom: 4 }}>
-                  Score starts at 50% (baseline). Factors adjust it:
+                  Conditions determined by:
                 </div>
                 <div style={{ display: 'grid', gap: 2, fontSize: 7 }}>
-                  <div>• <span style={{ color: '#4ade80' }}>Fresh snow</span>: up to +30%</div>
-                  <div>• <span style={{ color: '#4ade80' }}>Cold temps / high altitude</span>: up to +15%</div>
-                  <div>• <span style={{ color: '#ef4444' }}>Warm temps</span>: up to -20%</div>
-                  <div>• <span style={{ color: '#ef4444' }}>Afternoon / sun exposure</span>: up to -15%</div>
-                  <div>• <span style={{ color: '#ef4444' }}>High wind / steep slopes</span>: up to -15%</div>
-                </div>
-                <div style={{ marginTop: 4, color: '#555' }}>
-                  Final score clamped 0-100%. See docs for full algorithm.
+                  <div>• Recent snowfall → Powder or Fresh Groomed</div>
+                  <div>• Cold temps ({`<`}0°C) → Packed or Hard Pack</div>
+                  <div>• Warm temps (0-5°C) → Soft</div>
+                  <div>• Hot temps ({`>`}5°C) → Slush</div>
+                  <div>• Steep slopes + afternoon → Moguls</div>
+                  <div>• High winds → Wind-affected</div>
                 </div>
               </div>
             )}
@@ -149,6 +141,7 @@ function getConditionDescription(condition: string): string {
     'packed-powder': 'Well-consolidated snow - reliable skiing',
     'hard-pack': 'Firm, compacted snow - good edge grip needed',
     'spring-corn': 'Soft, warming snow (0-5°C) - still enjoyable, best earlier in the day',
+    'soft': 'Soft, warming snow (0-5°C) - still enjoyable, best earlier in the day',
     'variable': 'Mixed conditions - expect changes across the run',
     'wind-affected': 'Wind-packed or scoured areas - uneven surface',
     'crusty': 'Frozen crust on surface - can break through unexpectedly',

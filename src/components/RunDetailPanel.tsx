@@ -7,6 +7,8 @@ import { CloseOutlined, StarFilled, StarOutlined, EnvironmentOutlined, DeleteOut
 import type { RunData } from '@/lib/types';
 import type { RunSunAnalysis, RunStats } from '@/lib/sunny-time-calculator';
 import { getDifficultyColor } from '@/lib/shade-calculator';
+import { getConditionInfo, type SnowCondition, type SnowQualityAtPoint } from '@/lib/snow-quality';
+import { ConditionIcon } from '@/components/SnowQualityBadge';
 
 // Hourly sun data type
 interface HourlySunData {
@@ -14,24 +16,17 @@ interface HourlySunData {
   percentage: number;
 }
 
-// Snow quality at point type
-interface SnowQualityPoint {
-  altitude: number;
-  score: number;
-}
+// Re-export the type for external use
+export type SnowQualityPoint = SnowQualityAtPoint;
 
 // Format time helper
 function formatTime(date: Date): string {
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-// Get color for snow quality score
-function getSnowScoreColor(score: number): string {
-  if (score >= 70) return '#22c55e';
-  if (score >= 50) return '#84cc16';
-  if (score >= 40) return '#a3a3a3';
-  if (score >= 25) return '#f97316';
-  return '#ef4444';
+// Get color for snow condition
+function getConditionColor(condition: SnowCondition): string {
+  return getConditionInfo(condition).color;
 }
 
 // Sun icon component
@@ -172,11 +167,19 @@ export function ElevationProfileChart({
   
   const pointsWithSnow = points.map(p => {
     const snowPoint = snowQuality?.find(sq => Math.abs(sq.altitude - p.elevation) < 50);
-    return { ...p, snowScore: snowPoint?.score };
+    return { ...p, condition: snowPoint?.condition };
   });
 
-  const avgSnowScore = snowQuality && snowQuality.length > 0
-    ? Math.round(snowQuality.reduce((sum, sq) => sum + sq.score, 0) / snowQuality.length)
+  // Get the dominant condition (most common)
+  const dominantCondition = snowQuality && snowQuality.length > 0
+    ? snowQuality.reduce((acc, sq) => {
+        acc[sq.condition] = (acc[sq.condition] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
+    : null;
+  
+  const mainCondition = dominantCondition 
+    ? Object.entries(dominantCondition).sort((a, b) => b[1] - a[1])[0]?.[0] as SnowCondition
     : null;
   
   return (
@@ -195,7 +198,7 @@ export function ElevationProfileChart({
                     <stop 
                       key={i} 
                       offset={`${p.x}%`} 
-                      stopColor={p.snowScore !== undefined ? getSnowScoreColor(p.snowScore) : '#333'}
+                      stopColor={p.condition ? getConditionColor(p.condition) : '#333'}
                       stopOpacity="0.3"
                     />
                   ))}
@@ -221,7 +224,7 @@ export function ElevationProfileChart({
                 y1={100 - pointsWithSnow[i].y}
                 x2={p.x}
                 y2={100 - p.y}
-                stroke={p.snowScore !== undefined ? getSnowScoreColor(p.snowScore) : '#888'}
+                stroke={p.condition ? getConditionColor(p.condition) : '#888'}
                 strokeWidth="2"
                 vectorEffect="non-scaling-stroke"
               />
@@ -245,36 +248,27 @@ export function ElevationProfileChart({
           </span>
         </Tooltip>
       </div>
-      {avgSnowScore !== null && (
+      {mainCondition && (
         <div style={{ marginTop: 6 }}>
-          <div style={{ fontSize: 9, color: '#888', marginBottom: 4 }}>
+          <div style={{ fontSize: 9, color: '#888' }}>
             <Tooltip 
               title={
                 <div style={{ fontSize: 11 }}>
-                  <div style={{ marginBottom: 4 }}><strong>Snow Quality Score</strong></div>
-                  <div>Based on recent weather, altitude, aspect, and time of day:</div>
-                  <div style={{ marginTop: 4 }}>
-                    <span style={{ color: '#22c55e' }}>● 70%+</span> Excellent conditions<br/>
-                    <span style={{ color: '#84cc16' }}>● 50-70%</span> Good conditions<br/>
-                    <span style={{ color: '#a3a3a3' }}>● 40-50%</span> Fair conditions<br/>
-                    <span style={{ color: '#f97316' }}>● 25-40%</span> Poor conditions<br/>
-                    <span style={{ color: '#ef4444' }}>● &lt;25%</span> Bad conditions
-                  </div>
+                  <strong>Expected Conditions</strong>: {getConditionInfo(mainCondition).tooltip}
                 </div>
               }
             >
-              <span style={{ cursor: 'help', borderBottom: '1px dotted #666' }}>
-                Snow Score: <span style={{ color: getSnowScoreColor(avgSnowScore), fontWeight: 600 }}>{avgSnowScore}%</span>
+              <span style={{ cursor: 'help', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                Snow: 
+                <ConditionIcon 
+                  iconType={getConditionInfo(mainCondition).iconType} 
+                  style={{ fontSize: 11, color: getConditionInfo(mainCondition).color }} 
+                />
+                <span style={{ color: getConditionInfo(mainCondition).color, fontWeight: 600 }}>
+                  {getConditionInfo(mainCondition).label}
+                </span>
               </span>
             </Tooltip>
-          </div>
-          {/* Color legend for the graph */}
-          <div className="flex gap-2 flex-wrap" style={{ fontSize: 7, color: '#666' }}>
-            <span><span style={{ color: '#22c55e' }}>■</span> Excellent</span>
-            <span><span style={{ color: '#84cc16' }}>■</span> Good</span>
-            <span><span style={{ color: '#a3a3a3' }}>■</span> Fair</span>
-            <span><span style={{ color: '#f97316' }}>■</span> Poor</span>
-            <span><span style={{ color: '#ef4444' }}>■</span> Bad</span>
           </div>
         </div>
       )}
@@ -315,8 +309,16 @@ export const RunDetailPanel = memo(function RunDetailPanel({
     : null;
   const sunColor = sunLevel === 'full' ? '#faad14' : sunLevel === 'partial' ? '#d4a017' : '#888';
   
-  const avgSnowScore = snowQuality && snowQuality.length > 0
-    ? Math.round(snowQuality.reduce((sum, sq) => sum + sq.score, 0) / snowQuality.length)
+  // Get the dominant condition (most common)
+  const conditionCounts = snowQuality && snowQuality.length > 0
+    ? snowQuality.reduce((acc, sq) => {
+        acc[sq.condition] = (acc[sq.condition] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
+    : null;
+  
+  const mainCondition = conditionCounts 
+    ? Object.entries(conditionCounts).sort((a, b) => b[1] - a[1])[0]?.[0] as SnowCondition
     : null;
   
   return (
@@ -372,9 +374,16 @@ export const RunDetailPanel = memo(function RunDetailPanel({
             <span>{sunnyTime}</span>
           </span>
         )}
-        {avgSnowScore !== null && (
-          <span>
-            Snow: <span style={{ color: getSnowScoreColor(avgSnowScore), fontWeight: 600 }}>{avgSnowScore}%</span>
+        {mainCondition && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            Snow: 
+            <ConditionIcon 
+              iconType={getConditionInfo(mainCondition).iconType} 
+              style={{ fontSize: 10, color: getConditionInfo(mainCondition).color }} 
+            />
+            <span style={{ color: getConditionInfo(mainCondition).color, fontWeight: 600 }}>
+              {getConditionInfo(mainCondition).label}
+            </span>
           </span>
         )}
       </div>

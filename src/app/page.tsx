@@ -94,14 +94,14 @@ const ControlsContent = memo(function ControlsContent({
 
   return (
     <div className="flex flex-col gap-2 h-full">
-      <div className="flex-shrink-0">
+      <div className="shrink-0">
         <Logo size="md" />
         <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 2 }}>
           Chase the sun, on the snow
         </Text>
       </div>
 
-      <div className="flex-shrink-0">
+      <div className="shrink-0">
         <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
           SELECT AREA {isOffline && <span style={{ color: '#ff4d4f' }}>(offline)</span>}
         </Text>
@@ -115,7 +115,7 @@ const ControlsContent = memo(function ControlsContent({
       {skiAreaDetails && (
         <>
           {/* Weather panel - compact at top */}
-          <div className="flex-shrink-0">
+          <div className="shrink-0">
             <WeatherPanel
               latitude={skiAreaDetails.latitude}
               longitude={skiAreaDetails.longitude}
@@ -126,7 +126,7 @@ const ControlsContent = memo(function ControlsContent({
 
           {/* Snow conditions */}
           {snowSummary && (
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               <SnowConditionsPanel summary={snowSummary} />
             </div>
           )}
@@ -168,7 +168,7 @@ const ControlsContent = memo(function ControlsContent({
       )}
 
       {/* Advanced section */}
-      <div className="flex-shrink-0 mt-2">
+      <div className="shrink-0 mt-2">
         <div 
           className="flex items-center gap-1.5 py-1 cursor-pointer hover:bg-white/5 rounded"
           onClick={() => setAdvancedExpanded(!advancedExpanded)}
@@ -203,7 +203,7 @@ const ControlsContent = memo(function ControlsContent({
       </div>
 
       {/* Copyright - always at bottom */}
-      <div className="flex-shrink-0 mt-auto pt-2 border-t border-white/10">
+      <div className="shrink-0 mt-auto pt-2 border-t border-white/10">
         <span style={{ fontSize: 9, color: '#666' }}>
           <a 
             href="https://openskimap.org" 
