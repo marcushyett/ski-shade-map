@@ -102,7 +102,7 @@ Based on the score and weather factors, the algorithm determines a condition typ
 | 2 | **Fresh Groomed** | Morning, recent snow (<3 days), temp <2°C |
 | 3 | **Slush** | Warm (>5°C) or sun-facing in warm conditions |
 | 4 | **Icy** | Very cold (<-5°C), no recent snow (>5 days), cold nights |
-| 5 | **Spring Corn** | Freeze-thaw cycle (max >3°C, min <-3°C), morning |
+| 5 | **Spring Snow** | Freeze-thaw cycle (max >3°C, min <-3°C), morning |
 | 6 | **Wind-affected** | Wind >40 km/h |
 | 7 | **Moguls** | Steep (>28°) + afternoon |
 | 8 | **Crusty** | Freeze-thaw cycle, no recent snow |
@@ -111,7 +111,7 @@ Based on the score and weather factors, the algorithm determines a condition typ
 | 11 | **Fresh Groomed** | Morning, score ≥35% (default morning state) |
 | 12 | **Packed Powder** | Afternoon, score ≥50%, temp <5°C |
 | 13 | **Hard Pack** | Temp <2°C, score ≥30% |
-| 14 | **Spring Corn** | Temp 0-5°C, score ≥30% (softening) |
+| 14 | **Spring Snow** | Temp 0-5°C, score ≥30% (softening) |
 | 15 | **Variable** | Score ≥30% (rare fallback) |
 | 16 | **Poor** | Score <30% |
 
