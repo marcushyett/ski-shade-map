@@ -82,7 +82,7 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
         <Text type="secondary" style={{ fontSize: 9 }}>SNOW</Text>
         <ConditionIcon iconType={mainCondition.iconType} style={{ fontSize: 12, color: mainCondition.color }} />
         <span style={{ fontSize: 11, color: scoreColor, fontWeight: 600 }}>
-          {Math.round(summary.overallScore)}%
+          {summary.overallScore >= 50 ? '+' : ''}{Math.round(summary.overallScore - 50)}%
         </span>
         <span style={{ fontSize: 10, color: '#888' }}>
           {mainCondition.label}
@@ -107,32 +107,38 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
             </div>
           )}
           
-          {/* Condition breakdown */}
+          {/* Condition breakdown - show what % of runs have each snow type */}
           <div className="mb-2">
             <Text type="secondary" style={{ fontSize: 9, display: 'block', marginBottom: 4 }}>
-              Current conditions
+              Snow types across runs
             </Text>
-            <div className="flex flex-wrap gap-1">
-              {summary.conditionBreakdown.slice(0, 4).map((item) => {
+            <div style={{ display: 'grid', gap: 3 }}>
+              {summary.conditionBreakdown.map((item) => {
                 const info = getConditionInfo(item.condition);
                 return (
-                  <Tooltip key={item.condition} title={info.label}>
-                    <span 
-                      style={{ 
-                        fontSize: 9, 
-                        padding: '2px 4px',
-                        background: `${info.color}20`,
-                        borderRadius: 3,
-                        color: info.color,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 2,
-                      }}
-                    >
-                      <ConditionIcon iconType={info.iconType} style={{ fontSize: 9 }} />
+                  <div 
+                    key={item.condition}
+                    className="flex items-center gap-2"
+                    style={{ fontSize: 9 }}
+                  >
+                    <div style={{ width: 16, textAlign: 'center' }}>
+                      <ConditionIcon iconType={info.iconType} style={{ fontSize: 10, color: info.color }} />
+                    </div>
+                    <span style={{ color: '#aaa', flex: 1 }}>{info.label}</span>
+                    <div style={{ width: 60, height: 6, background: '#222', borderRadius: 2, overflow: 'hidden' }}>
+                      <div 
+                        style={{ 
+                          width: `${item.percentage}%`, 
+                          height: '100%', 
+                          background: info.color,
+                          borderRadius: 2,
+                        }} 
+                      />
+                    </div>
+                    <span style={{ color: info.color, fontWeight: 500, width: 28, textAlign: 'right' }}>
                       {item.percentage}%
                     </span>
-                  </Tooltip>
+                  </div>
                 );
               })}
             </div>
