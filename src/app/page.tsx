@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo, useRef, useDeferredValue, useTransition } from 'react';
 import { Typography, Alert, Button, Drawer } from 'antd';
 import { 
   MenuOutlined, 
@@ -240,6 +240,10 @@ export default function Home() {
     now.setHours(12, 0, 0, 0);
     return now;
   });
+  // Deferred time for heavy calculations - React will defer this during rapid updates
+  const deferredTime = useDeferredValue(selectedTime);
+  const isTimeStale = deferredTime !== selectedTime;
+  
   const [is3D, setIs3D] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -620,17 +624,17 @@ export default function Home() {
     } : null;
   }, [weather, selectedTime]);
 
-  // Calculate snow quality for all runs
+  // Calculate snow quality for all runs (uses deferred time for performance)
   const snowQuality = useMemo(() => {
     if (!skiAreaDetails || !weather?.hourly || !weather?.daily) {
       return { analyses: [], summary: null };
     }
     
-    const sunPos = getSunPosition(selectedTime, skiAreaDetails.latitude, skiAreaDetails.longitude);
+    const sunPos = getSunPosition(deferredTime, skiAreaDetails.latitude, skiAreaDetails.longitude);
     
     const result = analyzeResortSnowQuality(
       skiAreaDetails.runs,
-      selectedTime,
+      deferredTime,
       weather.hourly,
       weather.daily,
       sunPos.azimuth,
@@ -641,7 +645,7 @@ export default function Home() {
       analyses: result.analyses,
       summary: result.summary,
     };
-  }, [skiAreaDetails, weather, selectedTime]);
+  }, [skiAreaDetails, weather, deferredTime]);
 
   // Format snow analyses for the map component
   const snowAnalysesForMap = useMemo(() => {
@@ -653,13 +657,13 @@ export default function Home() {
     }));
   }, [snowQuality.analyses]);
 
-  // Calculate snow quality by altitude for favourite runs and selected run
+  // Calculate snow quality by altitude for favourite runs and selected run (uses deferred time)
   const snowQualityByRun = useMemo(() => {
     if (!skiAreaDetails || !weather?.hourly || !weather?.daily) {
       return {};
     }
     
-    const sunPos = getSunPosition(selectedTime, skiAreaDetails.latitude, skiAreaDetails.longitude);
+    const sunPos = getSunPosition(deferredTime, skiAreaDetails.latitude, skiAreaDetails.longitude);
     const result: Record<string, SnowQualityAtPoint[]> = {};
     
     // Calculate for favourite runs
@@ -668,7 +672,7 @@ export default function Home() {
       if (run) {
         result[run.id] = calculateSnowQualityByAltitude(
           run,
-          selectedTime,
+          deferredTime,
           weather.hourly,
           weather.daily,
           sunPos.azimuth,
@@ -683,7 +687,7 @@ export default function Home() {
       if (selectedRun) {
         result[selectedRun.id] = calculateSnowQualityByAltitude(
           selectedRun,
-          selectedTime,
+          deferredTime,
           weather.hourly,
           weather.daily,
           sunPos.azimuth,
@@ -693,7 +697,7 @@ export default function Home() {
     }
     
     return result;
-  }, [skiAreaDetails, weather, selectedTime, favourites, selectedRunIdForDetail]);
+  }, [skiAreaDetails, weather, deferredTime, favourites, selectedRunIdForDetail]);
 
   return (
     <div className="app-container">

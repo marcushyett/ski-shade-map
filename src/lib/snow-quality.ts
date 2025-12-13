@@ -640,6 +640,7 @@ export function calculateResortSnowSummary(
 }
 
 // Analyze all runs in a ski area
+// Uses sampling for large resorts to improve performance
 export function analyzeResortSnowQuality(
   runs: RunData[],
   currentTime: Date,
@@ -648,7 +649,18 @@ export function analyzeResortSnowQuality(
   sunAzimuth: number,
   sunAltitude: number
 ): { analyses: PisteSnowAnalysis[]; summary: ResortSnowSummary } {
-  const analyses = runs.map((run) =>
+  // For performance: if there are many runs, sample for the summary
+  // but still return empty analyses array (individual analysis done on-demand)
+  const MAX_RUNS_FOR_FULL_ANALYSIS = 50;
+  
+  let analysisRuns = runs;
+  if (runs.length > MAX_RUNS_FOR_FULL_ANALYSIS) {
+    // Sample runs evenly across the array
+    const step = Math.ceil(runs.length / MAX_RUNS_FOR_FULL_ANALYSIS);
+    analysisRuns = runs.filter((_, i) => i % step === 0);
+  }
+  
+  const analyses = analysisRuns.map((run) =>
     calculateSnowQuality(
       run,
       currentTime,

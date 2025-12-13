@@ -75,6 +75,7 @@ interface TimeSliderProps {
   longitude: number;
   selectedTime: Date;
   onTimeChange: (time: Date) => void;
+  onTimeChangeComplete?: (time: Date) => void; // Called when slider drag ends
   hourlyWeather?: HourlyWeather[];
   dailyWeather?: DailyWeatherDay[];
   units?: UnitPreferences;
@@ -86,6 +87,7 @@ export default function TimeSlider({
   longitude, 
   selectedTime, 
   onTimeChange,
+  onTimeChangeComplete,
   hourlyWeather,
   dailyWeather,
   units = { temperature: 'celsius', speed: 'kmh', length: 'cm' },
@@ -399,6 +401,7 @@ export default function TimeSlider({
         max={24 * 60 - 1}
         marks={marks}
         onChange={(value) => onTimeChange(sliderToTime(value))}
+        onChangeComplete={(value) => onTimeChangeComplete?.(sliderToTime(value))}
         tooltip={{
           formatter: (value) => value !== undefined ? format(sliderToTime(value), 'HH:mm') : '',
         }}
