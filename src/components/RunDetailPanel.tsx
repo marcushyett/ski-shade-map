@@ -455,7 +455,9 @@ export const RunDetailOverlay = memo(function RunDetailOverlay({
   
   // Project lngLat to screen coordinates
   const updatePosition = useCallback(() => {
-    if (!mapRef.current) return;
+    // Check if mapRef and project method are available
+    if (!mapRef.current || typeof mapRef.current.project !== 'function') return;
+    
     const point = mapRef.current.project([lngLat.lng, lngLat.lat]);
     if (point) {
       setScreenPos({ x: point.x, y: point.y });
@@ -464,10 +466,16 @@ export const RunDetailOverlay = memo(function RunDetailOverlay({
   
   // Update position on mount and when map moves
   useEffect(() => {
+    // Initial update
     updatePosition();
     
+    // Retry after a short delay if position not set (map might not be ready)
+    const retryTimeout = setTimeout(updatePosition, 100);
+    
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || typeof map.on !== 'function') {
+      return () => clearTimeout(retryTimeout);
+    }
     
     // Listen for map movements
     const handleMove = () => updatePosition();
@@ -475,8 +483,11 @@ export const RunDetailOverlay = memo(function RunDetailOverlay({
     map.on('zoom', handleMove);
     
     return () => {
-      map.off('move', handleMove);
-      map.off('zoom', handleMove);
+      clearTimeout(retryTimeout);
+      if (typeof map.off === 'function') {
+        map.off('move', handleMove);
+        map.off('zoom', handleMove);
+      }
     };
   }, [updatePosition, mapRef]);
   
