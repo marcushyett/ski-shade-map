@@ -73,6 +73,8 @@ interface SkiMapProps {
   onViewChange?: (view: MapViewState) => void;
   favouriteIds?: string[];
   onToggleFavourite?: (runId: string) => void;
+  onRunClick?: (runId: string, screenPosition: { x: number; y: number }) => void;
+  onMapClick?: () => void;
   userLocation?: UserLocationMarker | null;
   mountainHome?: MountainHomeMarker | null;
   sharedLocations?: SharedLocationMarker[];
@@ -100,7 +102,7 @@ interface SegmentProperties {
   shadedColor: string;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, isEditingHome = false, onSetHomeLocation, snowAnalyses = [] }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, onRunClick, onMapClick, isEditingHome = false, onSetHomeLocation, snowAnalyses = [] }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -113,6 +115,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const currentSkiAreaRef = useRef<SkiAreaDetails | null>(null);
   const favouriteIdsRef = useRef<string[]>([]);
   const onToggleFavouriteRef = useRef(onToggleFavourite);
+  const onRunClickRef = useRef(onRunClick);
+  const onMapClickRef = useRef(onMapClick);
   const isEditingHomeRef = useRef(isEditingHome);
   const onSetHomeLocationRef = useRef(onSetHomeLocation);
   
@@ -121,6 +125,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   // Keep refs updated
   favouriteIdsRef.current = favouriteIds;
   onToggleFavouriteRef.current = onToggleFavourite;
+  onRunClickRef.current = onRunClick;
+  onMapClickRef.current = onMapClick;
   isEditingHomeRef.current = isEditingHome;
   onSetHomeLocationRef.current = onSetHomeLocation;
   snowAnalysesRef.current = snowAnalyses;
@@ -1304,88 +1310,33 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const setupClickHandlers = useCallback(() => {
     if (!map.current) return;
 
-    // General map click handler for edit home mode
+    // General map click handler
     map.current.on('click', (e) => {
-      // Only handle if we're in edit home mode
-      if (!isEditingHomeRef.current) return;
+      // Handle edit home mode
+      if (isEditingHomeRef.current) {
+        onSetHomeLocationRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+        return;
+      }
       
-      // Set the home location
-      onSetHomeLocationRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+      // Check if we clicked on a run or lift - if not, close the detail panel
+      const features = map.current?.queryRenderedFeatures(e.point, { 
+        layers: ['ski-runs-line', 'ski-lifts'] 
+      });
+      if (!features || features.length === 0) {
+        onMapClickRef.current?.();
+      }
     });
 
     map.current.on('click', 'ski-runs-line', (e) => {
       if (!e.features?.length || !map.current) return;
-      if (isEditingHomeRef.current) return; // Don't show popup in edit mode
+      if (isEditingHomeRef.current) return; // Don't trigger in edit mode
       
       const feature = e.features[0];
       const props = feature.properties;
       const runId = props.id;
-      const isFavourite = favouriteIdsRef.current.includes(runId);
       
-      // Calculate run stats
-      const run = currentSkiAreaRef.current?.runs.find((r: RunData) => r.id === runId);
-      let distanceStr = '';
-      let elevationStr = '';
-      
-      if (run?.geometry.type === 'LineString') {
-        const coords = run.geometry.coordinates as number[][];
-        let totalDist = 0;
-        for (let i = 1; i < coords.length; i++) {
-          const [lng1, lat1] = coords[i - 1];
-          const [lng2, lat2] = coords[i];
-          const dLat = (lat2 - lat1) * Math.PI / 180;
-          const dLng = (lng2 - lng1) * Math.PI / 180;
-          const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-          totalDist += 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        }
-        distanceStr = totalDist >= 1000 ? `${(totalDist / 1000).toFixed(1)}km` : `${Math.round(totalDist)}m`;
-        
-        const elevs = coords.map((c: number[]) => c[2]).filter((el): el is number => typeof el === 'number' && el > 100);
-        if (elevs.length >= 2) {
-          const high = Math.max(...elevs);
-          const low = Math.min(...elevs);
-          if (high - low > 10) elevationStr = `↓${Math.round(high - low)}m (${Math.round(high)}→${Math.round(low)}m)`;
-        }
-      }
-      
-      const snowAnalysis = snowAnalysesRef.current.find(s => s.runId === runId);
-      const snowColor = snowAnalysis ? (snowAnalysis.score >= 70 ? '#22c55e' : snowAnalysis.score >= 40 ? '#a3a3a3' : '#ef4444') : null;
-      
-      const btnBg = isFavourite ? 'rgba(250, 173, 20, 0.25)' : 'rgba(250, 173, 20, 0.1)';
-      const snowHtml = snowAnalysis 
-        ? `<div style="font-size: 11px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px; margin-bottom: 8px;">Snow: <span style="color: ${snowColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span> <span style="color: #888;">${snowAnalysis.conditionLabel}</span></div>` 
-        : '';
-      
-      const popup = new maplibregl.Popup()
-        .setLngLat(e.lngLat)
-        .setHTML(`
-          <div style="padding: 8px; min-width: 180px;">
-            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-              <span style="width: 10px; height: 10px; border-radius: 50%; background: ${props.color};"></span>
-              <strong style="font-size: 13px;">${props.name || 'Unnamed Run'}</strong>
-            </div>
-            <div style="font-size: 11px; color: ${props.color}; margin-bottom: 4px;">${props.difficulty || 'Unknown'}</div>
-            ${distanceStr ? `<div style="font-size: 10px; color: #888; margin-bottom: 2px;">📏 ${distanceStr}</div>` : ''}
-            ${elevationStr ? `<div style="font-size: 10px; color: #888; margin-bottom: 6px;">${elevationStr}</div>` : ''}
-            ${snowHtml}
-            <button id="toggle-favourite-${runId}" style="width: 100%; padding: 8px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px; background: ${btnBg}; color: #faad14; border: 1px solid #faad14;">
-              <span style="font-size: 14px;">${isFavourite ? '★' : '☆'}</span>
-              ${isFavourite ? 'Remove from Favourites' : 'Add to Favourites'}
-            </button>
-          </div>
-        `)
-        .addTo(map.current);
-      
-      // Add click handler after popup is added to DOM
-      setTimeout(() => {
-        const btn = document.getElementById(`toggle-favourite-${runId}`);
-        if (btn) {
-          btn.addEventListener('click', () => {
-            onToggleFavouriteRef.current?.(runId);
-            popup.remove();
-          });
-        }
-      }, 0);
+      // Call the onRunClick callback with screen position
+      onRunClickRef.current?.(runId, { x: e.point.x, y: e.point.y });
     });
 
     map.current.on('click', 'ski-lifts', (e) => {

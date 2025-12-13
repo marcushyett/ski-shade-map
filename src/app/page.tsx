@@ -29,6 +29,8 @@ import ShareButton from '@/components/ShareButton';
 import SearchBar from '@/components/SearchBar';
 import LocationControls from '@/components/LocationControls';
 import type { MountainHome, UserLocation } from '@/components/LocationControls';
+import { RunDetailOverlay } from '@/components/RunDetailPanel';
+import { analyzeRuns, calculateRunStats } from '@/lib/sunny-time-calculator';
 import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
 import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
@@ -242,6 +244,7 @@ export default function Home() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
   const [highlightedFeatureType, setHighlightedFeatureType] = useState<'run' | 'lift' | null>(null);
+  const [selectedRunDetail, setSelectedRunDetail] = useState<{ runId: string; position: { x: number; y: number } } | null>(null);
   const [searchPlaceMarker, setSearchPlaceMarker] = useState<{ latitude: number; longitude: number; name: string; placeType?: string } | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -478,6 +481,15 @@ export default function Home() {
     }, 3000);
   }, []);
 
+  // Handle run click on map - show detail overlay
+  const handleRunClick = useCallback((runId: string, position: { x: number; y: number }) => {
+    setSelectedRunDetail({ runId, position });
+  }, []);
+
+  const handleCloseRunDetail = useCallback(() => {
+    setSelectedRunDetail(null);
+  }, []);
+
   const handleSelectLift = useCallback((lift: LiftData) => {
     setHighlightedFeatureId(lift.id);
     setHighlightedFeatureType('lift');
@@ -638,7 +650,7 @@ export default function Home() {
     }));
   }, [snowQuality.analyses]);
 
-  // Calculate snow quality by altitude for favourite runs (uses deferred time)
+  // Calculate snow quality by altitude for favourite runs and selected run (uses deferred time)
   const snowQualityByRun = useMemo(() => {
     if (!skiAreaDetails || !weather?.hourly || !weather?.daily) {
       return {};
@@ -662,8 +674,38 @@ export default function Home() {
       }
     });
     
+    // Also calculate for selected run if it's not already a favourite
+    if (selectedRunDetail?.runId && !result[selectedRunDetail.runId]) {
+      const selectedRun = skiAreaDetails.runs.find(r => r.id === selectedRunDetail.runId);
+      if (selectedRun) {
+        result[selectedRun.id] = calculateSnowQualityByAltitude(
+          selectedRun,
+          deferredTime,
+          weather.hourly,
+          weather.daily,
+          sunPos.azimuth,
+          sunPos.altitudeDegrees
+        );
+      }
+    }
+    
     return result;
-  }, [skiAreaDetails, weather, deferredTime, favourites]);
+  }, [skiAreaDetails, weather, deferredTime, favourites, selectedRunDetail?.runId]);
+
+  // Calculate analysis and stats for the selected run overlay
+  const selectedRunData = useMemo(() => {
+    if (!selectedRunDetail?.runId || !skiAreaDetails) return null;
+    
+    const run = skiAreaDetails.runs.find(r => r.id === selectedRunDetail.runId);
+    if (!run) return null;
+    
+    const analyses = analyzeRuns([run], selectedTime, skiAreaDetails.latitude, skiAreaDetails.longitude, weather?.hourly);
+    const analysis = analyses[0] || null;
+    const stats = calculateRunStats(run);
+    const isFavourite = favourites.some(f => f.id === run.id);
+    
+    return { run, analysis, stats, isFavourite };
+  }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, favourites]);
 
   return (
     <div className="app-container">
@@ -786,10 +828,28 @@ export default function Home() {
           onClearSearchPlace={handleClearSearchPlace}
           favouriteIds={favouriteIds}
           onToggleFavourite={handleToggleFavourite}
+          onRunClick={handleRunClick}
+          onMapClick={handleCloseRunDetail}
           isEditingHome={isEditingHome}
           onSetHomeLocation={setPendingHomeLocation}
           snowAnalyses={snowAnalysesForMap}
         />
+
+        {/* Run detail overlay - shows when a run is clicked */}
+        {selectedRunData && selectedRunDetail && (
+          <RunDetailOverlay
+            run={selectedRunData.run}
+            analysis={selectedRunData.analysis || undefined}
+            stats={selectedRunData.stats}
+            snowQuality={snowQualityByRun[selectedRunData.run.id]}
+            isFavourite={selectedRunData.isFavourite}
+            position={selectedRunDetail.position}
+            onClose={handleCloseRunDetail}
+            onToggleFavourite={() => {
+              toggleFavourite(selectedRunData.run);
+            }}
+          />
+        )}
 
         {/* Search bar on map - desktop only */}
         {skiAreaDetails && (
