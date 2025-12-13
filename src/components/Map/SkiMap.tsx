@@ -371,6 +371,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       'ski-segments-sunny-glow',
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded',
       'ski-runs-labels', 'ski-lifts-labels',
+      'ski-runs-arrows', 'ski-lifts-arrows',
     ];
     layersToRemove.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
@@ -757,6 +758,66 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'text-halo-color': '#ffffff',
         'text-halo-width': 2,
         'text-halo-blur': 0.5,
+      },
+    });
+
+    // Direction arrows for runs (pointing downhill)
+    map.current.addLayer({
+      id: 'ski-runs-arrows',
+      type: 'symbol',
+      source: 'ski-runs',
+      minzoom: 13.5,
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 80,
+        'text-field': '▸',
+        'text-size': 12,
+        'text-keep-upright': false,
+        'text-rotation-alignment': 'map',
+        'text-pitch-alignment': 'viewport',
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': [
+          'match',
+          ['get', 'difficulty'],
+          'novice', '#22c55e',
+          'easy', '#3b82f6', 
+          'intermediate', '#dc2626',
+          'advanced', '#1a1a1a',
+          'expert', '#f97316',
+          'freeride', '#f59e0b',
+          '#666666'
+        ],
+        'text-opacity': 0.7,
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1,
+      },
+    });
+
+    // Direction arrows for lifts (pointing uphill - reverse direction)
+    map.current.addLayer({
+      id: 'ski-lifts-arrows',
+      type: 'symbol',
+      source: 'ski-lifts',
+      minzoom: 12.5,
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 60,
+        'text-field': '▸',
+        'text-size': 10,
+        'text-keep-upright': false,
+        'text-rotation-alignment': 'map',
+        'text-pitch-alignment': 'viewport',
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#333333',
+        'text-opacity': 0.6,
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1,
       },
     });
 
