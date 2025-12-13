@@ -21,6 +21,7 @@ import { format, setHours, setMinutes, startOfDay, addDays, isSameDay } from 'da
 import dayjs from 'dayjs';
 import { getSunTimes, getSunPosition } from '@/lib/suncalc';
 import WeatherTimeline from './WeatherTimeline';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import type { HourlyWeather, UnitPreferences, DailyWeatherDay } from '@/lib/weather-types';
 
 const { Text } = Typography;
@@ -77,7 +78,7 @@ interface TimeSliderProps {
   hourlyWeather?: HourlyWeather[];
   dailyWeather?: DailyWeatherDay[];
   units?: UnitPreferences;
-  hasWeatherData?: boolean;
+  isLoadingWeather?: boolean;
 }
 
 export default function TimeSlider({ 
@@ -88,7 +89,7 @@ export default function TimeSlider({
   hourlyWeather,
   dailyWeather,
   units = { temperature: 'celsius', speed: 'kmh', length: 'cm' },
-  hasWeatherData = true,
+  isLoadingWeather = false,
 }: TimeSliderProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -205,28 +206,44 @@ export default function TimeSlider({
     return dailyWeather.find(d => d.date === dateStr) || null;
   };
 
-  // Custom date cell renderer - simplified without weather to avoid overlap
+  // Custom date cell renderer with weather below the date
   const dateRender = (current: dayjs.Dayjs) => {
     const weather = getWeatherForDate(current.toDate());
     const isSelected = isSameDay(current.toDate(), selectedTime);
     const hasWeather = !!weather;
     
     return (
-      <Tooltip 
-        title={weather ? `${formatTemp(weather.minTemperature)} - ${formatTemp(weather.maxTemperature)}` : 'No weather data'}
-        placement="top"
+      <div 
+        className="date-cell-with-weather"
+        style={{ 
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2px 0',
+          minHeight: 44,
+          backgroundColor: isSelected ? '#faad14' : undefined,
+          borderRadius: isSelected ? 4 : undefined,
+          color: isSelected ? '#000' : hasWeather ? '#fff' : '#555',
+        }}
       >
-        <div 
-          className="ant-picker-cell-inner" 
-          style={{ 
-            backgroundColor: isSelected ? '#faad14' : undefined,
-            borderRadius: isSelected ? 4 : undefined,
-            color: isSelected ? '#000' : hasWeather ? '#fff' : '#666',
-          }}
-        >
+        <span style={{ fontSize: 13, fontWeight: isSelected ? 600 : 400 }}>
           {current.date()}
-        </div>
-      </Tooltip>
+        </span>
+        {hasWeather && (
+          <div style={{ 
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            fontSize: 9,
+            opacity: isSelected ? 0.8 : 0.7,
+            marginTop: 1,
+          }}>
+            <DayWeatherIcon code={weather.weatherCode} size={9} />
+            <span>{formatTemp(weather.maxTemperature)}</span>
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -259,6 +276,9 @@ export default function TimeSlider({
           
           {/* Weather indicator for selected date */}
           {mounted && (() => {
+            if (isLoadingWeather) {
+              return <LoadingSpinner size={12} />;
+            }
             const dayWeather = getWeatherForDate(selectedTime);
             if (dayWeather) {
               return (
@@ -306,8 +326,22 @@ export default function TimeSlider({
         </div>
       )}
 
+      {/* Loading weather indicator */}
+      {isLoadingWeather && mounted && (
+        <div 
+          className="mb-2 p-2 rounded text-center flex items-center justify-center gap-2" 
+          style={{ 
+            background: 'rgba(255, 255, 255, 0.05)', 
+            fontSize: 10,
+          }}
+        >
+          <LoadingSpinner size={12} />
+          <Text type="secondary">Loading weather data...</Text>
+        </div>
+      )}
+
       {/* No weather data warning */}
-      {!selectedDateHasWeather && mounted && (
+      {!selectedDateHasWeather && !isLoadingWeather && mounted && (
         <div 
           className="mb-2 p-2 rounded text-center" 
           style={{ 

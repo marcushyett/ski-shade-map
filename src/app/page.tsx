@@ -225,6 +225,7 @@ export default function Home() {
   const [highlightedFeatureType, setHighlightedFeatureType] = useState<'run' | 'lift' | null>(null);
   const [searchPlaceMarker, setSearchPlaceMarker] = useState<{ latitude: number; longitude: number; name: string; placeType?: string } | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
   const [units, setUnits] = useState<UnitPreferences>({
     temperature: 'celsius',
     speed: 'kmh',
@@ -442,6 +443,7 @@ export default function Home() {
   const handleAreaSelect = useCallback((area: SkiAreaSummary) => {
     setSelectedArea(area);
     setWeather(null); // Clear weather when changing areas
+    setWeatherLoading(true); // Show loading state
     setMobileMenuOpen(false);
   }, []);
 
@@ -482,6 +484,7 @@ export default function Home() {
 
   const handleWeatherLoad = useCallback((weatherData: WeatherData) => {
     setWeather(weatherData);
+    setWeatherLoading(false);
   }, []);
 
   // Search handlers
@@ -798,7 +801,7 @@ export default function Home() {
             hourlyWeather={hourlyWeather}
             dailyWeather={weather?.daily}
             units={units}
-            hasWeatherData={!!weather}
+            isLoadingWeather={weatherLoading}
           />
         </div>
       </div>

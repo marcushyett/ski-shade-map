@@ -954,34 +954,69 @@ h5.ant-typography {
 }
 
 /* Date picker overrides - make navigation always visible */
+.ant-picker-dropdown .ant-picker-header button {
+  visibility: visible !important;
+  opacity: 1 !important;
+  color: #aaa !important;
+}
+
+.ant-picker-dropdown .ant-picker-header button:hover {
+  color: #fff !important;
+}
+
+/* Force arrows to show */
 .ant-picker-header-super-prev-btn,
 .ant-picker-header-prev-btn,
 .ant-picker-header-next-btn,
 .ant-picker-header-super-next-btn {
   visibility: visible !important;
+  display: inline-flex !important;
   opacity: 1 !important;
-  color: #ccc !important;
+  color: #aaa !important;
 }
 
-.ant-picker-header-super-prev-btn:hover,
-.ant-picker-header-prev-btn:hover,
-.ant-picker-header-next-btn:hover,
-.ant-picker-header-super-next-btn:hover {
-  color: #fff !important;
-}
-
-/* Make date picker cells more readable */
+/* Make date picker cells accommodate weather info */
 .ant-picker-cell {
-  padding: 2px !important;
+  padding: 1px !important;
 }
 
-.ant-picker-cell-inner {
-  min-width: 28px !important;
-  height: 28px !important;
-  line-height: 28px !important;
+.ant-picker-cell-inner,
+.date-cell-with-weather {
+  min-width: 36px !important;
+  min-height: 44px !important;
+  line-height: normal !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Override default inner styling when using custom cell */
+.ant-picker-cell .date-cell-with-weather {
+  width: 100%;
+  height: 100%;
+}
+
+/* Selected date styling */
+.ant-picker-cell-selected .date-cell-with-weather,
+.ant-picker-cell-selected .ant-picker-cell-inner {
+  background: #faad14 !important;
+  color: #000 !important;
 }
 
 /* Dim dates without weather data */
-.ant-picker-cell-disabled .ant-picker-cell-inner {
+.ant-picker-cell-disabled .ant-picker-cell-inner,
+.ant-picker-cell-disabled .date-cell-with-weather {
   color: #444 !important;
+  opacity: 0.5;
+}
+
+/* Fix dropdown panel sizing */
+.ant-picker-dropdown .ant-picker-panel {
+  background: #1a1a1a !important;
+}
+
+.ant-picker-dropdown .ant-picker-content th,
+.ant-picker-dropdown .ant-picker-content td {
+  padding: 2px !important;
 }
