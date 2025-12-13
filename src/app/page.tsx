@@ -30,7 +30,7 @@ import SearchBar from '@/components/SearchBar';
 import LocationControls from '@/components/LocationControls';
 import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
-import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
+import { parseUrlState, minutesToDate, dateToYYYYMMDD, SharedLocation } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 
@@ -279,9 +279,10 @@ export default function Home() {
         setInitialMapView({ lat: urlState.lat, lng: urlState.lng, zoom: urlState.zoom });
       }
       
-      // Set time from URL
-      if (urlState.time !== null) {
-        setSelectedTime(minutesToDate(urlState.time));
+      // Set time and date from URL
+      if (urlState.time !== null || urlState.date !== null) {
+        const timeMinutes = urlState.time !== null ? urlState.time : 12 * 60; // Default to noon
+        setSelectedTime(minutesToDate(timeMinutes, urlState.date || undefined));
       } else {
         setSelectedTime(new Date());
       }
@@ -795,7 +796,9 @@ export default function Home() {
             selectedTime={selectedTime}
             onTimeChange={setSelectedTime}
             hourlyWeather={hourlyWeather}
+            dailyWeather={weather?.daily}
             units={units}
+            hasWeatherData={!!weather}
           />
         </div>
       </div>

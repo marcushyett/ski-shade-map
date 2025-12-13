@@ -3,6 +3,8 @@
 import { memo, useCallback } from 'react';
 import { Tooltip, message } from 'antd';
 import { ShareAltOutlined } from '@ant-design/icons';
+import { dateToYYYYMMDD } from '@/hooks/useUrlState';
+import { format, isSameDay } from 'date-fns';
 
 interface ShareButtonProps {
   skiAreaId: string | null;
@@ -36,6 +38,12 @@ function ShareButtonInner({
     params.set('lng', longitude.toFixed(5));
     params.set('z', zoom.toFixed(1));
     
+    // Include date if not today
+    const today = new Date();
+    if (!isSameDay(selectedTime, today)) {
+      params.set('d', dateToYYYYMMDD(selectedTime));
+    }
+    
     // Encode time as minutes from midnight (compact)
     const minutes = selectedTime.getHours() * 60 + selectedTime.getMinutes();
     params.set('t', minutes.toString());
@@ -53,9 +61,10 @@ function ShareButtonInner({
 
     const shareUrl = `${window.location.origin}?${params.toString()}`;
     
+    const dateStr = !isSameDay(selectedTime, today) ? ` on ${format(selectedTime, 'MMM d')}` : '';
     const shareData = {
       title: `SKISHADE - ${skiAreaName || 'Ski Area'}`,
-      text: `Check out where the sun will be on the slopes at ${skiAreaName || 'this ski area'}.\n\n${shareUrl}`,
+      text: `Check out where the sun will be on the slopes at ${skiAreaName || 'this ski area'}${dateStr}.\n\n${shareUrl}`,
       url: shareUrl,
     };
 

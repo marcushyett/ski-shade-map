@@ -1,21 +1,73 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { Slider, Typography, Button, Tooltip } from 'antd';
+import { useState, useEffect, useMemo, ReactNode } from 'react';
+import { Slider, Typography, Button, Tooltip, DatePicker } from 'antd';
 import { 
   PlayCircleOutlined, 
   PauseCircleOutlined,
   SunOutlined,
   MoonOutlined,
   ArrowUpOutlined,
-  ArrowDownOutlined
+  ArrowDownOutlined,
+  LeftOutlined,
+  RightOutlined,
+  CalendarOutlined,
+  CloudOutlined,
+  CloudFilled,
+  ThunderboltOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
-import { format, setHours, setMinutes, startOfDay } from 'date-fns';
+import { format, setHours, setMinutes, startOfDay, addDays, isSameDay } from 'date-fns';
+import dayjs from 'dayjs';
 import { getSunTimes, getSunPosition } from '@/lib/suncalc';
 import WeatherTimeline from './WeatherTimeline';
-import type { HourlyWeather, UnitPreferences } from '@/lib/weather-types';
+import type { HourlyWeather, UnitPreferences, DailyWeatherDay } from '@/lib/weather-types';
 
 const { Text } = Typography;
+
+// Weather icon component for date picker
+function DayWeatherIcon({ code, size = 12 }: { code: number; size?: number }): ReactNode {
+  const style = { fontSize: size };
+  
+  // Clear sky
+  if (code === 0 || code === 1) {
+    return <SunOutlined style={{ ...style, color: '#faad14' }} />;
+  }
+  // Partly cloudy
+  if (code === 2) {
+    return <CloudOutlined style={style} />;
+  }
+  // Overcast
+  if (code === 3) {
+    return <CloudFilled style={style} />;
+  }
+  // Fog
+  if (code >= 45 && code <= 48) {
+    return <EyeOutlined style={{ ...style, opacity: 0.5 }} />;
+  }
+  // Drizzle / Rain
+  if (code >= 51 && code <= 67) {
+    return <CloudOutlined style={{ ...style, color: '#1890ff' }} />;
+  }
+  // Snow
+  if (code >= 71 && code <= 77) {
+    return <CloudOutlined style={{ ...style, color: '#e8e8e8' }} />;
+  }
+  // Rain showers
+  if (code >= 80 && code <= 82) {
+    return <CloudFilled style={{ ...style, color: '#1890ff' }} />;
+  }
+  // Snow showers
+  if (code >= 85 && code <= 86) {
+    return <CloudFilled style={{ ...style, color: '#e8e8e8' }} />;
+  }
+  // Thunderstorm
+  if (code >= 95) {
+    return <ThunderboltOutlined style={{ ...style, color: '#faad14' }} />;
+  }
+  
+  return <CloudOutlined style={style} />;
+}
 
 interface TimeSliderProps {
   latitude: number;
@@ -23,7 +75,9 @@ interface TimeSliderProps {
   selectedTime: Date;
   onTimeChange: (time: Date) => void;
   hourlyWeather?: HourlyWeather[];
+  dailyWeather?: DailyWeatherDay[];
   units?: UnitPreferences;
+  hasWeatherData?: boolean;
 }
 
 export default function TimeSlider({ 
@@ -32,14 +86,39 @@ export default function TimeSlider({
   selectedTime, 
   onTimeChange,
   hourlyWeather,
+  dailyWeather,
   units = { temperature: 'celsius', speed: 'kmh', length: 'cm' },
+  hasWeatherData = true,
 }: TimeSliderProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Check if selected date has weather data
+  const selectedDateHasWeather = useMemo(() => {
+    if (!hourlyWeather || hourlyWeather.length === 0) return false;
+    const selectedDateStr = format(selectedTime, 'yyyy-MM-dd');
+    return hourlyWeather.some(h => h.time.startsWith(selectedDateStr));
+  }, [hourlyWeather, selectedTime]);
+
+  // Get today's date for comparison
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const isToday = isSameDay(selectedTime, today);
+
+  // Calculate forecast range (up to 16 days from today)
+  const maxForecastDate = useMemo(() => addDays(today, 15), [today]);
+
+  // Format temperature based on units
+  const formatTemp = (c: number) => {
+    if (units.temperature === 'fahrenheit') {
+      return `${Math.round((c * 9/5) + 32)}°`;
+    }
+    return `${Math.round(c)}°`;
+  };
 
   const sunTimes = useMemo(() => {
     return getSunTimes(selectedTime, latitude, longitude);
@@ -93,10 +172,169 @@ export default function TimeSlider({
   const currentValue = timeToSlider(selectedTime);
   const isSunUp = sunPosition.altitudeDegrees > 0;
 
+  // Navigate to previous day
+  const goToPreviousDay = () => {
+    const newDate = addDays(selectedTime, -1);
+    // Keep the same time of day
+    newDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+    onTimeChange(newDate);
+  };
+
+  // Navigate to next day
+  const goToNextDay = () => {
+    const newDate = addDays(selectedTime, 1);
+    // Keep the same time of day
+    newDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+    onTimeChange(newDate);
+  };
+
+  // Handle date picker change
+  const handleDateChange = (date: dayjs.Dayjs | null) => {
+    if (date) {
+      const newDate = date.toDate();
+      newDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+      onTimeChange(newDate);
+      setShowDatePicker(false);
+    }
+  };
+
+  // Get weather for a specific date (for date picker cell rendering)
+  const getWeatherForDate = (date: Date): DailyWeatherDay | null => {
+    if (!dailyWeather) return null;
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return dailyWeather.find(d => d.date === dateStr) || null;
+  };
+
+  // Custom date cell renderer with weather preview
+  const dateRender = (current: dayjs.Dayjs) => {
+    const weather = getWeatherForDate(current.toDate());
+    const isSelected = isSameDay(current.toDate(), selectedTime);
+    
+    return (
+      <div 
+        className="ant-picker-cell-inner" 
+        style={{ 
+          position: 'relative',
+          backgroundColor: isSelected ? '#faad14' : undefined,
+          borderRadius: isSelected ? 4 : undefined,
+        }}
+      >
+        {current.date()}
+        {weather && (
+          <div style={{ 
+            position: 'absolute', 
+            bottom: -2, 
+            left: '50%', 
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            fontSize: 8,
+          }}>
+            <DayWeatherIcon code={weather.weatherCode} size={8} />
+            <span style={{ opacity: 0.7 }}>{formatTemp(weather.maxTemperature)}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="time-slider">
+      {/* Date navigation */}
+      <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/10">
+        <Button
+          type="text"
+          size="small"
+          icon={<LeftOutlined />}
+          onClick={goToPreviousDay}
+          style={{ padding: '0 4px', height: 24 }}
+        />
+        
+        <div className="flex items-center gap-2">
+          <Tooltip title="Pick a date">
+            <Button
+              type="text"
+              size="small"
+              onClick={() => setShowDatePicker(!showDatePicker)}
+              style={{ padding: '4px 8px', height: 24 }}
+            >
+              <CalendarOutlined style={{ marginRight: 4 }} />
+              <Text strong style={{ fontSize: 12 }}>
+                {mounted ? (isToday ? 'Today' : format(selectedTime, 'EEE, MMM d')) : '---'}
+              </Text>
+            </Button>
+          </Tooltip>
+          
+          {/* Weather indicator for selected date */}
+          {mounted && (() => {
+            const dayWeather = getWeatherForDate(selectedTime);
+            if (dayWeather) {
+              return (
+                <Tooltip title={`${formatTemp(dayWeather.minTemperature)} - ${formatTemp(dayWeather.maxTemperature)}`}>
+                  <span className="flex items-center gap-1" style={{ fontSize: 10 }}>
+                    <DayWeatherIcon code={dayWeather.weatherCode} size={12} />
+                    <span>{formatTemp(dayWeather.maxTemperature)}</span>
+                  </span>
+                </Tooltip>
+              );
+            }
+            return null;
+          })()}
+        </div>
+        
+        <Tooltip title={selectedTime > maxForecastDate ? 'No forecast data beyond 16 days' : 'Next day'}>
+          <Button
+            type="text"
+            size="small"
+            icon={<RightOutlined />}
+            onClick={goToNextDay}
+            style={{ padding: '0 4px', height: 24 }}
+          />
+        </Tooltip>
+      </div>
+
+      {/* Date picker dropdown */}
+      {showDatePicker && (
+        <div className="mb-2">
+          <DatePicker
+            open={true}
+            value={dayjs(selectedTime)}
+            onChange={handleDateChange}
+            onOpenChange={(open) => !open && setShowDatePicker(false)}
+            cellRender={(current, info) => {
+              if (info.type === 'date' && dayjs.isDayjs(current)) {
+                return dateRender(current);
+              }
+              return info.originNode;
+            }}
+            style={{ width: '100%' }}
+            popupStyle={{ zIndex: 1000 }}
+            getPopupContainer={(trigger) => trigger.parentElement || document.body}
+          />
+        </div>
+      )}
+
+      {/* No weather data warning */}
+      {!selectedDateHasWeather && mounted && (
+        <div 
+          className="mb-2 p-2 rounded text-center" 
+          style={{ 
+            background: 'rgba(255, 173, 20, 0.1)', 
+            border: '1px solid rgba(255, 173, 20, 0.3)',
+            fontSize: 10,
+          }}
+        >
+          <Text type="warning">No weather data for this date</Text>
+          <br />
+          <Text type="secondary" style={{ fontSize: 9 }}>
+            Sun/shade calculations are still accurate
+          </Text>
+        </div>
+      )}
+
       {/* Weather timeline */}
-      {hourlyWeather && hourlyWeather.length > 0 && (
+      {hourlyWeather && hourlyWeather.length > 0 && selectedDateHasWeather && (
         <div className="mb-2">
           <WeatherTimeline 
             hourlyWeather={hourlyWeather} 
@@ -154,7 +392,13 @@ export default function TimeSlider({
         <Button size="small" onClick={() => onTimeChange(sunTimes.sunrise)}>
           Rise
         </Button>
-        <Button size="small" onClick={() => onTimeChange(new Date())}>
+        <Button size="small" onClick={() => {
+          const now = new Date();
+          // Set time to now but keep the selected date
+          const newTime = new Date(selectedTime);
+          newTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
+          onTimeChange(newTime);
+        }}>
           Now
         </Button>
         <Button size="small" onClick={() => onTimeChange(sunTimes.solarNoon)}>

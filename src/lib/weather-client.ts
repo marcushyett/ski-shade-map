@@ -7,7 +7,7 @@
  * Set OPEN_METEO_API_KEY env var if you have a commercial key (optional).
  */
 
-import type { WeatherData, CurrentWeather, HourlyWeather, DailyWeather } from './weather-types';
+import type { WeatherData, CurrentWeather, HourlyWeather, DailyWeatherDay } from './weather-types';
 
 const BASE_URL = 'https://api.open-meteo.com/v1/forecast';
 
@@ -61,6 +61,7 @@ interface OpenMeteoResponse {
     is_day: number[];
   };
   daily?: {
+    time: string[];
     sunrise: string[];
     sunset: string[];
     temperature_2m_max: number[];
@@ -69,12 +70,14 @@ interface OpenMeteoResponse {
     precipitation_sum: number[];
     snowfall_sum: number[];
     precipitation_probability_max: number[];
+    weather_code: number[];
   };
 }
 
 export async function fetchWeatherData(
   latitude: number,
-  longitude: number
+  longitude: number,
+  forecastDays: number = 16 // Max 16 days for Open-Meteo free tier
 ): Promise<WeatherData> {
   const params = new URLSearchParams({
     latitude: latitude.toString(),
@@ -99,7 +102,7 @@ export async function fetchWeatherData(
       'freezing_level_height',
       'is_day',
     ].join(','),
-    // Hourly forecast (48 hours)
+    // Hourly forecast
     hourly: [
       'temperature_2m',
       'apparent_temperature',
@@ -120,7 +123,7 @@ export async function fetchWeatherData(
       'freezing_level_height',
       'is_day',
     ].join(','),
-    // Daily summary
+    // Daily summary (for date picker weather previews)
     daily: [
       'sunrise',
       'sunset',
@@ -130,9 +133,10 @@ export async function fetchWeatherData(
       'precipitation_sum',
       'snowfall_sum',
       'precipitation_probability_max',
+      'weather_code',
     ].join(','),
     timezone: 'auto',
-    forecast_days: '2',
+    forecast_days: Math.min(forecastDays, 16).toString(),
   });
 
   // Add API key if available (for commercial use)
@@ -209,16 +213,18 @@ function transformResponse(data: OpenMeteoResponse): WeatherData {
     isDay: hourly.is_day[i] === 1,
   }));
 
-  const dailyWeather: DailyWeather = {
-    sunrise: daily.sunrise[0],
-    sunset: daily.sunset[0],
-    maxTemperature: daily.temperature_2m_max[0],
-    minTemperature: daily.temperature_2m_min[0],
-    maxWindSpeed: daily.wind_speed_10m_max[0],
-    precipitationSum: daily.precipitation_sum[0],
-    snowfallSum: daily.snowfall_sum[0],
-    precipitationProbabilityMax: daily.precipitation_probability_max[0],
-  };
+  const dailyWeather: DailyWeatherDay[] = daily.time.map((date, i) => ({
+    date,
+    sunrise: daily.sunrise[i],
+    sunset: daily.sunset[i],
+    maxTemperature: daily.temperature_2m_max[i],
+    minTemperature: daily.temperature_2m_min[i],
+    maxWindSpeed: daily.wind_speed_10m_max[i],
+    precipitationSum: daily.precipitation_sum[i],
+    snowfallSum: daily.snowfall_sum[i],
+    precipitationProbabilityMax: daily.precipitation_probability_max[i],
+    weatherCode: daily.weather_code[i],
+  }));
 
   return {
     latitude: data.latitude,

@@ -54,7 +54,8 @@ export interface HourlyWeather {
   isDay: boolean;
 }
 
-export interface DailyWeather {
+export interface DailyWeatherDay {
+  date: string; // YYYY-MM-DD
   sunrise: string;
   sunset: string;
   maxTemperature: number;
@@ -63,7 +64,11 @@ export interface DailyWeather {
   precipitationSum: number;
   snowfallSum: number;
   precipitationProbabilityMax: number;
+  weatherCode: number;
 }
+
+// For backwards compatibility, DailyWeather is now an array
+export type DailyWeather = DailyWeatherDay[];
 
 export type TemperatureUnit = 'celsius' | 'fahrenheit';
 export type SpeedUnit = 'kmh' | 'mph';
