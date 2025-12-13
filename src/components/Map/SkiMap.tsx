@@ -428,10 +428,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny', 'ski-segments-shaded', 
-      'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-symbols'
-      'ski-segments-sunny-glow', 'ski-segments-sunny', 'ski-segments-shaded', 
+      'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-symbols',
+      'ski-segments-sunny-glow',
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded', 'ski-runs-polygon-outline',
-      'ski-runs-line', 'ski-lifts', 'ski-lifts-symbols'
     ];
     layersToRemove.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
