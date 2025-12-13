@@ -456,8 +456,9 @@ export function calculateRunStats(run: RunData): RunStats | null {
   
   if (coords.length < 2) return null;
   
-  // Check if we have elevation data (3rd element in coordinates)
-  const hasElevation = coords.some(c => c.length >= 3 && c[2] !== undefined && c[2] !== 0);
+  // Check if we have valid elevation data (3rd element > 0 in coordinates)
+  // Elevation of 0 is almost certainly missing data, not actual sea level
+  const hasElevation = coords.some(c => c.length >= 3 && typeof c[2] === 'number' && c[2] > 100);
   
   let distance = 0;
   let ascent = 0;
@@ -471,9 +472,11 @@ export function calculateRunStats(run: RunData): RunStats | null {
   
   for (let i = 0; i < coords.length; i++) {
     const [lng, lat, elev] = coords[i];
-    const elevation = elev || 0;
+    // Only use elevation if it's a valid number > 100m (ski resorts are rarely at sea level)
+    const hasValidElev = typeof elev === 'number' && elev > 100;
+    const elevation = hasValidElev ? elev : null;
     
-    if (hasElevation) {
+    if (hasElevation && elevation !== null) {
       if (elevation > elevationHigh) elevationHigh = elevation;
       if (elevation < elevationLow) elevationLow = elevation;
       elevationProfile.push({ distance, elevation });
@@ -481,12 +484,13 @@ export function calculateRunStats(run: RunData): RunStats | null {
     
     if (i > 0) {
       const [prevLng, prevLat, prevElev] = coords[i - 1];
-      const prevElevation = prevElev || 0;
+      const prevHasValidElev = typeof prevElev === 'number' && prevElev > 100;
+      const prevElevation = prevHasValidElev ? prevElev : null;
       
       const segmentDistance = haversineDistance(prevLat, prevLng, lat, lng);
       distance += segmentDistance;
       
-      if (hasElevation && segmentDistance > 0) {
+      if (hasElevation && segmentDistance > 0 && elevation !== null && prevElevation !== null) {
         const elevChange = elevation - prevElevation;
         if (elevChange > 0) {
           ascent += elevChange;

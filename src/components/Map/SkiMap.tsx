@@ -927,15 +927,55 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         ? (snowAnalysis.score >= 70 ? '#22c55e' : snowAnalysis.score >= 40 ? '#a3a3a3' : '#ef4444')
         : '#888';
       
+      // Calculate run stats for popup
+      let runStats: { distance: string; elevation: string } | null = null;
+      if (isRun && run.geometry.type === 'LineString') {
+        const coords = run.geometry.coordinates;
+        // Calculate distance
+        let totalDist = 0;
+        for (let i = 1; i < coords.length; i++) {
+          const [lng1, lat1] = coords[i - 1];
+          const [lng2, lat2] = coords[i];
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLng = (lng2 - lng1) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+          totalDist += 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+        const distStr = totalDist >= 1000 ? `${(totalDist / 1000).toFixed(1)}km` : `${Math.round(totalDist)}m`;
+        
+        // Calculate elevation range (only if we have valid elevation data)
+        const elevations = coords.map(c => c[2]).filter((e): e is number => typeof e === 'number' && e > 0);
+        let elevStr = '';
+        if (elevations.length >= 2) {
+          const high = Math.max(...elevations);
+          const low = Math.min(...elevations);
+          const drop = high - low;
+          if (drop > 0) {
+            elevStr = `↓${Math.round(drop)}m (${Math.round(high)}→${Math.round(low)}m)`;
+          }
+        }
+        runStats = { distance: distStr, elevation: elevStr };
+      }
+      
       const popupContent = isRun
-        ? `<div class="highlight-popup">
-            <strong>${run.name || 'Unnamed Run'}</strong>
-            ${run.difficulty ? `<br><span style="color: ${getDifficultyColor(run.difficulty)}">● ${run.difficulty}</span>` : ''}
-            ${snowAnalysis ? `<br><span style="font-size: 10px; margin-top: 4px; display: inline-block;">Snow: <span style="color: ${snowScoreColor}; font-weight: 600">${Math.round(snowAnalysis.score)}%</span> ${snowAnalysis.conditionLabel}</span>` : ''}
+        ? `<div class="run-popup" style="min-width: 180px;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: ${getDifficultyColor(run.difficulty || 'unknown')}; flex-shrink: 0;"></span>
+              <strong style="font-size: 13px;">${run.name || 'Unnamed Run'}</strong>
+            </div>
+            ${run.difficulty ? `<div style="font-size: 10px; color: ${getDifficultyColor(run.difficulty)}; margin-bottom: 4px;">${run.difficulty}</div>` : ''}
+            ${runStats?.distance ? `<div style="font-size: 10px; color: #888; margin-bottom: 2px;">📏 ${runStats.distance}</div>` : ''}
+            ${runStats?.elevation ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${runStats.elevation}</div>` : ''}
+            ${snowAnalysis ? `<div style="font-size: 11px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px; margin-top: 6px;">
+              Snow: <span style="color: ${snowScoreColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span> 
+              <span style="color: #888;">${snowAnalysis.conditionLabel}</span>
+            </div>` : ''}
           </div>`
-        : `<div class="highlight-popup">
+        : `<div class="lift-popup">
             <strong>${lift?.name || 'Unnamed Lift'}</strong>
-            ${lift?.liftType ? `<br><span style="opacity: 0.7">${lift.liftType}</span>` : ''}
+            ${lift?.liftType ? `<div style="opacity: 0.7; font-size: 11px;">${lift.liftType}</div>` : ''}
           </div>`;
 
       highlightPopupRef.current = new maplibregl.Popup({
