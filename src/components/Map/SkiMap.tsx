@@ -420,7 +420,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny-glow', 'ski-segments-sunny', 'ski-segments-shaded', 
-      'ski-runs-polygon-fill', 'ski-runs-polygon-outline',
+      'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded', 'ski-runs-polygon-outline',
       'ski-runs-line', 'ski-lifts', 'ski-lifts-symbols'
     ];
     layersToRemove.forEach(layerId => {
@@ -561,23 +561,51 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     });
 
     // Polygon runs source (for fill) - only runs that are polygons
+    // Calculate sun/shade for each polygon based on its orientation (sunPos already defined above)
     const polygonRunsGeoJSON = {
       type: 'FeatureCollection' as const,
       features: area.runs
         .filter(run => run.geometry.type === 'Polygon')
-        .map(run => ({
-          type: 'Feature' as const,
-          properties: {
-            id: run.id,
-            name: run.name,
-            difficulty: run.difficulty,
-            status: run.status,
-            color: getDifficultyColor(run.difficulty),
-            sunnyColor: getDifficultyColorSunny(run.difficulty),
-            shadedColor: getDifficultyColorShaded(run.difficulty),
-          },
-          geometry: run.geometry,
-        })),
+        .map(run => {
+          // Calculate polygon's slope aspect from its bounding box
+          const ring = run.geometry.coordinates[0] as number[][];
+          let minLat = Infinity, maxLat = -Infinity;
+          let minLng = Infinity, maxLng = -Infinity;
+          
+          for (const [lng, lat] of ring) {
+            minLat = Math.min(minLat, lat);
+            maxLat = Math.max(maxLat, lat);
+            minLng = Math.min(minLng, lng);
+            maxLng = Math.max(maxLng, lng);
+          }
+          
+          // Calculate slope aspect based on polygon orientation
+          const latRange = maxLat - minLat;
+          const lngRange = maxLng - minLng;
+          
+          // If taller than wide, slope faces E or W; if wider, faces N or S
+          // Use the center to determine which direction it faces
+          const slopeAspect = latRange > lngRange ? 90 : 0; // Simplified: E-facing if tall, N-facing if wide
+          
+          // Calculate if polygon is in shade
+          const isShaded = sunPos.altitudeDegrees <= 0 ? true : 
+            calculateSegmentShade(slopeAspect, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+          
+          return {
+            type: 'Feature' as const,
+            properties: {
+              id: run.id,
+              name: run.name,
+              difficulty: run.difficulty,
+              status: run.status,
+              isShaded,
+              color: getDifficultyColor(run.difficulty),
+              sunnyColor: getDifficultyColorSunny(run.difficulty),
+              shadedColor: getDifficultyColorShaded(run.difficulty),
+            },
+            geometry: run.geometry,
+          };
+        }),
     };
 
     if (polygonRunsGeoJSON.features.length > 0) {
@@ -586,24 +614,42 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         data: polygonRunsGeoJSON,
       });
 
-      // Polygon fill layer - low opacity shaded area
+      // Polygon fill layer for sunny areas - low opacity with sunny color
       map.current.addLayer({
-        id: 'ski-runs-polygon-fill',
+        id: 'ski-runs-polygon-fill-sunny',
         type: 'fill',
         source: 'ski-runs-polygons',
+        filter: ['==', ['get', 'isShaded'], false],
         paint: {
-          'fill-color': ['get', 'color'],
-          'fill-opacity': 0.2,
+          'fill-color': ['get', 'sunnyColor'],
+          'fill-opacity': isNight ? 0 : 0.25,
         },
       });
 
-      // Polygon outline layer - subtle border
+      // Polygon fill layer for shaded areas - low opacity with shaded color
+      map.current.addLayer({
+        id: 'ski-runs-polygon-fill-shaded',
+        type: 'fill',
+        source: 'ski-runs-polygons',
+        filter: ['==', ['get', 'isShaded'], true],
+        paint: {
+          'fill-color': ['get', 'shadedColor'],
+          'fill-opacity': 0.25,
+        },
+      });
+
+      // Polygon outline layer - subtle border using appropriate color
       map.current.addLayer({
         id: 'ski-runs-polygon-outline',
         type: 'line',
         source: 'ski-runs-polygons',
         paint: {
-          'line-color': ['get', 'color'],
+          'line-color': [
+            'case',
+            ['get', 'isShaded'],
+            ['get', 'shadedColor'],
+            ['get', 'sunnyColor']
+          ],
           'line-width': 1,
           'line-opacity': 0.4,
         },
@@ -1048,12 +1094,60 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       segmentsSource.setData(segments);
     }
 
+    // Update polygon fills with new sun/shade data
+    const polygonsSource = map.current.getSource('ski-runs-polygons') as maplibregl.GeoJSONSource | undefined;
+    if (polygonsSource) {
+      const polygonRunsGeoJSON = {
+        type: 'FeatureCollection' as const,
+        features: area.runs
+          .filter(run => run.geometry.type === 'Polygon')
+          .map(run => {
+            const ring = run.geometry.coordinates[0] as number[][];
+            let minLat = Infinity, maxLat = -Infinity;
+            let minLng = Infinity, maxLng = -Infinity;
+            
+            for (const [lng, lat] of ring) {
+              minLat = Math.min(minLat, lat);
+              maxLat = Math.max(maxLat, lat);
+              minLng = Math.min(minLng, lng);
+              maxLng = Math.max(maxLng, lng);
+            }
+            
+            const latRange = maxLat - minLat;
+            const lngRange = maxLng - minLng;
+            const slopeAspect = latRange > lngRange ? 90 : 0;
+            const isShaded = isNight ? true : calculateSegmentShade(slopeAspect, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+            
+            return {
+              type: 'Feature' as const,
+              properties: {
+                id: run.id,
+                name: run.name,
+                difficulty: run.difficulty,
+                status: run.status,
+                isShaded,
+                color: getDifficultyColor(run.difficulty),
+                sunnyColor: getDifficultyColorSunny(run.difficulty),
+                shadedColor: getDifficultyColorShaded(run.difficulty),
+              },
+              geometry: run.geometry,
+            };
+          }),
+      };
+      polygonsSource.setData(polygonRunsGeoJSON);
+    }
+
     // Hide sunny segments and glow at night, show shaded colors for all runs
     if (map.current.getLayer('ski-segments-sunny-glow')) {
       map.current.setPaintProperty('ski-segments-sunny-glow', 'line-opacity', isNight ? 0 : 0.6);
     }
     if (map.current.getLayer('ski-segments-sunny')) {
       map.current.setPaintProperty('ski-segments-sunny', 'line-opacity', isNight ? 0 : 1);
+    }
+    
+    // Hide sunny polygon fills at night
+    if (map.current.getLayer('ski-runs-polygon-fill-sunny')) {
+      map.current.setPaintProperty('ski-runs-polygon-fill-sunny', 'fill-opacity', isNight ? 0 : 0.25);
     }
     // Shaded segments always show their difficulty colors (no NIGHT_COLOR override)
   }, []);
