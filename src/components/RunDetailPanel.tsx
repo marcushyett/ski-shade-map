@@ -3,7 +3,7 @@
 import { memo, useEffect, useState, useCallback } from 'react';
 import { Tooltip, Button } from 'antd';
 import type { MapRef } from '@/components/Map/SkiMap';
-import { CloseOutlined, StarFilled, StarOutlined, EnvironmentOutlined, DeleteOutlined } from '@ant-design/icons';
+import { CloseOutlined, StarOutlined, EnvironmentOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { RunData } from '@/lib/types';
 import type { RunSunAnalysis, RunStats } from '@/lib/sunny-time-calculator';
 import { getDifficultyColor } from '@/lib/shade-calculator';
@@ -533,16 +533,13 @@ export const RunDetailPanel = memo(function RunDetailPanel({
         )}
         <Button
           size="small"
-          type={isFavourite ? 'default' : 'primary'}
+          type="default"
           danger={isFavourite}
-          icon={isFavourite ? <DeleteOutlined /> : <StarFilled />}
+          icon={isFavourite ? <DeleteOutlined /> : <StarOutlined />}
           onClick={onToggleFavourite}
           style={{ 
             flex: 1, 
             fontSize: 11,
-            background: isFavourite ? undefined : 'rgba(250, 173, 20, 0.15)',
-            borderColor: isFavourite ? undefined : '#faad14',
-            color: isFavourite ? undefined : '#faad14',
           }}
         >
           {isFavourite ? 'Remove' : 'Add to Favourites'}
