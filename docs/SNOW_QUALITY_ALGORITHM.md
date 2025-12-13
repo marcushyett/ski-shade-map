@@ -94,22 +94,26 @@ The final score is **clamped to 0-100%**.
 
 ## Condition Types
 
-Based on the score and weather factors, the algorithm determines a condition type:
+Based on the score and weather factors, the algorithm determines a condition type. Conditions are checked in priority order:
 
-| Condition | When Assigned |
-|-----------|---------------|
-| **Powder** | Fresh snow (<1 day), >15cm, temp <0°C |
-| **Fresh Groomed** | Morning, recent snow (<3 days), temp <2°C |
-| **Packed Powder** | Score ≥60%, temp <2°C |
-| **Hard Pack** | Score ≥40%, temp <0°C |
-| **Spring Corn** | Freeze-thaw cycle (max >3°C, min <-3°C), morning |
-| **Moguls** | Steep (>28°) + afternoon |
-| **Variable** | Mixed conditions, fallback |
-| **Wind-affected** | Wind >40 km/h |
-| **Crusty** | Freeze-thaw cycle, no recent snow |
-| **Icy** | Very cold (<-5°C), no recent snow (>5 days), cold nights |
-| **Slush** | Warm (>5°C) or sun-facing in warm conditions |
-| **Poor** | Score <30% |
+| Priority | Condition | When Assigned |
+|----------|-----------|---------------|
+| 1 | **Powder** | Fresh snow (<1 day), >15cm, temp <0°C |
+| 2 | **Fresh Groomed** | Morning, recent snow (<3 days), temp <2°C |
+| 3 | **Slush** | Warm (>5°C) or sun-facing in warm conditions |
+| 4 | **Icy** | Very cold (<-5°C), no recent snow (>5 days), cold nights |
+| 5 | **Spring Corn** | Freeze-thaw cycle (max >3°C, min <-3°C), morning |
+| 6 | **Wind-affected** | Wind >40 km/h |
+| 7 | **Moguls** | Steep (>28°) + afternoon |
+| 8 | **Crusty** | Freeze-thaw cycle, no recent snow |
+| 9 | **Packed Powder** | Score ≥60%, temp <2°C |
+| 10 | **Hard Pack** | Score ≥40%, temp <0°C |
+| 11 | **Fresh Groomed** | Morning, score ≥35% (default morning state) |
+| 12 | **Packed Powder** | Afternoon, score ≥50%, temp <5°C |
+| 13 | **Hard Pack** | Temp <2°C, score ≥30% |
+| 14 | **Spring Corn** | Temp 0-5°C, score ≥30% (softening) |
+| 15 | **Variable** | Score ≥30% (rare fallback) |
+| 16 | **Poor** | Score <30% |
 
 ## Color Scale
 

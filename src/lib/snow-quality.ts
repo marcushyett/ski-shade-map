@@ -489,13 +489,33 @@ function determineCondition(
     return "packed-powder";
   }
 
-  // Hard pack (firm but ok)
+  // Hard pack (firm but ok) - cold conditions
   if (score >= 40 && currentTemp < 0) {
     return "hard-pack";
   }
 
-  // Variable (mixed conditions)
-  if (score >= 40) {
+  // Fresh groomed (morning, decent conditions, even without recent snow)
+  if (!isAfternoon && score >= 35) {
+    return "fresh-groomed";
+  }
+
+  // Packed powder (afternoon, moderate conditions)
+  if (score >= 50 && currentTemp < 5) {
+    return "packed-powder";
+  }
+
+  // Hard pack (colder conditions, lower score)
+  if (currentTemp < 2 && score >= 30) {
+    return "hard-pack";
+  }
+
+  // Softening snow (warm but not slushy yet)
+  if (currentTemp > 0 && currentTemp <= 5 && score >= 30) {
+    return "spring-corn";
+  }
+
+  // Variable only when we truly can't determine (very rare)
+  if (score >= 30) {
     return "variable";
   }
 
