@@ -159,14 +159,10 @@ export function ElevationProfileChart({
   const elevRange = maxElev - minElev || 1;
   const maxDist = profile[profile.length - 1].distance || 1;
   
-  // Chart margins for axes
-  const MARGIN = { left: 32, right: 8, top: 8, bottom: 20 };
-  const CHART_WIDTH = 100 - MARGIN.left - MARGIN.right;
-  const CHART_HEIGHT = 100 - MARGIN.top - MARGIN.bottom;
-  
+  // Simple 0-100 coordinate system for SVG (no margins in SVG, we use HTML for labels)
   const points = profile.map(p => ({
-    x: MARGIN.left + (maxDist > 0 ? (p.distance / maxDist) * CHART_WIDTH : 0),
-    y: MARGIN.top + CHART_HEIGHT - ((p.elevation - minElev) / elevRange) * CHART_HEIGHT,
+    x: maxDist > 0 ? (p.distance / maxDist) * 100 : 0,
+    y: 100 - ((p.elevation - minElev) / elevRange) * 100,
     elevation: p.elevation,
     distance: p.distance,
   }));
@@ -196,143 +192,106 @@ export function ElevationProfileChart({
   // Format distance for axis labels
   const formatDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
   
-  // Calculate nice Y-axis ticks
-  const yAxisTicks = [maxElev, Math.round((maxElev + minElev) / 2), minElev];
-  
-  // Calculate X-axis ticks (start, middle, end)
-  const xAxisTicks = [0, maxDist / 2, maxDist];
-  
   return (
     <div style={{ padding: '4px 0' }}>
-      {/* Chart container */}
-      <div style={{ position: 'relative', width: '100%', height: 70, background: '#1a1a1a', borderRadius: 4 }}>
-        <svg 
-          viewBox="0 0 100 100" 
-          style={{ width: '100%', height: '100%', display: 'block' }} 
-          preserveAspectRatio="none"
-        >
-          {/* Y-axis (altitude) */}
-          <line 
-            x1={MARGIN.left} y1={MARGIN.top} 
-            x2={MARGIN.left} y2={MARGIN.top + CHART_HEIGHT} 
-            stroke="#444" 
-            strokeWidth="0.5" 
-            vectorEffect="non-scaling-stroke"
-          />
-          {/* Y-axis ticks and labels */}
-          {yAxisTicks.map((elev, i) => {
-            const y = MARGIN.top + CHART_HEIGHT - ((elev - minElev) / elevRange) * CHART_HEIGHT;
-            return (
-              <g key={`y-${i}`}>
-                <line 
-                  x1={MARGIN.left - 2} y1={y} 
-                  x2={MARGIN.left} y2={y} 
-                  stroke="#666" 
-                  strokeWidth="0.5" 
+      {/* Chart with HTML labels */}
+      <div style={{ display: 'flex', gap: 4 }}>
+        {/* Y-axis labels (HTML, not stretched) */}
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          justifyContent: 'space-between', 
+          fontSize: 9, 
+          color: '#888',
+          textAlign: 'right',
+          paddingTop: 2,
+          paddingBottom: 2,
+          minWidth: 36,
+        }}>
+          <span>{Math.round(maxElev)}m</span>
+          <span>{Math.round(minElev)}m</span>
+        </div>
+        
+        {/* Chart area */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* SVG chart */}
+          <div style={{ position: 'relative', width: '100%', height: 50, background: '#1a1a1a', borderRadius: 4 }}>
+            <svg 
+              viewBox="0 0 100 100" 
+              style={{ width: '100%', height: '100%', display: 'block' }} 
+              preserveAspectRatio="none"
+            >
+              {/* Fill gradient under curve */}
+              {snowQuality && snowQuality.length > 0 && (
+                <>
+                  <defs>
+                    <linearGradient id="snowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                      {pointsWithSnow.map((p, i) => (
+                        <stop 
+                          key={i} 
+                          offset={`${p.x}%`} 
+                          stopColor={p.condition ? getConditionColor(p.condition) : '#333'}
+                          stopOpacity="0.35"
+                        />
+                      ))}
+                    </linearGradient>
+                  </defs>
+                  <path
+                    d={`M 0 100 ${points.map(p => `L ${p.x} ${p.y}`).join(' ')} L 100 100 Z`}
+                    fill="url(#snowGradient)"
+                  />
+                </>
+              )}
+              {(!snowQuality || snowQuality.length === 0) && (
+                <path
+                  d={`M 0 100 ${points.map(p => `L ${p.x} ${p.y}`).join(' ')} L 100 100 Z`}
+                  fill="rgba(102, 102, 102, 0.2)"
+                />
+              )}
+              
+              {/* Elevation profile line - colored by snow condition */}
+              {snowQuality && snowQuality.length > 0 ? (
+                pointsWithSnow.slice(1).map((p, i) => (
+                  <line
+                    key={i}
+                    x1={pointsWithSnow[i].x}
+                    y1={pointsWithSnow[i].y}
+                    x2={p.x}
+                    y2={p.y}
+                    stroke={p.condition ? getConditionColor(p.condition) : '#888'}
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))
+              ) : (
+                <path
+                  d={points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
+                  fill="none"
+                  stroke="#888"
+                  strokeWidth="2"
                   vectorEffect="non-scaling-stroke"
                 />
-                <text 
-                  x={MARGIN.left - 4} 
-                  y={y} 
-                  textAnchor="end" 
-                  dominantBaseline="middle"
-                  style={{ fontSize: 5, fill: '#666' }}
-                >
-                  {Math.round(elev)}m
-                </text>
-              </g>
-            );
-          })}
+              )}
+            </svg>
+          </div>
           
-          {/* X-axis (distance) */}
-          <line 
-            x1={MARGIN.left} y1={MARGIN.top + CHART_HEIGHT} 
-            x2={MARGIN.left + CHART_WIDTH} y2={MARGIN.top + CHART_HEIGHT} 
-            stroke="#444" 
-            strokeWidth="0.5" 
-            vectorEffect="non-scaling-stroke"
-          />
-          {/* X-axis ticks and labels */}
-          {xAxisTicks.map((dist, i) => {
-            const x = MARGIN.left + (dist / maxDist) * CHART_WIDTH;
-            return (
-              <g key={`x-${i}`}>
-                <line 
-                  x1={x} y1={MARGIN.top + CHART_HEIGHT} 
-                  x2={x} y2={MARGIN.top + CHART_HEIGHT + 2} 
-                  stroke="#666" 
-                  strokeWidth="0.5" 
-                  vectorEffect="non-scaling-stroke"
-                />
-                <text 
-                  x={x} 
-                  y={MARGIN.top + CHART_HEIGHT + 6} 
-                  textAnchor="middle" 
-                  dominantBaseline="hanging"
-                  style={{ fontSize: 4.5, fill: '#666' }}
-                >
-                  {formatDist(dist)}
-                </text>
-              </g>
-            );
-          })}
-          
-          {/* Fill gradient under curve */}
-          {snowQuality && snowQuality.length > 0 && (
-            <>
-              <defs>
-                <linearGradient id="snowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  {pointsWithSnow.map((p, i) => (
-                    <stop 
-                      key={i} 
-                      offset={`${((p.x - MARGIN.left) / CHART_WIDTH) * 100}%`} 
-                      stopColor={p.condition ? getConditionColor(p.condition) : '#333'}
-                      stopOpacity="0.35"
-                    />
-                  ))}
-                </linearGradient>
-              </defs>
-              <path
-                d={`M ${MARGIN.left} ${MARGIN.top + CHART_HEIGHT} ${points.map(p => `L ${p.x} ${p.y}`).join(' ')} L ${MARGIN.left + CHART_WIDTH} ${MARGIN.top + CHART_HEIGHT} Z`}
-                fill="url(#snowGradient)"
-              />
-            </>
-          )}
-          {(!snowQuality || snowQuality.length === 0) && (
-            <path
-              d={`M ${MARGIN.left} ${MARGIN.top + CHART_HEIGHT} ${points.map(p => `L ${p.x} ${p.y}`).join(' ')} L ${MARGIN.left + CHART_WIDTH} ${MARGIN.top + CHART_HEIGHT} Z`}
-              fill="rgba(102, 102, 102, 0.2)"
-            />
-          )}
-          
-          {/* Elevation profile line - colored by snow condition */}
-          {snowQuality && snowQuality.length > 0 ? (
-            pointsWithSnow.slice(1).map((p, i) => (
-              <line
-                key={i}
-                x1={pointsWithSnow[i].x}
-                y1={pointsWithSnow[i].y}
-                x2={p.x}
-                y2={p.y}
-                stroke={p.condition ? getConditionColor(p.condition) : '#888'}
-                strokeWidth="2"
-                vectorEffect="non-scaling-stroke"
-              />
-            ))
-          ) : (
-            <path
-              d={points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
-              fill="none"
-              stroke="#888"
-              strokeWidth="2"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-        </svg>
+          {/* X-axis labels (HTML, not stretched) */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            fontSize: 9, 
+            color: '#888',
+            marginTop: 2,
+          }}>
+            <span>0m</span>
+            <span>{formatDist(maxDist / 2)}</span>
+            <span>{formatDist(maxDist)}</span>
+          </div>
+        </div>
       </div>
       
       {/* Slope info */}
-      <div className="flex justify-between items-center" style={{ fontSize: 9, color: '#666', marginTop: 4 }}>
+      <div className="flex justify-between items-center" style={{ fontSize: 9, color: '#666', marginTop: 6 }}>
         <Tooltip title="Average and maximum slope steepness (gradient)">
           <span style={{ cursor: 'help' }}>
             ⛷️ Gradient: avg <span style={{ color: '#aaa' }}>{Math.round(avgSlope)}°</span> · max <span style={{ color: '#f97316', fontWeight: 600 }}>{Math.round(maxSlope)}°</span>
