@@ -30,7 +30,7 @@ import SearchBar from '@/components/SearchBar';
 import LocationControls from '@/components/LocationControls';
 import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
-import { parseUrlState, minutesToDate, dateToYYYYMMDD, SharedLocation } from '@/hooks/useUrlState';
+import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 
