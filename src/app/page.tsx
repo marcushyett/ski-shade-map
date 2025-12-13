@@ -714,8 +714,30 @@ export default function Home() {
       {/* Mobile header */}
       <div className="md:hidden controls-panel" style={{ marginTop: (isOffline || wasOffline) ? 44 : 0 }}>
         <div className="flex items-center justify-between">
-          <Logo size="sm" />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <Logo size="sm" />
+            {skiAreaDetails && (
+              <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+                <span style={{ fontSize: 10, color: '#666' }}>|</span>
+                <span 
+                  style={{ 
+                    fontSize: 10, 
+                    color: '#a3a3a3',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                  title={`${skiAreaDetails.country ? skiAreaDetails.country + ' · ' : ''}${skiAreaDetails.name}`}
+                >
+                  {skiAreaDetails.country && (
+                    <span style={{ color: '#666' }}>{skiAreaDetails.country} · </span>
+                  )}
+                  {skiAreaDetails.name}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
             {weather && (
               <span style={{ fontSize: 10, color: '#888' }}>
                 <CloudOutlined style={{ marginRight: 2 }} />
