@@ -16,6 +16,7 @@ import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMark
 import SkiAreaPicker from '@/components/Controls/SkiAreaPicker';
 import TimeSlider from '@/components/Controls/TimeSlider';
 import ViewToggle from '@/components/Controls/ViewToggle';
+import MapLayerToggle, { type MapOverlayMode } from '@/components/Controls/MapLayerToggle';
 import Legend from '@/components/Controls/Legend';
 import Logo from '@/components/Logo';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -217,6 +218,7 @@ export default function Home() {
     return now;
   });
   const [is3D, setIs3D] = useState(false);
+  const [mapOverlayMode, setMapOverlayMode] = useState<MapOverlayMode>('shadow');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -686,6 +688,7 @@ export default function Home() {
           skiArea={skiAreaDetails}
           selectedTime={selectedTime}
           is3D={is3D}
+          overlayMode={mapOverlayMode}
           highlightedFeatureId={highlightedFeatureId}
           highlightedFeatureType={highlightedFeatureType}
           cloudCover={currentCloudCover}
@@ -789,6 +792,11 @@ export default function Home() {
         {/* View toggle */}
         <div className="view-toggle-container">
           <ViewToggle is3D={is3D} onChange={setIs3D} />
+        </div>
+
+        {/* Map layer toggle */}
+        <div className="map-layer-toggle-container">
+          <MapLayerToggle mode={mapOverlayMode} onChange={setMapOverlayMode} />
         </div>
 
         {/* Time slider */}
