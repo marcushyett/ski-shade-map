@@ -33,6 +33,9 @@ import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
 import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
+import { analyzeResortSnowQuality, type ResortSnowSummary, type PisteSnowAnalysis } from '@/lib/snow-quality';
+import { getSunPosition } from '@/lib/suncalc';
+import SnowConditionsPanel from '@/components/Controls/SnowConditionsPanel';
 
 const { Text } = Typography;
 
@@ -56,6 +59,7 @@ const ControlsContent = memo(function ControlsContent({
   selectedTime,
   isOffline,
   favourites,
+  snowSummary,
   onAreaSelect,
   onSelectRun,
   onSelectLift,
@@ -70,6 +74,7 @@ const ControlsContent = memo(function ControlsContent({
   selectedTime: Date;
   isOffline: boolean;
   favourites: { id: string; name: string | null; difficulty: string | null; skiAreaId: string; skiAreaName: string }[];
+  snowSummary: ResortSnowSummary | null;
   onAreaSelect: (area: SkiAreaSummary) => void;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
@@ -114,6 +119,13 @@ const ControlsContent = memo(function ControlsContent({
               onWeatherLoad={onWeatherLoad}
             />
           </div>
+
+          {/* Snow conditions */}
+          {snowSummary && (
+            <div className="flex-shrink-0">
+              <SnowConditionsPanel summary={snowSummary} />
+            </div>
+          )}
 
           {/* Trails, lifts, and favourites list */}
           <div className="flex-1 overflow-y-auto min-h-0">
@@ -586,6 +598,29 @@ export default function Home() {
     } : null;
   }, [weather, selectedTime]);
 
+  // Calculate snow quality for all runs
+  const snowQuality = useMemo(() => {
+    if (!skiAreaDetails || !weather?.hourly || !weather?.daily) {
+      return { analyses: [], summary: null };
+    }
+    
+    const sunPos = getSunPosition(selectedTime, skiAreaDetails.latitude, skiAreaDetails.longitude);
+    
+    const result = analyzeResortSnowQuality(
+      skiAreaDetails.runs,
+      selectedTime,
+      weather.hourly,
+      weather.daily,
+      sunPos.azimuth,
+      sunPos.altitudeDegrees
+    );
+    
+    return {
+      analyses: result.analyses,
+      summary: result.summary,
+    };
+  }, [skiAreaDetails, weather, selectedTime]);
+
   return (
     <div className="app-container">
       {/* Offline banner */}
@@ -649,6 +684,7 @@ export default function Home() {
           selectedTime={selectedTime}
           isOffline={isOffline}
           favourites={favourites}
+          snowSummary={snowQuality.summary}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
@@ -668,6 +704,7 @@ export default function Home() {
           selectedTime={selectedTime}
           isOffline={isOffline}
           favourites={favourites}
+          snowSummary={snowQuality.summary}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
