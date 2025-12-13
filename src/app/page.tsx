@@ -408,8 +408,12 @@ export default function Home() {
     if (!selectedArea) {
       setSkiAreaDetails(null);
       setWeather(null);
+      setWeatherLoading(false);
       return;
     }
+
+    // Weather will start loading when WeatherPanel renders
+    setWeatherLoading(true);
 
     const fetchDetails = async () => {
       setLoading(true);
@@ -443,7 +447,6 @@ export default function Home() {
   const handleAreaSelect = useCallback((area: SkiAreaSummary) => {
     setSelectedArea(area);
     setWeather(null); // Clear weather when changing areas
-    setWeatherLoading(true); // Show loading state
     setMobileMenuOpen(false);
   }, []);
 
