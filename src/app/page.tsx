@@ -61,12 +61,15 @@ const ControlsContent = memo(function ControlsContent({
   favourites,
   snowSummary,
   snowQualityByRun,
+  selectedRunId,
   onAreaSelect,
   onSelectRun,
   onSelectLift,
   onErrorClose,
   onWeatherLoad,
   onRemoveFavourite,
+  onAddFavourite,
+  onClearSelectedRun,
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
@@ -77,12 +80,15 @@ const ControlsContent = memo(function ControlsContent({
   favourites: { id: string; name: string | null; difficulty: string | null; skiAreaId: string; skiAreaName: string }[];
   snowSummary: ResortSnowSummary | null;
   snowQualityByRun: Record<string, SnowQualityAtPoint[]>;
+  selectedRunId: string | null;
   onAreaSelect: (area: SkiAreaSummary) => void;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
   onErrorClose: () => void;
   onWeatherLoad: (weather: WeatherData) => void;
   onRemoveFavourite: (runId: string) => void;
+  onAddFavourite: (run: RunData) => void;
+  onClearSelectedRun: () => void;
 }) {
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
@@ -139,9 +145,12 @@ const ControlsContent = memo(function ControlsContent({
               longitude={skiAreaDetails.longitude}
               hourlyWeather={weather?.hourly}
               snowQualityByRun={snowQualityByRun}
+              selectedRunId={selectedRunId}
               onSelectRun={onSelectRun}
               onSelectLift={onSelectLift}
               onRemoveFavourite={onRemoveFavourite}
+              onAddFavourite={onAddFavourite}
+              onClearSelectedRun={onClearSelectedRun}
             />
           </div>
         </>
@@ -238,6 +247,7 @@ export default function Home() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
   const [highlightedFeatureType, setHighlightedFeatureType] = useState<'run' | 'lift' | null>(null);
+  const [selectedRunIdForDetail, setSelectedRunIdForDetail] = useState<string | null>(null);
   const [searchPlaceMarker, setSearchPlaceMarker] = useState<{ latitude: number; longitude: number; name: string; placeType?: string } | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -468,11 +478,20 @@ export default function Home() {
   const handleSelectRun = useCallback((run: RunData) => {
     setHighlightedFeatureId(run.id);
     setHighlightedFeatureType('run');
+    setSelectedRunIdForDetail(run.id); // Show detail panel
     setTimeout(() => {
       setHighlightedFeatureId(null);
       setHighlightedFeatureType(null);
     }, 3000);
   }, []);
+
+  const handleClearSelectedRun = useCallback(() => {
+    setSelectedRunIdForDetail(null);
+  }, []);
+
+  const handleAddFavourite = useCallback((run: RunData) => {
+    toggleFavourite(run);
+  }, [toggleFavourite]);
 
   const handleSelectLift = useCallback((lift: LiftData) => {
     setHighlightedFeatureId(lift.id);
@@ -634,7 +653,7 @@ export default function Home() {
     }));
   }, [snowQuality.analyses]);
 
-  // Calculate snow quality by altitude for each favourite run
+  // Calculate snow quality by altitude for favourite runs and selected run
   const snowQualityByRun = useMemo(() => {
     if (!skiAreaDetails || !weather?.hourly || !weather?.daily) {
       return {};
@@ -643,7 +662,7 @@ export default function Home() {
     const sunPos = getSunPosition(selectedTime, skiAreaDetails.latitude, skiAreaDetails.longitude);
     const result: Record<string, SnowQualityAtPoint[]> = {};
     
-    // Only calculate for favourite runs to keep performance good
+    // Calculate for favourite runs
     favourites.forEach(fav => {
       const run = skiAreaDetails.runs.find(r => r.id === fav.id);
       if (run) {
@@ -658,8 +677,23 @@ export default function Home() {
       }
     });
     
+    // Also calculate for selected run if not already a favourite
+    if (selectedRunIdForDetail && !result[selectedRunIdForDetail]) {
+      const selectedRun = skiAreaDetails.runs.find(r => r.id === selectedRunIdForDetail);
+      if (selectedRun) {
+        result[selectedRun.id] = calculateSnowQualityByAltitude(
+          selectedRun,
+          selectedTime,
+          weather.hourly,
+          weather.daily,
+          sunPos.azimuth,
+          sunPos.altitudeDegrees
+        );
+      }
+    }
+    
     return result;
-  }, [skiAreaDetails, weather, selectedTime, favourites]);
+  }, [skiAreaDetails, weather, selectedTime, favourites, selectedRunIdForDetail]);
 
   return (
     <div className="app-container">
@@ -726,12 +760,15 @@ export default function Home() {
           favourites={favourites}
           snowSummary={snowQuality.summary}
           snowQualityByRun={snowQualityByRun}
+          selectedRunId={selectedRunIdForDetail}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
           onRemoveFavourite={removeFavourite}
+          onAddFavourite={handleAddFavourite}
+          onClearSelectedRun={handleClearSelectedRun}
         />
       </Drawer>
 
@@ -747,12 +784,15 @@ export default function Home() {
           favourites={favourites}
           snowSummary={snowQuality.summary}
           snowQualityByRun={snowQualityByRun}
+          selectedRunId={selectedRunIdForDetail}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
           onRemoveFavourite={removeFavourite}
+          onAddFavourite={handleAddFavourite}
+          onClearSelectedRun={handleClearSelectedRun}
         />
       </div>
 

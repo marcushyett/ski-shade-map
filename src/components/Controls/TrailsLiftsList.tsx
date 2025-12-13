@@ -34,9 +34,12 @@ interface TrailsLiftsListProps {
   longitude: number;
   hourlyWeather?: HourlyWeather[];
   snowQualityByRun?: SnowQualityByRun;
+  selectedRunId?: string | null;
   onSelectRun?: (run: RunData) => void;
   onSelectLift?: (lift: LiftData) => void;
   onRemoveFavourite?: (runId: string) => void;
+  onAddFavourite?: (run: RunData) => void;
+  onClearSelectedRun?: () => void;
 }
 
 // Simple run item - minimal DOM
@@ -465,6 +468,144 @@ const FavouriteItem = memo(function FavouriteItem({
   );
 });
 
+// Selected run detail panel - shows when you click on a run on the map
+const SelectedRunDetail = memo(function SelectedRunDetail({
+  run,
+  analysis,
+  stats,
+  snowQuality,
+  isFavourite,
+  onClose,
+  onAddFavourite,
+  onRemoveFavourite,
+}: {
+  run: RunData;
+  analysis?: RunSunAnalysis;
+  stats: RunStats | null;
+  snowQuality?: SnowQualityPoint[];
+  isFavourite: boolean;
+  onClose: () => void;
+  onAddFavourite: () => void;
+  onRemoveFavourite: () => void;
+}) {
+  const difficultyColor = getDifficultyColor(run.difficulty || 'unknown');
+  const sunLevel = analysis?.sunLevel;
+  const hasSunInfo = analysis?.sunniestWindow && sunLevel && sunLevel !== 'none';
+  const sunnyTime = hasSunInfo 
+    ? `${formatTime(analysis.sunniestWindow!.startTime)}-${formatTime(analysis.sunniestWindow!.endTime)}`
+    : null;
+  const sunColor = sunLevel === 'full' ? '#faad14' : sunLevel === 'partial' ? '#d4a017' : '#888';
+  
+  // Calculate average snow score
+  const avgSnowScore = snowQuality && snowQuality.length > 0
+    ? Math.round(snowQuality.reduce((sum, sq) => sum + sq.score, 0) / snowQuality.length)
+    : null;
+  const snowScoreColor = avgSnowScore !== null 
+    ? (avgSnowScore >= 70 ? '#22c55e' : avgSnowScore >= 40 ? '#a3a3a3' : '#ef4444')
+    : '#888';
+  
+  return (
+    <div className="selected-run-detail mb-3 p-2 rounded" style={{ background: 'rgba(250, 173, 20, 0.08)', border: '1px solid rgba(250, 173, 20, 0.2)' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div 
+            className="w-3 h-3 rounded-full flex-shrink-0"
+            style={{ backgroundColor: difficultyColor }}
+          />
+          <span style={{ fontSize: 12, color: '#fff', fontWeight: 500 }}>
+            {run.name || 'Unnamed Run'}
+          </span>
+        </div>
+        <button
+          onClick={onClose}
+          style={{ 
+            fontSize: 14, 
+            color: '#888', 
+            background: 'none', 
+            border: 'none', 
+            cursor: 'pointer',
+            padding: '2px 6px',
+          }}
+        >
+          ×
+        </button>
+      </div>
+      
+      {/* Quick info row */}
+      <div className="flex items-center gap-3 mb-2" style={{ fontSize: 9, color: '#888' }}>
+        {run.difficulty && (
+          <span style={{ color: difficultyColor }}>{run.difficulty}</span>
+        )}
+        {hasSunInfo && (
+          <span style={{ color: sunColor }} className="flex items-center gap-0.5">
+            <SunIcon level={sunLevel} />
+            <span>{sunnyTime}</span>
+          </span>
+        )}
+        {avgSnowScore !== null && (
+          <span>
+            Snow: <span style={{ color: snowScoreColor, fontWeight: 600 }}>{avgSnowScore}%</span>
+          </span>
+        )}
+      </div>
+      
+      {/* Sun distribution chart */}
+      {analysis && (
+        <div className="mb-2">
+          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Sun exposure by hour</div>
+          <SunDistributionChart hourlyData={analysis.hourlyPercentages} />
+        </div>
+      )}
+      
+      {/* Run stats */}
+      {stats && (
+        <div className="mb-2">
+          <RunStatsDisplay stats={stats} />
+        </div>
+      )}
+      
+      {/* Elevation profile with snow quality */}
+      {stats?.hasElevation && stats.elevationProfile.length > 1 && (
+        <div className="mb-2">
+          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Elevation & snow quality</div>
+          <ElevationProfileChart 
+            profile={stats.elevationProfile} 
+            maxSlope={stats.maxSlope}
+            avgSlope={stats.avgSlope}
+            snowQuality={snowQuality}
+          />
+        </div>
+      )}
+      
+      {/* Action button */}
+      <button
+        onClick={isFavourite ? onRemoveFavourite : onAddFavourite}
+        className="w-full py-1.5 px-2 rounded text-center hover:opacity-80 transition-opacity"
+        style={{ 
+          fontSize: 10, 
+          color: isFavourite ? '#ff4d4f' : '#faad14', 
+          background: isFavourite ? 'rgba(255, 77, 79, 0.1)' : 'rgba(250, 173, 20, 0.15)',
+          border: `1px solid ${isFavourite ? 'rgba(255, 77, 79, 0.3)' : 'rgba(250, 173, 20, 0.3)'}`,
+          cursor: 'pointer',
+        }}
+      >
+        {isFavourite ? (
+          <>
+            <DeleteOutlined style={{ fontSize: 10, marginRight: 4 }} />
+            Remove from favourites
+          </>
+        ) : (
+          <>
+            <StarFilled style={{ fontSize: 10, marginRight: 4 }} />
+            Add to favourites
+          </>
+        )}
+      </button>
+    </div>
+  );
+});
+
 // Difficulty group header
 const DifficultyHeader = memo(function DifficultyHeader({
   difficulty,
@@ -504,9 +645,12 @@ function TrailsListInner({
   longitude,
   hourlyWeather,
   snowQualityByRun,
+  selectedRunId,
   onSelectRun, 
   onSelectLift,
   onRemoveFavourite,
+  onAddFavourite,
+  onClearSelectedRun,
 }: TrailsLiftsListProps) {
   const [searchText, setSearchText] = useState('');
   const [runsExpanded, setRunsExpanded] = useState(false);
@@ -553,6 +697,26 @@ function TrailsListInner({
     });
     return map;
   }, [favouriteRuns]);
+
+  // Get the selected run (from map click)
+  const selectedRun = useMemo(() => {
+    if (!selectedRunId) return null;
+    return runs.find(r => r.id === selectedRunId) || null;
+  }, [selectedRunId, runs]);
+
+  // Calculate analysis for selected run
+  const selectedRunAnalysis = useMemo(() => {
+    if (!selectedRun) return null;
+    const today = new Date();
+    const analyses = analyzeRuns([selectedRun], today, latitude, longitude, hourlyWeather);
+    return analyses[0] || null;
+  }, [selectedRun, latitude, longitude, hourlyWeather]);
+
+  // Calculate stats for selected run
+  const selectedRunStats = useMemo(() => {
+    if (!selectedRun) return null;
+    return calculateRunStats(selectedRun);
+  }, [selectedRun]);
 
   // Track expanded favourite
   const [expandedFavouriteId, setExpandedFavouriteId] = useState<string | null>(null);
@@ -646,6 +810,20 @@ function TrailsListInner({
 
       {isPending && (
         <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>Filtering...</div>
+      )}
+
+      {/* Selected Run Detail - shows when a run is clicked on the map */}
+      {selectedRun && (
+        <SelectedRunDetail
+          run={selectedRun}
+          analysis={selectedRunAnalysis || undefined}
+          stats={selectedRunStats}
+          snowQuality={snowQualityByRun?.[selectedRun.id]}
+          isFavourite={favourites.some(f => f.id === selectedRun.id)}
+          onClose={() => onClearSelectedRun?.()}
+          onAddFavourite={() => onAddFavourite?.(selectedRun)}
+          onRemoveFavourite={() => onRemoveFavourite?.(selectedRun.id)}
+        />
       )}
 
       {/* Favourites Section - only show if there are favourites */}
