@@ -22,7 +22,8 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
   }
   
   const mainCondition = getConditionInfo(summary.overallCondition);
-  const scoreColor = summary.overallScore >= 7 ? '#22c55e' : summary.overallScore >= 5 ? '#eab308' : '#ef4444';
+  // Color based on percentage: green (70%+), neutral gray (40-70%), red (<40%)
+  const scoreColor = summary.overallScore >= 70 ? '#22c55e' : summary.overallScore >= 40 ? '#a3a3a3' : '#ef4444';
   
   return (
     <div className="snow-conditions-panel">
@@ -32,11 +33,12 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
-        <ConditionIcon iconType={mainCondition.iconType} style={{ fontSize: 14, color: mainCondition.color }} />
+        <Text type="secondary" style={{ fontSize: 9 }}>SNOW</Text>
+        <ConditionIcon iconType={mainCondition.iconType} style={{ fontSize: 12, color: mainCondition.color }} />
         <span style={{ fontSize: 11, color: scoreColor, fontWeight: 600 }}>
-          {summary.overallScore.toFixed(1)}
+          {Math.round(summary.overallScore)}%
         </span>
-        <span style={{ fontSize: 10, color: '#aaa' }}>
+        <span style={{ fontSize: 10, color: '#888' }}>
           {mainCondition.label}
         </span>
       </div>

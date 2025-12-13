@@ -17,10 +17,14 @@ import type { HourlyWeather } from '@/lib/weather-types';
 import type { FavouriteRun } from '@/hooks/useFavourites';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import { analyzeRuns, formatTime, calculateRunStats, type SunLevel, type HourlySunData, type RunSunAnalysis, type RunStats } from '@/lib/sunny-time-calculator';
+import type { SnowQualityAtPoint } from '@/lib/snow-quality';
 import { Tooltip } from 'antd';
 
 
 const ITEMS_PER_PAGE = 15;
+
+// Snow quality by run ID
+type SnowQualityByRun = Record<string, SnowQualityAtPoint[]>;
 
 interface TrailsLiftsListProps {
   runs: RunData[];
@@ -29,6 +33,7 @@ interface TrailsLiftsListProps {
   latitude: number;
   longitude: number;
   hourlyWeather?: HourlyWeather[];
+  snowQualityByRun?: SnowQualityByRun;
   onSelectRun?: (run: RunData) => void;
   onSelectLift?: (lift: LiftData) => void;
   onRemoveFavourite?: (runId: string) => void;
@@ -171,11 +176,27 @@ function SunDistributionChart({ hourlyData }: { hourlyData: HourlySunData[] }) {
   );
 }
 
-// Elevation profile chart with max slope indicator
-function ElevationProfileChart({ profile, maxSlope, avgSlope }: { 
+// Snow quality at point type
+interface SnowQualityPoint {
+  altitude: number;
+  score: number;
+}
+
+// Get color for snow quality score
+function getSnowScoreColor(score: number): string {
+  if (score >= 70) return '#22c55e';
+  if (score >= 50) return '#84cc16';
+  if (score >= 40) return '#a3a3a3';
+  if (score >= 25) return '#f97316';
+  return '#ef4444';
+}
+
+// Elevation profile chart with max slope indicator and snow quality
+function ElevationProfileChart({ profile, maxSlope, avgSlope, snowQuality }: { 
   profile: { distance: number; elevation: number }[];
   maxSlope: number;
   avgSlope: number;
+  snowQuality?: SnowQualityPoint[];
 }) {
   if (profile.length < 2) return null;
   
@@ -188,7 +209,14 @@ function ElevationProfileChart({ profile, maxSlope, avgSlope }: {
   const points = profile.map(p => ({
     x: maxDist > 0 ? (p.distance / maxDist) * 100 : 0,
     y: ((p.elevation - minElev) / elevRange) * 100,
+    elevation: p.elevation,
   }));
+  
+  // Match snow quality to profile points by altitude
+  const pointsWithSnow = points.map(p => {
+    const snowPoint = snowQuality?.find(sq => Math.abs(sq.altitude - p.elevation) < 50);
+    return { ...p, snowScore: snowPoint?.score };
+  });
   
   // Find steepest segment for highlighting
   let steepestIdx = 0;
@@ -204,6 +232,11 @@ function ElevationProfileChart({ profile, maxSlope, avgSlope }: {
       }
     }
   }
+
+  // Calculate average snow score
+  const avgSnowScore = snowQuality && snowQuality.length > 0
+    ? Math.round(snowQuality.reduce((sum, sq) => sum + sq.score, 0) / snowQuality.length)
+    : null;
   
   return (
     <div style={{ padding: '4px 0' }}>
@@ -213,21 +246,59 @@ function ElevationProfileChart({ profile, maxSlope, avgSlope }: {
           style={{ width: '100%', height: '100%', display: 'block' }} 
           preserveAspectRatio="none"
         >
-          {/* Filled area under the line */}
-          <path
-            d={`M 0 100 ${points.map(p => `L ${p.x} ${100 - p.y}`).join(' ')} L 100 100 Z`}
-            fill="rgba(102, 102, 102, 0.2)"
-          />
-          {/* Main elevation line */}
-          <path
-            d={points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${100 - p.y}`).join(' ')}
-            fill="none"
-            stroke="#888"
-            strokeWidth="2"
-            vectorEffect="non-scaling-stroke"
-          />
+          {/* Snow quality gradient fill */}
+          {snowQuality && snowQuality.length > 0 && (
+            <>
+              <defs>
+                <linearGradient id="snowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  {pointsWithSnow.map((p, i) => (
+                    <stop 
+                      key={i} 
+                      offset={`${p.x}%`} 
+                      stopColor={p.snowScore !== undefined ? getSnowScoreColor(p.snowScore) : '#333'}
+                      stopOpacity="0.3"
+                    />
+                  ))}
+                </linearGradient>
+              </defs>
+              <path
+                d={`M 0 100 ${points.map(p => `L ${p.x} ${100 - p.y}`).join(' ')} L 100 100 Z`}
+                fill="url(#snowGradient)"
+              />
+            </>
+          )}
+          {/* Default fill if no snow data */}
+          {(!snowQuality || snowQuality.length === 0) && (
+            <path
+              d={`M 0 100 ${points.map(p => `L ${p.x} ${100 - p.y}`).join(' ')} L 100 100 Z`}
+              fill="rgba(102, 102, 102, 0.2)"
+            />
+          )}
+          {/* Main elevation line - colored by snow quality */}
+          {snowQuality && snowQuality.length > 0 ? (
+            pointsWithSnow.slice(1).map((p, i) => (
+              <line
+                key={i}
+                x1={pointsWithSnow[i].x}
+                y1={100 - pointsWithSnow[i].y}
+                x2={p.x}
+                y2={100 - p.y}
+                stroke={p.snowScore !== undefined ? getSnowScoreColor(p.snowScore) : '#888'}
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))
+          ) : (
+            <path
+              d={points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${100 - p.y}`).join(' ')}
+              fill="none"
+              stroke="#888"
+              strokeWidth="2"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
           {/* Steepest section highlight */}
-          {steepestIdx > 0 && (
+          {steepestIdx > 0 && !snowQuality && (
             <line
               x1={points[steepestIdx - 1].x}
               y1={100 - points[steepestIdx - 1].y}
@@ -243,6 +314,12 @@ function ElevationProfileChart({ profile, maxSlope, avgSlope }: {
       <div className="flex justify-between items-center" style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
         <span>{Math.round(maxElev)}m → {Math.round(minElev)}m</span>
         <span>
+          {avgSnowScore !== null && (
+            <>
+              <span style={{ color: getSnowScoreColor(avgSnowScore) }}>{avgSnowScore}% snow</span>
+              {' · '}
+            </>
+          )}
           avg <span style={{ color: '#888' }}>{Math.round(avgSlope)}°</span>
           {' · '}
           max <span style={{ color: '#ff6b6b' }}>{Math.round(maxSlope)}°</span>
@@ -276,6 +353,7 @@ const FavouriteItem = memo(function FavouriteItem({
   run,
   analysis,
   stats,
+  snowQuality,
   isExpanded,
   onToggleExpand,
   onSelect,
@@ -284,6 +362,7 @@ const FavouriteItem = memo(function FavouriteItem({
   run: RunData;
   analysis?: RunSunAnalysis;
   stats: RunStats | null;
+  snowQuality?: SnowQualityPoint[];
   isExpanded: boolean;
   onToggleExpand: () => void;
   onSelect: () => void;
@@ -338,14 +417,15 @@ const FavouriteItem = memo(function FavouriteItem({
             </div>
           )}
           
-          {/* Elevation profile */}
+          {/* Elevation profile with snow quality */}
           {stats?.hasElevation && stats.elevationProfile.length > 1 && (
             <div className="mb-2">
-              <div style={{ color: '#888', marginBottom: 2 }}>Elevation profile</div>
+              <div style={{ color: '#888', marginBottom: 2 }}>Elevation & snow quality</div>
               <ElevationProfileChart 
                 profile={stats.elevationProfile} 
                 maxSlope={stats.maxSlope}
                 avgSlope={stats.avgSlope}
+                snowQuality={snowQuality}
               />
             </div>
           )}
@@ -423,6 +503,7 @@ function TrailsListInner({
   latitude,
   longitude,
   hourlyWeather,
+  snowQualityByRun,
   onSelectRun, 
   onSelectLift,
   onRemoveFavourite,
@@ -581,6 +662,7 @@ function TrailsListInner({
                 run={run}
                 analysis={analysisMap[run.id]}
                 stats={statsMap[run.id]}
+                snowQuality={snowQualityByRun?.[run.id]}
                 isExpanded={expandedFavouriteId === run.id}
                 onToggleExpand={() => setExpandedFavouriteId(
                   expandedFavouriteId === run.id ? null : run.id

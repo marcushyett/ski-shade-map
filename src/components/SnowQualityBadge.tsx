@@ -73,7 +73,8 @@ function SnowQualityBadgeInner({
   
   const style = sizeStyles[size];
   
-  const scoreColor = quality.score >= 7 ? '#22c55e' : quality.score >= 5 ? '#eab308' : '#ef4444';
+  // Color based on percentage: green (70%+), neutral gray (40-70%), red (<40%)
+  const scoreColor = quality.score >= 70 ? '#22c55e' : quality.score >= 40 ? '#a3a3a3' : '#ef4444';
   
   return (
     <Tooltip
@@ -113,7 +114,7 @@ function SnowQualityBadgeInner({
         <ConditionIcon iconType={info.iconType} style={{ fontSize: style.iconSize, color: info.color }} />
         {showScore && (
           <span style={{ color: scoreColor, fontWeight: 600 }}>
-            {quality.score.toFixed(1)}
+            {Math.round(quality.score)}%
           </span>
         )}
         {showLabel && (
@@ -130,7 +131,7 @@ export default SnowQualityBadge;
 // Simple score display for map labels
 export function SnowScoreIndicator({ score, condition }: { score: number; condition: SnowCondition }) {
   const info = getConditionInfo(condition);
-  const color = score >= 7 ? '#22c55e' : score >= 5 ? '#eab308' : '#ef4444';
+  const color = score >= 70 ? '#22c55e' : score >= 40 ? '#a3a3a3' : '#ef4444';
   
   return (
     <span style={{ 
@@ -140,7 +141,7 @@ export function SnowScoreIndicator({ score, condition }: { score: number; condit
       fontSize: 9,
     }}>
       <ConditionIcon iconType={info.iconType} style={{ fontSize: 10, color: info.color }} />
-      <span style={{ color }}>{score.toFixed(0)}</span>
+      <span style={{ color }}>{Math.round(score)}%</span>
     </span>
   );
 }

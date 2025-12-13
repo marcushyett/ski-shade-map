@@ -33,7 +33,7 @@ import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
 import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
-import { analyzeResortSnowQuality, type ResortSnowSummary, type PisteSnowAnalysis } from '@/lib/snow-quality';
+import { analyzeResortSnowQuality, type ResortSnowSummary, type PisteSnowAnalysis, type SnowQualityAtPoint, getConditionInfo, calculateSnowQualityByAltitude } from '@/lib/snow-quality';
 import { getSunPosition } from '@/lib/suncalc';
 import SnowConditionsPanel from '@/components/Controls/SnowConditionsPanel';
 
@@ -60,6 +60,7 @@ const ControlsContent = memo(function ControlsContent({
   isOffline,
   favourites,
   snowSummary,
+  snowQualityByRun,
   onAreaSelect,
   onSelectRun,
   onSelectLift,
@@ -75,6 +76,7 @@ const ControlsContent = memo(function ControlsContent({
   isOffline: boolean;
   favourites: { id: string; name: string | null; difficulty: string | null; skiAreaId: string; skiAreaName: string }[];
   snowSummary: ResortSnowSummary | null;
+  snowQualityByRun: Record<string, SnowQualityAtPoint[]>;
   onAreaSelect: (area: SkiAreaSummary) => void;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
@@ -136,6 +138,7 @@ const ControlsContent = memo(function ControlsContent({
               latitude={skiAreaDetails.latitude}
               longitude={skiAreaDetails.longitude}
               hourlyWeather={weather?.hourly}
+              snowQualityByRun={snowQualityByRun}
               onSelectRun={onSelectRun}
               onSelectLift={onSelectLift}
               onRemoveFavourite={onRemoveFavourite}
@@ -621,6 +624,43 @@ export default function Home() {
     };
   }, [skiAreaDetails, weather, selectedTime]);
 
+  // Format snow analyses for the map component
+  const snowAnalysesForMap = useMemo(() => {
+    return snowQuality.analyses.map(a => ({
+      runId: a.runId,
+      score: a.quality.score,
+      condition: a.quality.condition,
+      conditionLabel: getConditionInfo(a.quality.condition).label,
+    }));
+  }, [snowQuality.analyses]);
+
+  // Calculate snow quality by altitude for each favourite run
+  const snowQualityByRun = useMemo(() => {
+    if (!skiAreaDetails || !weather?.hourly || !weather?.daily) {
+      return {};
+    }
+    
+    const sunPos = getSunPosition(selectedTime, skiAreaDetails.latitude, skiAreaDetails.longitude);
+    const result: Record<string, SnowQualityAtPoint[]> = {};
+    
+    // Only calculate for favourite runs to keep performance good
+    favourites.forEach(fav => {
+      const run = skiAreaDetails.runs.find(r => r.id === fav.id);
+      if (run) {
+        result[run.id] = calculateSnowQualityByAltitude(
+          run,
+          selectedTime,
+          weather.hourly,
+          weather.daily,
+          sunPos.azimuth,
+          sunPos.altitudeDegrees
+        );
+      }
+    });
+    
+    return result;
+  }, [skiAreaDetails, weather, selectedTime, favourites]);
+
   return (
     <div className="app-container">
       {/* Offline banner */}
@@ -685,6 +725,7 @@ export default function Home() {
           isOffline={isOffline}
           favourites={favourites}
           snowSummary={snowQuality.summary}
+          snowQualityByRun={snowQualityByRun}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
@@ -705,6 +746,7 @@ export default function Home() {
           isOffline={isOffline}
           favourites={favourites}
           snowSummary={snowQuality.summary}
+          snowQualityByRun={snowQualityByRun}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
@@ -742,6 +784,7 @@ export default function Home() {
           onToggleFavourite={handleToggleFavourite}
           isEditingHome={isEditingHome}
           onSetHomeLocation={setPendingHomeLocation}
+          snowAnalyses={snowAnalysesForMap}
         />
 
         {/* Search bar on map - desktop only */}

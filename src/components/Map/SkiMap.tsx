@@ -54,6 +54,13 @@ export interface SearchPlaceMarker {
   placeType?: string;
 }
 
+interface SnowAnalysis {
+  runId: string;
+  score: number;
+  condition: string;
+  conditionLabel: string;
+}
+
 interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
   selectedTime: Date;
@@ -75,6 +82,7 @@ interface SkiMapProps {
   onSetHomeLocation?: (location: { lat: number; lng: number }) => void;
   searchPlaceMarker?: SearchPlaceMarker | null;
   onClearSearchPlace?: () => void;
+  snowAnalyses?: SnowAnalysis[];
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -92,7 +100,7 @@ interface SegmentProperties {
   shadedColor: string;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, isEditingHome = false, onSetHomeLocation }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, isEditingHome = false, onSetHomeLocation, snowAnalyses = [] }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -108,11 +116,14 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const isEditingHomeRef = useRef(isEditingHome);
   const onSetHomeLocationRef = useRef(onSetHomeLocation);
   
+  const snowAnalysesRef = useRef<SnowAnalysis[]>([]);
+  
   // Keep refs updated
   favouriteIdsRef.current = favouriteIds;
   onToggleFavouriteRef.current = onToggleFavourite;
   isEditingHomeRef.current = isEditingHome;
   onSetHomeLocationRef.current = onSetHomeLocation;
+  snowAnalysesRef.current = snowAnalyses;
   const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const mountainHomeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
@@ -903,11 +914,17 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         duration: 500,
       });
 
-      // Show popup with feature info
+      // Show popup with feature info including snow quality
+      const snowAnalysis = isRun ? snowAnalysesRef.current.find(s => s.runId === highlightedFeatureId) : null;
+      const snowScoreColor = snowAnalysis 
+        ? (snowAnalysis.score >= 70 ? '#22c55e' : snowAnalysis.score >= 40 ? '#a3a3a3' : '#ef4444')
+        : '#888';
+      
       const popupContent = isRun
         ? `<div class="highlight-popup">
             <strong>${run.name || 'Unnamed Run'}</strong>
             ${run.difficulty ? `<br><span style="color: ${getDifficultyColor(run.difficulty)}">● ${run.difficulty}</span>` : ''}
+            ${snowAnalysis ? `<br><span style="font-size: 10px; margin-top: 4px; display: inline-block;">Snow: <span style="color: ${snowScoreColor}; font-weight: 600">${Math.round(snowAnalysis.score)}%</span> ${snowAnalysis.conditionLabel}</span>` : ''}
           </div>`
         : `<div class="highlight-popup">
             <strong>${lift?.name || 'Unnamed Lift'}</strong>

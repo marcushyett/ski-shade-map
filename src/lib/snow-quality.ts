@@ -27,11 +27,18 @@ export type SnowCondition =
   | "poor"; // Generally bad conditions
 
 export interface SnowQuality {
-  score: number; // 1-10 scale
+  score: number; // 0-100 percentage
   condition: SnowCondition;
   confidence: number; // 0-1 how confident we are in this prediction
   factors: SnowFactor[]; // Contributing factors
   description: string; // Human-readable summary
+}
+
+// Snow quality at a specific point (for elevation profiles)
+export interface SnowQualityAtPoint {
+  altitude: number;
+  score: number; // 0-100 percentage
+  condition: SnowCondition;
 }
 
 export interface SnowFactor {
@@ -61,19 +68,19 @@ export interface ResortSnowSummary {
 }
 
 // Icon type identifiers for Ant Design icons (rendered in React components)
-export type SnowIconType = 
-  | 'snowflake'      // powder
-  | 'check-circle'   // fresh-groomed
-  | 'compress'       // packed-powder
-  | 'dash'           // hard-pack
-  | 'sun'            // spring-corn
-  | 'swap'           // variable
-  | 'cloud'          // wind-affected
-  | 'border'         // crusty
-  | 'bar-chart'      // moguls
-  | 'stop'           // icy
-  | 'fall'           // slush
-  | 'warning';       // poor
+export type SnowIconType =
+  | "snowflake" // powder
+  | "check-circle" // fresh-groomed
+  | "compress" // packed-powder
+  | "dash" // hard-pack
+  | "sun" // spring-corn
+  | "swap" // variable
+  | "cloud" // wind-affected
+  | "border" // crusty
+  | "bar-chart" // moguls
+  | "stop" // icy
+  | "fall" // slush
+  | "warning"; // poor
 
 // Condition metadata
 const CONDITION_INFO: Record<
@@ -81,12 +88,20 @@ const CONDITION_INFO: Record<
   { iconType: SnowIconType; label: string; color: string }
 > = {
   powder: { iconType: "snowflake", label: "Powder", color: "#60a5fa" },
-  "fresh-groomed": { iconType: "check-circle", label: "Groomed", color: "#34d399" },
+  "fresh-groomed": {
+    iconType: "check-circle",
+    label: "Groomed",
+    color: "#34d399",
+  },
   "packed-powder": { iconType: "compress", label: "Packed", color: "#4ade80" },
   "hard-pack": { iconType: "dash", label: "Hard Pack", color: "#a3a3a3" },
   "spring-corn": { iconType: "sun", label: "Corn", color: "#fbbf24" },
   variable: { iconType: "swap", label: "Variable", color: "#a78bfa" },
-  "wind-affected": { iconType: "cloud", label: "Wind-affected", color: "#94a3b8" },
+  "wind-affected": {
+    iconType: "cloud",
+    label: "Wind-affected",
+    color: "#94a3b8",
+  },
   crusty: { iconType: "border", label: "Crusty", color: "#d4a574" },
   moguls: { iconType: "bar-chart", label: "Moguls", color: "#f472b6" },
   icy: { iconType: "stop", label: "Icy", color: "#64748b" },
@@ -212,7 +227,7 @@ export function calculateSnowQuality(
   sunAltitude: number
 ): PisteSnowAnalysis {
   const factors: SnowFactor[] = [];
-  let score = 5; // Start at neutral
+  let score = 50; // Start at neutral (0-100 scale)
 
   const aspect = calculateAspect(run.geometry);
   const altitude = calculateAltitude(run.geometry);
@@ -267,25 +282,25 @@ export function calculateSnowQuality(
   const sunFacing = isSunFacing(aspect, sunAzimuth);
   const sunUp = sunAltitude > 0;
 
-  // ===== SCORING LOGIC =====
+  // ===== SCORING LOGIC (0-100 scale) =====
 
   // Fresh snow bonus
   if (daysSinceSnow < 1 && recentSnowfall > 10) {
-    score += 3;
+    score += 30;
     factors.push({
       name: "Fresh Snow",
       impact: "positive",
       description: `${Math.round(recentSnowfall)}cm of fresh snow`,
     });
   } else if (daysSinceSnow < 2 && recentSnowfall > 5) {
-    score += 2;
+    score += 20;
     factors.push({
       name: "Recent Snow",
       impact: "positive",
       description: `${Math.round(recentSnowfall)}cm in last 2 days`,
     });
   } else if (daysSinceSnow < 4 && recentSnowfall > 10) {
-    score += 1;
+    score += 10;
     factors.push({
       name: "Week Snowfall",
       impact: "positive",
@@ -295,21 +310,21 @@ export function calculateSnowQuality(
 
   // Temperature effects
   if (currentTemp > 5) {
-    score -= 2;
+    score -= 20;
     factors.push({
       name: "Warm Temperature",
       impact: "negative",
       description: `${Math.round(currentTemp)}°C causing snow to soften`,
     });
   } else if (currentTemp > 0 && sunFacing && sunUp) {
-    score -= 1;
+    score -= 10;
     factors.push({
       name: "Warming",
       impact: "negative",
       description: "Sun-facing slope warming up",
     });
   } else if (currentTemp < -10) {
-    score += 0.5;
+    score += 5;
     factors.push({
       name: "Cold",
       impact: "positive",
@@ -319,14 +334,14 @@ export function calculateSnowQuality(
 
   // Altitude bonus
   if (avgAltitude > 2500) {
-    score += 1;
+    score += 10;
     factors.push({
       name: "High Altitude",
       impact: "positive",
       description: "Better snow preservation at altitude",
     });
   } else if (avgAltitude < 1500) {
-    score -= 1;
+    score -= 10;
     factors.push({
       name: "Low Altitude",
       impact: "negative",
@@ -336,7 +351,7 @@ export function calculateSnowQuality(
 
   // Afternoon deterioration
   if (isLateAfternoon && maxTemp > 0) {
-    score -= 1;
+    score -= 10;
     factors.push({
       name: "Afternoon",
       impact: "negative",
@@ -346,7 +361,7 @@ export function calculateSnowQuality(
 
   // Mogul formation on steep runs
   if (steepness && steepness > 25 && isAfternoon) {
-    score -= 0.5;
+    score -= 5;
     factors.push({
       name: "Mogul Formation",
       impact: "negative",
@@ -356,7 +371,7 @@ export function calculateSnowQuality(
 
   // Wind effects
   if (currentWeather && currentWeather.windSpeed > 30) {
-    score -= 1;
+    score -= 10;
     factors.push({
       name: "High Wind",
       impact: "negative",
@@ -368,7 +383,7 @@ export function calculateSnowQuality(
 
   // Shade bonus in warm conditions
   if (!sunFacing && currentTemp > 0) {
-    score += 0.5;
+    score += 5;
     factors.push({
       name: "Shaded",
       impact: "positive",
@@ -376,8 +391,8 @@ export function calculateSnowQuality(
     });
   }
 
-  // Clamp score
-  score = Math.max(1, Math.min(10, score));
+  // Clamp score to 0-100
+  score = Math.max(0, Math.min(100, score));
 
   // Determine condition type
   const condition = determineCondition(
@@ -401,7 +416,7 @@ export function calculateSnowQuality(
     runName: run.name,
     difficulty: run.difficulty,
     quality: {
-      score: Math.round(score * 10) / 10,
+      score: Math.round(score),
       condition,
       confidence: calculateConfidence(
         hourlyWeather.length,
@@ -470,17 +485,17 @@ function determineCondition(
   }
 
   // Packed powder (good all-around conditions)
-  if (score >= 6 && currentTemp < 2) {
+  if (score >= 60 && currentTemp < 2) {
     return "packed-powder";
   }
 
   // Hard pack (firm but ok)
-  if (score >= 4 && currentTemp < 0) {
+  if (score >= 40 && currentTemp < 0) {
     return "hard-pack";
   }
 
   // Variable (mixed conditions)
-  if (score >= 4) {
+  if (score >= 40) {
     return "variable";
   }
 
@@ -500,11 +515,11 @@ function generateDescription(
 ): string {
   const conditionLabel = CONDITION_INFO[condition].label;
   const qualityWord =
-    score >= 8
+    score >= 80
       ? "Excellent"
-      : score >= 6
+      : score >= 60
       ? "Good"
-      : score >= 4
+      : score >= 40
       ? "Fair"
       : "Poor";
 
@@ -581,7 +596,7 @@ export function calculateResortSnowSummary(
   // Generate recommendations
   const recommendations: string[] = [];
 
-  if (avgScore >= 7) {
+  if (avgScore >= 70) {
     recommendations.push("Great day for skiing! Enjoy the conditions.");
   }
   if (
@@ -647,4 +662,106 @@ export function analyzeResortSnowQuality(
   const summary = calculateResortSnowSummary(analyses, dailyWeather);
 
   return { analyses, summary };
+}
+
+// Calculate snow quality at each point along a run's elevation profile
+export function calculateSnowQualityByAltitude(
+  run: RunData,
+  currentTime: Date,
+  hourlyWeather: HourlyWeather[],
+  dailyWeather: DailyWeatherDay[],
+  sunAzimuth: number,
+  sunAltitude: number
+): SnowQualityAtPoint[] {
+  if (run.geometry.type !== "LineString") return [];
+  
+  const coords = run.geometry.coordinates;
+  const aspect = calculateAspect(run.geometry);
+  const steepness = calculateSteepness(run.geometry);
+  
+  // Get weather data
+  const currentHour = currentTime.getHours();
+  const todayStr = currentTime.toISOString().split("T")[0];
+  const currentWeather = hourlyWeather.find((h) => {
+    const hDate = new Date(h.time);
+    return hDate.toDateString() === currentTime.toDateString() && hDate.getHours() === currentHour;
+  });
+  const todayWeather = dailyWeather.find((d) => d.date === todayStr);
+  
+  // Recent snowfall
+  const recentSnowfall = dailyWeather
+    .filter((d) => {
+      const dDate = new Date(d.date);
+      const daysAgo = (currentTime.getTime() - dDate.getTime()) / (1000 * 60 * 60 * 24);
+      return daysAgo >= 0 && daysAgo <= 7;
+    })
+    .reduce((sum, d) => sum + (d.snowfallSum || 0), 0);
+  
+  const lastSnowDay = dailyWeather
+    .filter((d) => d.snowfallSum > 5)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  const daysSinceSnow = lastSnowDay
+    ? (currentTime.getTime() - new Date(lastSnowDay.date).getTime()) / (1000 * 60 * 60 * 24)
+    : 14;
+  
+  const currentTemp = currentWeather?.temperature ?? 0;
+  const maxTemp = todayWeather?.maxTemperature ?? 0;
+  const minTemp = todayWeather?.minTemperature ?? -5;
+  const hourOfDay = currentTime.getHours();
+  const isAfternoon = hourOfDay >= 13;
+  const isLateAfternoon = hourOfDay >= 15;
+  const sunFacing = isSunFacing(aspect, sunAzimuth);
+  const sunUp = sunAltitude > 0;
+  
+  const points: SnowQualityAtPoint[] = [];
+  
+  for (const coord of coords) {
+    const altitude = coord[2];
+    if (typeof altitude !== "number") continue;
+    
+    // Calculate score for this specific altitude
+    let score = 50;
+    
+    // Snow freshness
+    if (daysSinceSnow < 1 && recentSnowfall > 10) score += 30;
+    else if (daysSinceSnow < 2 && recentSnowfall > 5) score += 20;
+    else if (daysSinceSnow < 4 && recentSnowfall > 10) score += 10;
+    
+    // Temperature at altitude (rough estimate: -6.5°C per 1000m)
+    const altitudeTemp = currentTemp - ((altitude - 2000) / 1000) * 6.5;
+    
+    if (altitudeTemp > 5) score -= 20;
+    else if (altitudeTemp > 0 && sunFacing && sunUp) score -= 10;
+    else if (altitudeTemp < -10) score += 5;
+    
+    // Altitude bonus
+    if (altitude > 2500) score += 10;
+    else if (altitude < 1500) score -= 10;
+    
+    // Time effects
+    if (isLateAfternoon && maxTemp > 0) score -= 10;
+    if (steepness && steepness > 25 && isAfternoon) score -= 5;
+    if (currentWeather && currentWeather.windSpeed > 30) score -= 10;
+    if (!sunFacing && currentTemp > 0) score += 5;
+    
+    score = Math.max(0, Math.min(100, score));
+    
+    const condition = determineCondition(
+      score,
+      altitudeTemp,
+      maxTemp,
+      minTemp,
+      daysSinceSnow,
+      recentSnowfall,
+      steepness,
+      isAfternoon,
+      sunFacing,
+      sunUp,
+      currentWeather?.windSpeed ?? 0
+    );
+    
+    points.push({ altitude, score, condition });
+  }
+  
+  return points;
 }
