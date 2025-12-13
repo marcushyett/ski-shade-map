@@ -73,7 +73,7 @@ export type SnowIconType =
   | "check-circle" // fresh-groomed
   | "compress" // packed-powder
   | "dash" // hard-pack
-  | "sun" // spring-corn
+  | "rise" // soft (warming)
   | "swap" // variable
   | "cloud" // wind-affected
   | "border" // crusty
@@ -95,7 +95,7 @@ const CONDITION_INFO: Record<
   },
   "packed-powder": { iconType: "compress", label: "Packed", color: "#4ade80" },
   "hard-pack": { iconType: "dash", label: "Hard Pack", color: "#a3a3a3" },
-  "spring-corn": { iconType: "sun", label: "Soft", color: "#fbbf24" },
+  "spring-corn": { iconType: "rise", label: "Soft", color: "#fbbf24" },
   variable: { iconType: "swap", label: "Variable", color: "#a78bfa" },
   "wind-affected": {
     iconType: "cloud",

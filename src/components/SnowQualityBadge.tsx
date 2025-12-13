@@ -6,7 +6,6 @@ import {
   CheckCircleOutlined,
   CompressOutlined,
   DashOutlined,
-  SunOutlined,
   SwapOutlined,
   CloudOutlined,
   BorderOutlined,
@@ -14,6 +13,7 @@ import {
   StopOutlined,
   FallOutlined,
   WarningOutlined,
+  RiseOutlined,
 } from '@ant-design/icons';
 import type { SnowQuality, SnowCondition, SnowIconType } from '@/lib/snow-quality';
 import { getConditionInfo } from '@/lib/snow-quality';
@@ -37,7 +37,7 @@ function ConditionIcon({ iconType, style }: { iconType: SnowIconType; style?: Re
     'check-circle': <CheckCircleOutlined style={style} />,
     'compress': <CompressOutlined style={style} />,
     'dash': <DashOutlined style={style} />,
-    'sun': <SunOutlined style={style} />,
+    'rise': <RiseOutlined style={style} />,
     'swap': <SwapOutlined style={style} />,
     'cloud': <CloudOutlined style={style} />,
     'border': <BorderOutlined style={style} />,
