@@ -3,8 +3,9 @@
 import { memo, useState } from 'react';
 import { Typography, Tooltip } from 'antd';
 import { DownOutlined, RightOutlined } from '@ant-design/icons';
-import type { ResortSnowSummary, SnowCondition } from '@/lib/snow-quality';
+import type { ResortSnowSummary } from '@/lib/snow-quality';
 import { getConditionInfo } from '@/lib/snow-quality';
+import { ConditionIcon } from '@/components/SnowQualityBadge';
 
 const { Text } = Typography;
 
@@ -31,7 +32,7 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
-        <span style={{ fontSize: 14 }}>{mainCondition.icon}</span>
+        <ConditionIcon iconType={mainCondition.iconType} style={{ fontSize: 14, color: mainCondition.color }} />
         <span style={{ fontSize: 11, color: scoreColor, fontWeight: 600 }}>
           {summary.overallScore.toFixed(1)}
         </span>
@@ -75,9 +76,13 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
                         background: `${info.color}20`,
                         borderRadius: 3,
                         color: info.color,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 2,
                       }}
                     >
-                      {info.icon} {item.percentage}%
+                      <ConditionIcon iconType={info.iconType} style={{ fontSize: 9 }} />
+                      {item.percentage}%
                     </span>
                   </Tooltip>
                 );
@@ -106,4 +111,3 @@ function SnowConditionsPanelInner({ summary, isLoading }: SnowConditionsPanelPro
 
 const SnowConditionsPanel = memo(SnowConditionsPanelInner);
 export default SnowConditionsPanel;
-

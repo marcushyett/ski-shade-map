@@ -32,7 +32,6 @@ export interface SnowQuality {
   confidence: number; // 0-1 how confident we are in this prediction
   factors: SnowFactor[]; // Contributing factors
   description: string; // Human-readable summary
-  icon: string; // Emoji icon for condition
 }
 
 export interface SnowFactor {
@@ -61,23 +60,38 @@ export interface ResortSnowSummary {
   recommendations: string[];
 }
 
+// Icon type identifiers for Ant Design icons (rendered in React components)
+export type SnowIconType = 
+  | 'snowflake'      // powder
+  | 'check-circle'   // fresh-groomed
+  | 'compress'       // packed-powder
+  | 'dash'           // hard-pack
+  | 'sun'            // spring-corn
+  | 'swap'           // variable
+  | 'cloud'          // wind-affected
+  | 'border'         // crusty
+  | 'bar-chart'      // moguls
+  | 'stop'           // icy
+  | 'fall'           // slush
+  | 'warning';       // poor
+
 // Condition metadata
 const CONDITION_INFO: Record<
   SnowCondition,
-  { icon: string; label: string; color: string }
+  { iconType: SnowIconType; label: string; color: string }
 > = {
-  powder: { icon: "❄️", label: "Powder", color: "#60a5fa" },
-  "fresh-groomed": { icon: "🎿", label: "Groomed", color: "#34d399" },
-  "packed-powder": { icon: "⛷️", label: "Packed", color: "#4ade80" },
-  "hard-pack": { icon: "🧊", label: "Hard Pack", color: "#a3a3a3" },
-  "spring-corn": { icon: "🌽", label: "Corn", color: "#fbbf24" },
-  variable: { icon: "🔀", label: "Variable", color: "#a78bfa" },
-  "wind-affected": { icon: "💨", label: "Wind-affected", color: "#94a3b8" },
-  crusty: { icon: "🍪", label: "Crusty", color: "#d4a574" },
-  moguls: { icon: "〰️", label: "Moguls", color: "#f472b6" },
-  icy: { icon: "🪨", label: "Icy", color: "#64748b" },
-  slush: { icon: "💧", label: "Slush", color: "#38bdf8" },
-  poor: { icon: "⚠️", label: "Poor", color: "#ef4444" },
+  powder: { iconType: "snowflake", label: "Powder", color: "#60a5fa" },
+  "fresh-groomed": { iconType: "check-circle", label: "Groomed", color: "#34d399" },
+  "packed-powder": { iconType: "compress", label: "Packed", color: "#4ade80" },
+  "hard-pack": { iconType: "dash", label: "Hard Pack", color: "#a3a3a3" },
+  "spring-corn": { iconType: "sun", label: "Corn", color: "#fbbf24" },
+  variable: { iconType: "swap", label: "Variable", color: "#a78bfa" },
+  "wind-affected": { iconType: "cloud", label: "Wind-affected", color: "#94a3b8" },
+  crusty: { iconType: "border", label: "Crusty", color: "#d4a574" },
+  moguls: { iconType: "bar-chart", label: "Moguls", color: "#f472b6" },
+  icy: { iconType: "stop", label: "Icy", color: "#64748b" },
+  slush: { iconType: "fall", label: "Slush", color: "#38bdf8" },
+  poor: { iconType: "warning", label: "Poor", color: "#ef4444" },
 };
 
 export function getConditionInfo(condition: SnowCondition) {
@@ -395,7 +409,6 @@ export function calculateSnowQuality(
       ),
       factors,
       description: generateDescription(condition, score, factors),
-      icon: conditionInfo.icon,
     },
     altitude,
     aspect,

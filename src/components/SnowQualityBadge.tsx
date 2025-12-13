@@ -2,8 +2,53 @@
 
 import { memo } from 'react';
 import { Tooltip } from 'antd';
-import type { SnowQuality, SnowCondition } from '@/lib/snow-quality';
+import {
+  CheckCircleOutlined,
+  CompressOutlined,
+  DashOutlined,
+  SunOutlined,
+  SwapOutlined,
+  CloudOutlined,
+  BorderOutlined,
+  BarChartOutlined,
+  StopOutlined,
+  FallOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
+import type { SnowQuality, SnowCondition, SnowIconType } from '@/lib/snow-quality';
 import { getConditionInfo } from '@/lib/snow-quality';
+
+// Snowflake icon (not in antd, so we create a simple one)
+function SnowflakeIcon({ style }: { style?: React.CSSProperties }) {
+  return (
+    <span role="img" aria-label="snowflake" style={style}>
+      <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor">
+        <path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83M12 8a4 4 0 100 8 4 4 0 000-8z" 
+              stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/>
+      </svg>
+    </span>
+  );
+}
+
+// Map icon types to Ant Design icons
+function ConditionIcon({ iconType, style }: { iconType: SnowIconType; style?: React.CSSProperties }) {
+  const iconMap: Record<SnowIconType, React.ReactNode> = {
+    'snowflake': <SnowflakeIcon style={style} />,
+    'check-circle': <CheckCircleOutlined style={style} />,
+    'compress': <CompressOutlined style={style} />,
+    'dash': <DashOutlined style={style} />,
+    'sun': <SunOutlined style={style} />,
+    'swap': <SwapOutlined style={style} />,
+    'cloud': <CloudOutlined style={style} />,
+    'border': <BorderOutlined style={style} />,
+    'bar-chart': <BarChartOutlined style={style} />,
+    'stop': <StopOutlined style={style} />,
+    'fall': <FallOutlined style={style} />,
+    'warning': <WarningOutlined style={style} />,
+  };
+  
+  return <>{iconMap[iconType]}</>;
+}
 
 interface SnowQualityBadgeProps {
   quality: SnowQuality;
@@ -65,7 +110,7 @@ function SnowQualityBadgeInner({
           border: `1px solid ${info.color}40`,
         }}
       >
-        <span style={{ fontSize: style.iconSize }}>{quality.icon}</span>
+        <ConditionIcon iconType={info.iconType} style={{ fontSize: style.iconSize, color: info.color }} />
         {showScore && (
           <span style={{ color: scoreColor, fontWeight: 600 }}>
             {quality.score.toFixed(1)}
@@ -94,9 +139,11 @@ export function SnowScoreIndicator({ score, condition }: { score: number; condit
       gap: 2,
       fontSize: 9,
     }}>
-      <span>{info.icon}</span>
+      <ConditionIcon iconType={info.iconType} style={{ fontSize: 10, color: info.color }} />
       <span style={{ color }}>{score.toFixed(0)}</span>
     </span>
   );
 }
 
+// Export ConditionIcon for use in other components
+export { ConditionIcon };
