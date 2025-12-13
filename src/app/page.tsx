@@ -136,14 +136,8 @@ const ControlsContent = memo(function ControlsContent({
             <TrailsLiftsList 
               runs={skiAreaDetails.runs}
               lifts={skiAreaDetails.lifts}
-              favourites={favourites}
-              latitude={skiAreaDetails.latitude}
-              longitude={skiAreaDetails.longitude}
-              hourlyWeather={weather?.hourly}
-              snowQualityByRun={snowQualityByRun}
               onSelectRun={onSelectRun}
               onSelectLift={onSelectLift}
-              onRemoveFavourite={onRemoveFavourite}
             />
           </div>
         </>
