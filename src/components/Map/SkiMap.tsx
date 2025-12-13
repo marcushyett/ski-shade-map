@@ -773,62 +773,69 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     });
 
     // Direction arrows for runs (pointing downhill)
+    // Uses '>' character which is well-supported in map fonts
     map.current.addLayer({
       id: 'ski-runs-arrows',
       type: 'symbol',
       source: 'ski-runs',
       minzoom: 13.5,
+      filter: ['==', ['geometry-type'], 'LineString'],
       layout: {
         'symbol-placement': 'line',
-        'symbol-spacing': 80,
-        'text-field': '▸',
+        'symbol-spacing': 120,
+        'text-field': '>',
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-size': 14,
+        'text-keep-upright': false,
+        'text-rotation-alignment': 'map',
+        'text-pitch-alignment': 'viewport',
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-offset': [0, 0],
+      },
+      paint: {
+        'text-color': [
+          'match',
+          ['get', 'difficulty'],
+          'novice', '#166534',
+          'easy', '#1d4ed8', 
+          'intermediate', '#b91c1c',
+          'advanced', '#000000',
+          'expert', '#c2410c',
+          'freeride', '#b45309',
+          '#444444'
+        ],
+        'text-opacity': 1,
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
+      },
+    });
+
+    // Direction arrows for lifts (pointing uphill)
+    map.current.addLayer({
+      id: 'ski-lifts-arrows',
+      type: 'symbol',
+      source: 'ski-lifts',
+      minzoom: 12.5,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 100,
+        'text-field': '>',
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
         'text-size': 12,
         'text-keep-upright': false,
         'text-rotation-alignment': 'map',
         'text-pitch-alignment': 'viewport',
         'text-allow-overlap': true,
         'text-ignore-placement': true,
+        'text-offset': [0, 0],
       },
       paint: {
-        'text-color': [
-          'match',
-          ['get', 'difficulty'],
-          'novice', '#22c55e',
-          'easy', '#3b82f6', 
-          'intermediate', '#dc2626',
-          'advanced', '#1a1a1a',
-          'expert', '#f97316',
-          'freeride', '#f59e0b',
-          '#666666'
-        ],
-        'text-opacity': 0.7,
+        'text-color': '#1a1a1a',
+        'text-opacity': 1,
         'text-halo-color': '#ffffff',
-        'text-halo-width': 1,
-      },
-    });
-
-    // Direction arrows for lifts (pointing uphill - reverse direction)
-    map.current.addLayer({
-      id: 'ski-lifts-arrows',
-      type: 'symbol',
-      source: 'ski-lifts',
-      minzoom: 12.5,
-      layout: {
-        'symbol-placement': 'line',
-        'symbol-spacing': 60,
-        'text-field': '▸',
-        'text-size': 10,
-        'text-keep-upright': false,
-        'text-rotation-alignment': 'map',
-        'text-pitch-alignment': 'viewport',
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-      },
-      paint: {
-        'text-color': '#333333',
-        'text-opacity': 0.6,
-        'text-halo-color': '#ffffff',
-        'text-halo-width': 1,
+        'text-halo-width': 1.5,
       },
     });
 

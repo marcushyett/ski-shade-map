@@ -674,36 +674,41 @@ export function calculateSnowQualityByAltitude(
   sunAltitude: number
 ): SnowQualityAtPoint[] {
   if (run.geometry.type !== "LineString") return [];
-  
+
   const coords = run.geometry.coordinates;
   const aspect = calculateAspect(run.geometry);
   const steepness = calculateSteepness(run.geometry);
-  
+
   // Get weather data
   const currentHour = currentTime.getHours();
   const todayStr = currentTime.toISOString().split("T")[0];
   const currentWeather = hourlyWeather.find((h) => {
     const hDate = new Date(h.time);
-    return hDate.toDateString() === currentTime.toDateString() && hDate.getHours() === currentHour;
+    return (
+      hDate.toDateString() === currentTime.toDateString() &&
+      hDate.getHours() === currentHour
+    );
   });
   const todayWeather = dailyWeather.find((d) => d.date === todayStr);
-  
+
   // Recent snowfall
   const recentSnowfall = dailyWeather
     .filter((d) => {
       const dDate = new Date(d.date);
-      const daysAgo = (currentTime.getTime() - dDate.getTime()) / (1000 * 60 * 60 * 24);
+      const daysAgo =
+        (currentTime.getTime() - dDate.getTime()) / (1000 * 60 * 60 * 24);
       return daysAgo >= 0 && daysAgo <= 7;
     })
     .reduce((sum, d) => sum + (d.snowfallSum || 0), 0);
-  
+
   const lastSnowDay = dailyWeather
     .filter((d) => d.snowfallSum > 5)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
   const daysSinceSnow = lastSnowDay
-    ? (currentTime.getTime() - new Date(lastSnowDay.date).getTime()) / (1000 * 60 * 60 * 24)
+    ? (currentTime.getTime() - new Date(lastSnowDay.date).getTime()) /
+      (1000 * 60 * 60 * 24)
     : 14;
-  
+
   const currentTemp = currentWeather?.temperature ?? 0;
   const maxTemp = todayWeather?.maxTemperature ?? 0;
   const minTemp = todayWeather?.minTemperature ?? -5;
@@ -712,40 +717,40 @@ export function calculateSnowQualityByAltitude(
   const isLateAfternoon = hourOfDay >= 15;
   const sunFacing = isSunFacing(aspect, sunAzimuth);
   const sunUp = sunAltitude > 0;
-  
+
   const points: SnowQualityAtPoint[] = [];
-  
+
   for (const coord of coords) {
     const altitude = coord[2];
     if (typeof altitude !== "number") continue;
-    
+
     // Calculate score for this specific altitude
     let score = 50;
-    
+
     // Snow freshness
     if (daysSinceSnow < 1 && recentSnowfall > 10) score += 30;
     else if (daysSinceSnow < 2 && recentSnowfall > 5) score += 20;
     else if (daysSinceSnow < 4 && recentSnowfall > 10) score += 10;
-    
+
     // Temperature at altitude (rough estimate: -6.5°C per 1000m)
     const altitudeTemp = currentTemp - ((altitude - 2000) / 1000) * 6.5;
-    
+
     if (altitudeTemp > 5) score -= 20;
     else if (altitudeTemp > 0 && sunFacing && sunUp) score -= 10;
     else if (altitudeTemp < -10) score += 5;
-    
+
     // Altitude bonus
     if (altitude > 2500) score += 10;
     else if (altitude < 1500) score -= 10;
-    
+
     // Time effects
     if (isLateAfternoon && maxTemp > 0) score -= 10;
     if (steepness && steepness > 25 && isAfternoon) score -= 5;
     if (currentWeather && currentWeather.windSpeed > 30) score -= 10;
     if (!sunFacing && currentTemp > 0) score += 5;
-    
+
     score = Math.max(0, Math.min(100, score));
-    
+
     const condition = determineCondition(
       score,
       altitudeTemp,
@@ -759,9 +764,9 @@ export function calculateSnowQualityByAltitude(
       sunUp,
       currentWeather?.windSpeed ?? 0
     );
-    
+
     points.push({ altitude, score, condition });
   }
-  
+
   return points;
 }
