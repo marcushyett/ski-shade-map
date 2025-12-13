@@ -614,7 +614,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         data: polygonRunsGeoJSON,
       });
 
-      // Polygon fill layer for sunny areas - low opacity with sunny color
+      // Polygon fill layer for sunny areas - very faint opacity with sunny color
       map.current.addLayer({
         id: 'ski-runs-polygon-fill-sunny',
         type: 'fill',
@@ -622,11 +622,11 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         filter: ['==', ['get', 'isShaded'], false],
         paint: {
           'fill-color': ['get', 'sunnyColor'],
-          'fill-opacity': isNight ? 0 : 0.25,
+          'fill-opacity': isNight ? 0 : 0.12,
         },
       });
 
-      // Polygon fill layer for shaded areas - low opacity with shaded color
+      // Polygon fill layer for shaded areas - very faint opacity with shaded color
       map.current.addLayer({
         id: 'ski-runs-polygon-fill-shaded',
         type: 'fill',
@@ -634,7 +634,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         filter: ['==', ['get', 'isShaded'], true],
         paint: {
           'fill-color': ['get', 'shadedColor'],
-          'fill-opacity': 0.25,
+          'fill-opacity': 0.12,
         },
       });
 
@@ -1147,7 +1147,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     
     // Hide sunny polygon fills at night
     if (map.current.getLayer('ski-runs-polygon-fill-sunny')) {
-      map.current.setPaintProperty('ski-runs-polygon-fill-sunny', 'fill-opacity', isNight ? 0 : 0.25);
+      map.current.setPaintProperty('ski-runs-polygon-fill-sunny', 'fill-opacity', isNight ? 0 : 0.12);
     }
     // Shaded segments always show their difficulty colors (no NIGHT_COLOR override)
   }, []);
@@ -1309,52 +1309,10 @@ function createRunSegments(
   const features: Feature<LineString, SegmentProperties>[] = [];
 
   for (const run of area.runs) {
-    let coords: number[][] = [];
+    // Only process LineString runs - polygons are rendered as fills, not centerlines
+    if (run.geometry.type !== 'LineString') continue;
     
-    if (run.geometry.type === 'LineString') {
-      coords = run.geometry.coordinates;
-    } else if (run.geometry.type === 'Polygon') {
-      // For polygons, calculate a centerline through the polygon
-      // We'll find the longest axis by getting bounding box and creating a line through centroid
-      const ring = run.geometry.coordinates[0];
-      if (ring.length < 3) continue;
-      
-      // Calculate centroid and bounding box
-      let minLat = Infinity, maxLat = -Infinity;
-      let minLng = Infinity, maxLng = -Infinity;
-      let sumLng = 0, sumLat = 0;
-      
-      for (const [lng, lat] of ring) {
-        minLat = Math.min(minLat, lat);
-        maxLat = Math.max(maxLat, lat);
-        minLng = Math.min(minLng, lng);
-        maxLng = Math.max(maxLng, lng);
-        sumLng += lng;
-        sumLat += lat;
-      }
-      
-      const centroidLng = sumLng / ring.length;
-      const centroidLat = sumLat / ring.length;
-      
-      // Determine orientation - create centerline along the longer axis
-      const latRange = maxLat - minLat;
-      const lngRange = maxLng - minLng;
-      
-      if (latRange > lngRange) {
-        // Polygon is taller (N-S oriented) - create vertical centerline
-        coords = [
-          [centroidLng, minLat],
-          [centroidLng, maxLat],
-        ];
-      } else {
-        // Polygon is wider (E-W oriented) - create horizontal centerline
-        coords = [
-          [minLng, centroidLat],
-          [maxLng, centroidLat],
-        ];
-      }
-    }
-
+    const coords = run.geometry.coordinates;
     if (coords.length < 2) continue;
 
     for (let i = 0; i < coords.length - 1; i++) {
