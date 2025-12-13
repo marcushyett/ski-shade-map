@@ -148,14 +148,14 @@ function getConditionDescription(condition: string): string {
     'fresh-groomed': 'Recently groomed corduroy - smooth and fast',
     'packed-powder': 'Well-consolidated snow - reliable skiing',
     'hard-pack': 'Firm, compacted snow - good edge grip needed',
-    'spring-corn': 'Softening snow from warmth - can be nice in morning',
-    'variable': 'Mixed conditions - expect changes',
-    'wind-affected': 'Wind-packed or scoured areas',
-    'crusty': 'Frozen crust on surface - can be tricky',
-    'moguls': 'Bumps forming on steep terrain',
-    'icy': 'Hard, slippery surface - caution advised',
-    'slush': 'Wet, heavy snow - slower skiing',
-    'poor': 'Challenging conditions overall',
+    'spring-corn': 'Softening snow (0-5°C) - still nice to ski, best in morning before it gets too soft',
+    'variable': 'Mixed conditions - expect changes across the run',
+    'wind-affected': 'Wind-packed or scoured areas - uneven surface',
+    'crusty': 'Frozen crust on surface - can break through unexpectedly',
+    'moguls': 'Bumps forming on steep terrain - develops through the day',
+    'icy': 'Hard, slippery surface - sharp edges and caution needed',
+    'slush': 'Wet, heavy, waterlogged snow (>5°C) - tiring and slow',
+    'poor': 'Challenging conditions - consider other activities',
   };
   return descriptions[condition] || condition;
 }
