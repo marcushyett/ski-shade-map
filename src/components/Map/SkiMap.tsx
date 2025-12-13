@@ -6,7 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
 import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded } from '@/lib/shade-calculator';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import type { SkiAreaDetails } from '@/lib/types';
+import type { SkiAreaDetails, RunData } from '@/lib/types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 
 interface CloudCover {
@@ -1322,37 +1322,53 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const runId = props.id;
       const isFavourite = favouriteIdsRef.current.includes(runId);
       
+      // Calculate run stats
+      const run = currentSkiAreaRef.current?.runs.find((r: RunData) => r.id === runId);
+      let distanceStr = '';
+      let elevationStr = '';
+      
+      if (run?.geometry.type === 'LineString') {
+        const coords = run.geometry.coordinates as number[][];
+        let totalDist = 0;
+        for (let i = 1; i < coords.length; i++) {
+          const [lng1, lat1] = coords[i - 1];
+          const [lng2, lat2] = coords[i];
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLng = (lng2 - lng1) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+          totalDist += 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+        distanceStr = totalDist >= 1000 ? `${(totalDist / 1000).toFixed(1)}km` : `${Math.round(totalDist)}m`;
+        
+        const elevs = coords.map((c: number[]) => c[2]).filter((el): el is number => typeof el === 'number' && el > 100);
+        if (elevs.length >= 2) {
+          const high = Math.max(...elevs);
+          const low = Math.min(...elevs);
+          if (high - low > 10) elevationStr = `↓${Math.round(high - low)}m (${Math.round(high)}→${Math.round(low)}m)`;
+        }
+      }
+      
+      const snowAnalysis = snowAnalysesRef.current.find(s => s.runId === runId);
+      const snowColor = snowAnalysis ? (snowAnalysis.score >= 70 ? '#22c55e' : snowAnalysis.score >= 40 ? '#a3a3a3' : '#ef4444') : null;
+      
+      const btnBg = isFavourite ? 'rgba(250, 173, 20, 0.25)' : 'rgba(250, 173, 20, 0.1)';
+      const snowHtml = snowAnalysis 
+        ? `<div style="font-size: 11px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px; margin-bottom: 8px;">Snow: <span style="color: ${snowColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span> <span style="color: #888;">${snowAnalysis.conditionLabel}</span></div>` 
+        : '';
+      
       const popup = new maplibregl.Popup()
         .setLngLat(e.lngLat)
         .setHTML(`
-          <div style="padding: 6px; min-width: 150px;">
-            <strong>${props.name || 'Unnamed Run'}</strong>
-            <br/>
-            <span style="color: ${props.color}">● ${props.difficulty || 'Unknown'}</span>
-            ${props.status ? `<br/><small>Status: ${props.status}</small>` : ''}
-            <hr style="margin: 6px 0; border: none; border-top: 1px solid #333;" />
-            <button 
-              id="toggle-favourite-${runId}"
-              style="
-                width: 100%;
-                padding: 6px 10px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 12px;
-                font-weight: 500;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 6px;
-                background: ${isFavourite ? 'rgba(250, 173, 20, 0.25)' : 'rgba(250, 173, 20, 0.1)'};
-                color: #faad14;
-                border: 1px solid #faad14;
-                transition: all 0.2s;
-              "
-              onmouseover="this.style.background='rgba(250, 173, 20, 0.3)'"
-              onmouseout="this.style.background='${isFavourite ? 'rgba(250, 173, 20, 0.25)' : 'rgba(250, 173, 20, 0.1)'}'"
-            >
+          <div style="padding: 8px; min-width: 180px;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: ${props.color};"></span>
+              <strong style="font-size: 13px;">${props.name || 'Unnamed Run'}</strong>
+            </div>
+            <div style="font-size: 11px; color: ${props.color}; margin-bottom: 4px;">${props.difficulty || 'Unknown'}</div>
+            ${distanceStr ? `<div style="font-size: 10px; color: #888; margin-bottom: 2px;">📏 ${distanceStr}</div>` : ''}
+            ${elevationStr ? `<div style="font-size: 10px; color: #888; margin-bottom: 6px;">${elevationStr}</div>` : ''}
+            ${snowHtml}
+            <button id="toggle-favourite-${runId}" style="width: 100%; padding: 8px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px; background: ${btnBg}; color: #faad14; border: 1px solid #faad14;">
               <span style="font-size: 14px;">${isFavourite ? '★' : '☆'}</span>
               ${isFavourite ? 'Remove from Favourites' : 'Add to Favourites'}
             </button>
