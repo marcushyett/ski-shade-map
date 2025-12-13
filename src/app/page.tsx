@@ -698,8 +698,27 @@ export default function Home() {
     const stats = calculateRunStats(run);
     const isFavourite = favourites.some(f => f.id === run.id);
     
-    return { run, analysis, stats, isFavourite };
-  }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, favourites]);
+    // Calculate temperature data based on selected time
+    let temperatureData: { temperature: number; stationAltitude: number } | undefined;
+    if (weather?.hourly && weather.elevation) {
+      const targetHour = selectedTime.getHours();
+      const targetDate = selectedTime.toDateString();
+      
+      const hourlyMatch = weather.hourly.find(h => {
+        const d = new Date(h.time);
+        return d.toDateString() === targetDate && d.getHours() === targetHour;
+      });
+      
+      if (hourlyMatch) {
+        temperatureData = {
+          temperature: hourlyMatch.temperature,
+          stationAltitude: weather.elevation,
+        };
+      }
+    }
+    
+    return { run, analysis, stats, isFavourite, temperatureData };
+  }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, weather?.elevation, favourites]);
 
   return (
     <div className="app-container">
@@ -836,6 +855,7 @@ export default function Home() {
             analysis={selectedRunData.analysis || undefined}
             stats={selectedRunData.stats}
             snowQuality={snowQualityByRun[selectedRunData.run.id]}
+            temperatureData={selectedRunData.temperatureData}
             isFavourite={selectedRunData.isFavourite}
             lngLat={selectedRunDetail.lngLat}
             mapRef={mapRef}
