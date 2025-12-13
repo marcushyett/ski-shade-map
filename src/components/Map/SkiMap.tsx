@@ -45,6 +45,9 @@ export interface SharedLocationMarker {
 export interface MapRef {
   flyTo: (lat: number, lng: number, zoom?: number) => void;
   getCenter: () => { lat: number; lng: number } | null;
+  project: (lngLat: [number, number]) => { x: number; y: number } | null;
+  on: (event: string, handler: () => void) => void;
+  off: (event: string, handler: () => void) => void;
 }
 
 export interface SearchPlaceMarker {
@@ -73,7 +76,7 @@ interface SkiMapProps {
   onViewChange?: (view: MapViewState) => void;
   favouriteIds?: string[];
   onToggleFavourite?: (runId: string) => void;
-  onRunClick?: (runId: string, screenPosition: { x: number; y: number }) => void;
+  onRunClick?: (runId: string, lngLat: { lng: number; lat: number }) => void;
   onMapClick?: () => void;
   userLocation?: UserLocationMarker | null;
   mountainHome?: MountainHomeMarker | null;
@@ -151,6 +154,17 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
           if (!map.current) return null;
           const center = map.current.getCenter();
           return { lat: center.lat, lng: center.lng };
+        },
+        project: (lngLat: [number, number]) => {
+          if (!map.current) return null;
+          const point = map.current.project(lngLat);
+          return { x: point.x, y: point.y };
+        },
+        on: (event: string, handler: () => void) => {
+          map.current?.on(event, handler);
+        },
+        off: (event: string, handler: () => void) => {
+          map.current?.off(event, handler);
         },
       };
     }
@@ -1335,8 +1349,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const props = feature.properties;
       const runId = props.id;
       
-      // Call the onRunClick callback with screen position
-      onRunClickRef.current?.(runId, { x: e.point.x, y: e.point.y });
+      // Call the onRunClick callback with map coordinates
+      onRunClickRef.current?.(runId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
     });
 
     map.current.on('click', 'ski-lifts', (e) => {

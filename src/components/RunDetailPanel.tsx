@@ -1,7 +1,8 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useEffect, useState, useCallback } from 'react';
 import { Tooltip, Button } from 'antd';
+import type { MapRef } from '@/components/Map/SkiMap';
 import { CloseOutlined, StarFilled, StarOutlined, EnvironmentOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { RunData } from '@/lib/types';
 import type { RunSunAnalysis, RunStats } from '@/lib/sunny-time-calculator';
@@ -416,23 +417,57 @@ export const RunDetailPanel = memo(function RunDetailPanel({
   );
 });
 
-// Overlay wrapper - positions the panel over the map
+// Overlay wrapper - positions the panel over the map, tracking map coordinates
 export interface RunDetailOverlayProps extends RunDetailPanelProps {
-  position?: { x: number; y: number };
+  lngLat: { lng: number; lat: number };
+  mapRef: React.MutableRefObject<MapRef | null>;
 }
 
 export const RunDetailOverlay = memo(function RunDetailOverlay({
-  position,
+  lngLat,
+  mapRef,
   ...panelProps
 }: RunDetailOverlayProps) {
+  const [screenPos, setScreenPos] = useState<{ x: number; y: number } | null>(null);
+  
+  // Project lngLat to screen coordinates
+  const updatePosition = useCallback(() => {
+    if (!mapRef.current) return;
+    const point = mapRef.current.project([lngLat.lng, lngLat.lat]);
+    if (point) {
+      setScreenPos({ x: point.x, y: point.y });
+    }
+  }, [lngLat.lng, lngLat.lat, mapRef]);
+  
+  // Update position on mount and when map moves
+  useEffect(() => {
+    updatePosition();
+    
+    const map = mapRef.current;
+    if (!map) return;
+    
+    // Listen for map movements
+    const handleMove = () => updatePosition();
+    map.on('move', handleMove);
+    map.on('zoom', handleMove);
+    
+    return () => {
+      map.off('move', handleMove);
+      map.off('zoom', handleMove);
+    };
+  }, [updatePosition, mapRef]);
+  
+  // Don't render until we have a position
+  if (!screenPos) return null;
+  
   return (
     <div 
       className="run-detail-overlay"
       style={{
         position: 'absolute',
-        top: position?.y ?? '50%',
-        left: position?.x ?? '50%',
-        transform: position ? 'translate(-50%, -100%)' : 'translate(-50%, -50%)',
+        top: screenPos.y,
+        left: screenPos.x,
+        transform: 'translate(-50%, -100%)',
         zIndex: 1000,
         animation: 'fadeIn 0.15s ease-out',
       }}
@@ -440,21 +475,19 @@ export const RunDetailOverlay = memo(function RunDetailOverlay({
     >
       <RunDetailPanel {...panelProps} />
       {/* Arrow pointer */}
-      {position && (
-        <div 
-          style={{
-            position: 'absolute',
-            bottom: -8,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 0,
-            height: 0,
-            borderLeft: '8px solid transparent',
-            borderRight: '8px solid transparent',
-            borderTop: '8px solid rgba(26, 26, 26, 0.98)',
-          }}
-        />
-      )}
+      <div 
+        style={{
+          position: 'absolute',
+          bottom: -8,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 0,
+          height: 0,
+          borderLeft: '8px solid transparent',
+          borderRight: '8px solid transparent',
+          borderTop: '8px solid rgba(26, 26, 26, 0.98)',
+        }}
+      />
     </div>
   );
 });

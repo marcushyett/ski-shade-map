@@ -244,7 +244,7 @@ export default function Home() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
   const [highlightedFeatureType, setHighlightedFeatureType] = useState<'run' | 'lift' | null>(null);
-  const [selectedRunDetail, setSelectedRunDetail] = useState<{ runId: string; position: { x: number; y: number } } | null>(null);
+  const [selectedRunDetail, setSelectedRunDetail] = useState<{ runId: string; lngLat: { lng: number; lat: number } } | null>(null);
   const [searchPlaceMarker, setSearchPlaceMarker] = useState<{ latitude: number; longitude: number; name: string; placeType?: string } | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -482,8 +482,8 @@ export default function Home() {
   }, []);
 
   // Handle run click on map - show detail overlay
-  const handleRunClick = useCallback((runId: string, position: { x: number; y: number }) => {
-    setSelectedRunDetail({ runId, position });
+  const handleRunClick = useCallback((runId: string, lngLat: { lng: number; lat: number }) => {
+    setSelectedRunDetail({ runId, lngLat });
   }, []);
 
   const handleCloseRunDetail = useCallback(() => {
@@ -843,7 +843,8 @@ export default function Home() {
             stats={selectedRunData.stats}
             snowQuality={snowQualityByRun[selectedRunData.run.id]}
             isFavourite={selectedRunData.isFavourite}
-            position={selectedRunDetail.position}
+            lngLat={selectedRunDetail.lngLat}
+            mapRef={mapRef}
             onClose={handleCloseRunDetail}
             onToggleFavourite={() => {
               toggleFavourite(selectedRunData.run);
