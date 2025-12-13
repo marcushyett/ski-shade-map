@@ -205,37 +205,28 @@ export default function TimeSlider({
     return dailyWeather.find(d => d.date === dateStr) || null;
   };
 
-  // Custom date cell renderer with weather preview
+  // Custom date cell renderer - simplified without weather to avoid overlap
   const dateRender = (current: dayjs.Dayjs) => {
     const weather = getWeatherForDate(current.toDate());
     const isSelected = isSameDay(current.toDate(), selectedTime);
+    const hasWeather = !!weather;
     
     return (
-      <div 
-        className="ant-picker-cell-inner" 
-        style={{ 
-          position: 'relative',
-          backgroundColor: isSelected ? '#faad14' : undefined,
-          borderRadius: isSelected ? 4 : undefined,
-        }}
+      <Tooltip 
+        title={weather ? `${formatTemp(weather.minTemperature)} - ${formatTemp(weather.maxTemperature)}` : 'No weather data'}
+        placement="top"
       >
-        {current.date()}
-        {weather && (
-          <div style={{ 
-            position: 'absolute', 
-            bottom: -2, 
-            left: '50%', 
-            transform: 'translateX(-50%)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            fontSize: 8,
-          }}>
-            <DayWeatherIcon code={weather.weatherCode} size={8} />
-            <span style={{ opacity: 0.7 }}>{formatTemp(weather.maxTemperature)}</span>
-          </div>
-        )}
-      </div>
+        <div 
+          className="ant-picker-cell-inner" 
+          style={{ 
+            backgroundColor: isSelected ? '#faad14' : undefined,
+            borderRadius: isSelected ? 4 : undefined,
+            color: isSelected ? '#000' : hasWeather ? '#fff' : '#666',
+          }}
+        >
+          {current.date()}
+        </div>
+      </Tooltip>
     );
   };
 

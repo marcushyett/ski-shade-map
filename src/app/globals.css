@@ -952,3 +952,36 @@ h5.ant-typography {
     transform: scale(1) translateY(0);
   }
 }
+
+/* Date picker overrides - make navigation always visible */
+.ant-picker-header-super-prev-btn,
+.ant-picker-header-prev-btn,
+.ant-picker-header-next-btn,
+.ant-picker-header-super-next-btn {
+  visibility: visible !important;
+  opacity: 1 !important;
+  color: #ccc !important;
+}
+
+.ant-picker-header-super-prev-btn:hover,
+.ant-picker-header-prev-btn:hover,
+.ant-picker-header-next-btn:hover,
+.ant-picker-header-super-next-btn:hover {
+  color: #fff !important;
+}
+
+/* Make date picker cells more readable */
+.ant-picker-cell {
+  padding: 2px !important;
+}
+
+.ant-picker-cell-inner {
+  min-width: 28px !important;
+  height: 28px !important;
+  line-height: 28px !important;
+}
+
+/* Dim dates without weather data */
+.ant-picker-cell-disabled .ant-picker-cell-inner {
+  color: #444 !important;
+}

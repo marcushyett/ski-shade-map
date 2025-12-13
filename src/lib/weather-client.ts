@@ -10,6 +10,7 @@
 import type { WeatherData, CurrentWeather, HourlyWeather, DailyWeatherDay } from './weather-types';
 
 const BASE_URL = 'https://api.open-meteo.com/v1/forecast';
+const ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
 
 // API key is optional - Open-Meteo works without one for non-commercial use
 const API_KEY = process.env.OPEN_METEO_API_KEY;
@@ -74,10 +75,122 @@ interface OpenMeteoResponse {
   };
 }
 
+// Helper to format date as YYYY-MM-DD
+function formatDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Fetch historical weather data from Open-Meteo Archive API
+async function fetchHistoricalWeather(
+  latitude: number,
+  longitude: number,
+  startDate: string,
+  endDate: string
+): Promise<{ hourly: HourlyWeather[]; daily: DailyWeatherDay[] }> {
+  const params = new URLSearchParams({
+    latitude: latitude.toString(),
+    longitude: longitude.toString(),
+    start_date: startDate,
+    end_date: endDate,
+    // Hourly data (Archive API has fewer fields available)
+    hourly: [
+      'temperature_2m',
+      'apparent_temperature',
+      'relative_humidity_2m',
+      'wind_speed_10m',
+      'wind_direction_10m',
+      'wind_gusts_10m',
+      'weather_code',
+      'cloud_cover',
+      'cloud_cover_low',
+      'cloud_cover_mid',
+      'cloud_cover_high',
+      'precipitation',
+      'snowfall',
+      'snow_depth',
+      'is_day',
+    ].join(','),
+    daily: [
+      'sunrise',
+      'sunset',
+      'temperature_2m_max',
+      'temperature_2m_min',
+      'wind_speed_10m_max',
+      'precipitation_sum',
+      'snowfall_sum',
+      'weather_code',
+    ].join(','),
+    timezone: 'auto',
+  });
+
+  if (API_KEY) {
+    params.set('apikey', API_KEY);
+  }
+
+  const url = `${ARCHIVE_URL}?${params}`;
+  
+  const response = await fetch(url, {
+    headers: { 'Accept': 'application/json' },
+  });
+
+  if (!response.ok) {
+    console.warn(`Historical weather API error: ${response.status}`);
+    return { hourly: [], daily: [] };
+  }
+
+  const data = await response.json();
+  
+  if (!data.hourly || !data.daily) {
+    return { hourly: [], daily: [] };
+  }
+
+  // Transform hourly data (some fields may not be available in archive)
+  const hourlyWeather: HourlyWeather[] = data.hourly.time.map((time: string, i: number) => ({
+    time,
+    temperature: data.hourly.temperature_2m?.[i] ?? 0,
+    apparentTemperature: data.hourly.apparent_temperature?.[i] ?? 0,
+    humidity: data.hourly.relative_humidity_2m?.[i] ?? 0,
+    windSpeed: data.hourly.wind_speed_10m?.[i] ?? 0,
+    windDirection: data.hourly.wind_direction_10m?.[i] ?? 0,
+    windGusts: data.hourly.wind_gusts_10m?.[i] ?? 0,
+    weatherCode: data.hourly.weather_code?.[i] ?? 0,
+    cloudCover: data.hourly.cloud_cover?.[i] ?? 0,
+    cloudCoverLow: data.hourly.cloud_cover_low?.[i] ?? 0,
+    cloudCoverMid: data.hourly.cloud_cover_mid?.[i] ?? 0,
+    cloudCoverHigh: data.hourly.cloud_cover_high?.[i] ?? 0,
+    visibility: 10000, // Not available in archive, assume good
+    precipitation: data.hourly.precipitation?.[i] ?? 0,
+    precipitationProbability: 0, // Not available in archive
+    snowfall: data.hourly.snowfall?.[i] ?? 0,
+    snowDepth: data.hourly.snow_depth?.[i] ?? 0,
+    freezingLevelHeight: 0, // Not available in archive
+    isDay: data.hourly.is_day?.[i] === 1,
+  }));
+
+  const dailyWeather: DailyWeatherDay[] = data.daily.time.map((date: string, i: number) => ({
+    date,
+    sunrise: data.daily.sunrise?.[i] ?? '',
+    sunset: data.daily.sunset?.[i] ?? '',
+    maxTemperature: data.daily.temperature_2m_max?.[i] ?? 0,
+    minTemperature: data.daily.temperature_2m_min?.[i] ?? 0,
+    maxWindSpeed: data.daily.wind_speed_10m_max?.[i] ?? 0,
+    precipitationSum: data.daily.precipitation_sum?.[i] ?? 0,
+    snowfallSum: data.daily.snowfall_sum?.[i] ?? 0,
+    precipitationProbabilityMax: 0, // Not available in archive
+    weatherCode: data.daily.weather_code?.[i] ?? 0,
+  }));
+
+  return { hourly: hourlyWeather, daily: dailyWeather };
+}
+
 export async function fetchWeatherData(
   latitude: number,
   longitude: number,
-  forecastDays: number = 16 // Max 16 days for Open-Meteo free tier
+  forecastDays: number = 16, // Max 16 days for Open-Meteo free tier
+  pastDays: number = 7 // Include past 7 days of historical data
 ): Promise<WeatherData> {
   const params = new URLSearchParams({
     latitude: latitude.toString(),
@@ -157,8 +270,34 @@ export async function fetchWeatherData(
   }
 
   const data: OpenMeteoResponse = await response.json();
+  const forecastData = transformResponse(data);
   
-  return transformResponse(data);
+  // Fetch historical data for past days
+  if (pastDays > 0) {
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - pastDays);
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() - 1); // Yesterday
+    
+    try {
+      const historicalData = await fetchHistoricalWeather(
+        latitude,
+        longitude,
+        formatDateString(startDate),
+        formatDateString(endDate)
+      );
+      
+      // Merge historical data with forecast data
+      forecastData.hourly = [...historicalData.hourly, ...forecastData.hourly];
+      forecastData.daily = [...historicalData.daily, ...forecastData.daily];
+    } catch (err) {
+      console.warn('Failed to fetch historical weather:', err);
+      // Continue with just forecast data
+    }
+  }
+  
+  return forecastData;
 }
 
 function transformResponse(data: OpenMeteoResponse): WeatherData {
