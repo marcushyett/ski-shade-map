@@ -272,6 +272,20 @@ h5.ant-typography {
   border-top-color: var(--background-secondary) !important;
 }
 
+/* Search highlight popup with orange border */
+.search-highlight-popup .maplibregl-popup-content {
+  border: 2px solid #f97316 !important;
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.4);
+}
+
+.highlight-popup {
+  min-width: 100px;
+}
+
+.highlight-popup strong {
+  font-size: 12px;
+}
+
 .maplibregl-ctrl-group {
   background-color: var(--background-secondary) !important;
   border: 1px solid var(--border) !important;
@@ -315,7 +329,8 @@ h5.ant-typography {
   padding: 8px 10px;
   background: var(--background);
   border-bottom: 1px solid var(--border);
-  z-index: 10;
+  z-index: 100;
+  position: relative;
 }
 
 .map-container {
@@ -511,4 +526,379 @@ h5.ant-typography {
 
 .ant-empty-image svg {
   fill: var(--foreground-muted) !important;
+}
+
+/* Search bar styles */
+.search-bar-container {
+  position: relative;
+  z-index: 100;
+}
+
+.search-bar-container .ant-input {
+  background-color: var(--background-secondary) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+  font-size: 11px !important;
+}
+
+.search-bar-container .ant-input::placeholder {
+  color: var(--foreground-muted) !important;
+}
+
+.search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 300px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+.search-category {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-category:last-child {
+  border-bottom: none;
+}
+
+.search-category-header {
+  padding: 4px 10px;
+  font-size: 9px;
+  color: var(--foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+}
+
+.search-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  transition: background 0.1s;
+}
+
+.search-item:hover,
+.search-item.selected {
+  background: var(--background-tertiary);
+}
+
+.search-item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.search-item-name {
+  flex: 1;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-item-meta {
+  margin-left: 8px;
+  font-size: 9px;
+  color: var(--foreground-muted);
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.search-no-results {
+  padding: 12px 10px;
+  font-size: 10px;
+  color: var(--foreground-muted);
+  text-align: center;
+}
+
+/* Location controls */
+.location-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.location-btn {
+  width: 29px;
+  height: 29px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--background-secondary);
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.location-btn:hover {
+  background: var(--background-tertiary);
+  color: var(--foreground);
+  border-color: var(--foreground-muted);
+}
+
+.location-btn.active {
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.location-btn.loading {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.location-btn.has-home {
+  color: #f97316;
+  border-color: #f97316;
+}
+
+.location-btn.has-home:hover {
+  background: rgba(249, 115, 22, 0.1);
+}
+
+/* User location marker */
+.user-location-marker {
+  position: relative;
+  width: 24px;
+  height: 24px;
+}
+
+.user-location-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  background: #3b82f6;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+.user-location-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  background: rgba(59, 130, 246, 0.3);
+  border-radius: 50%;
+  animation: pulse-ring 2s infinite;
+  z-index: 1;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0;
+  }
+}
+
+/* Mountain home marker */
+.mountain-home-marker {
+  cursor: pointer;
+}
+
+.mountain-home-circle {
+  width: 32px;
+  height: 32px;
+  background: #f97316;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.4);
+  transition: transform 0.2s;
+}
+
+.mountain-home-marker:hover .mountain-home-circle {
+  transform: scale(1.1);
+}
+
+/* Mobile header search bar */
+.mobile-header-search {
+  margin-top: 8px;
+  position: relative;
+  z-index: 200;
+}
+
+.mobile-header-search .search-bar-container {
+  position: relative;
+}
+
+.mobile-header-search .search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Search bar on map - desktop only */
+.map-search-container {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  top: 10px;
+  z-index: 15;
+}
+
+/* Style MapLibre navigation controls to match our button style */
+.maplibregl-ctrl-group {
+  background: var(--background-secondary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: none !important;
+}
+
+.maplibregl-ctrl-group button {
+  width: 29px !important;
+  height: 29px !important;
+  background: var(--background-secondary) !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.maplibregl-ctrl-group button:last-child {
+  border-bottom: none !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: var(--background-tertiary) !important;
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(0.6);
+}
+
+/* Location controls - positioned below zoom controls on right */
+.location-controls-container {
+  position: absolute;
+  top: 110px;
+  right: 10px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.location-controls-container .location-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.location-controls-container .location-btn {
+  width: 29px;
+  height: 29px;
+}
+
+.location-controls-container .location-btn .anticon {
+  font-size: 14px;
+}
+
+/* Shared location marker (person icon - purple/violet) */
+.shared-location-marker {
+  cursor: pointer;
+  animation: shared-bounce-in 0.4s ease-out;
+}
+
+.shared-location-circle {
+  width: 28px;
+  height: 28px;
+  background: #8b5cf6;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.5);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.shared-location-marker:hover .shared-location-circle {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.6);
+}
+
+@keyframes shared-bounce-in {
+  0% {
+    transform: scale(0) translateY(-20px);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.2) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Search place marker (orange highlight) */
+.search-place-marker {
+  cursor: pointer;
+  animation: search-bounce-in 0.4s ease-out;
+}
+
+.search-place-circle {
+  width: 32px;
+  height: 32px;
+  background: #f97316;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.6);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.search-place-marker:hover .search-place-circle {
+  transform: scale(1.15);
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.8);
+}
+
+@keyframes search-bounce-in {
+  0% {
+    transform: scale(0) translateY(-20px);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) translateY(0);
+    opacity: 1;
+  }
+  75% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
 }
