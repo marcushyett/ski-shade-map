@@ -351,6 +351,49 @@ function RunStatsDisplay({ stats }: { stats: RunStats }) {
   );
 }
 
+// Reusable run detail content - shared between FavouriteItem expanded view and SelectedRunDetail
+const RunDetailContent = memo(function RunDetailContent({
+  analysis,
+  stats,
+  snowQuality,
+}: {
+  analysis?: RunSunAnalysis;
+  stats: RunStats | null;
+  snowQuality?: SnowQualityPoint[];
+}) {
+  return (
+    <>
+      {/* Sun distribution chart */}
+      {analysis && (
+        <div className="mb-2">
+          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Sun exposure by hour</div>
+          <SunDistributionChart hourlyData={analysis.hourlyPercentages} />
+        </div>
+      )}
+      
+      {/* Run stats */}
+      {stats && (
+        <div className="mb-2">
+          <RunStatsDisplay stats={stats} />
+        </div>
+      )}
+      
+      {/* Elevation profile with snow quality */}
+      {stats?.hasElevation && stats.elevationProfile.length > 1 && (
+        <div className="mb-2">
+          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Elevation & snow quality</div>
+          <ElevationProfileChart 
+            profile={stats.elevationProfile} 
+            maxSlope={stats.maxSlope}
+            avgSlope={stats.avgSlope}
+            snowQuality={snowQuality}
+          />
+        </div>
+      )}
+    </>
+  );
+});
+
 // Favourite run item - expandable
 const FavouriteItem = memo(function FavouriteItem({
   run,
@@ -405,33 +448,11 @@ const FavouriteItem = memo(function FavouriteItem({
       {/* Expanded content */}
       {isExpanded && (
         <div className="ml-4 mt-1 p-2 rounded" style={{ background: 'rgba(255,255,255,0.02)', fontSize: 9 }}>
-          {/* Sun distribution chart */}
-          {analysis && (
-            <div className="mb-2">
-              <div style={{ color: '#888', marginBottom: 2 }}>Sun exposure by hour</div>
-              <SunDistributionChart hourlyData={analysis.hourlyPercentages} />
-            </div>
-          )}
-          
-          {/* Run stats */}
-          {stats && (
-            <div className="mb-2">
-              <RunStatsDisplay stats={stats} />
-            </div>
-          )}
-          
-          {/* Elevation profile with snow quality */}
-          {stats?.hasElevation && stats.elevationProfile.length > 1 && (
-            <div className="mb-2">
-              <div style={{ color: '#888', marginBottom: 2 }}>Elevation & snow quality</div>
-              <ElevationProfileChart 
-                profile={stats.elevationProfile} 
-                maxSlope={stats.maxSlope}
-                avgSlope={stats.avgSlope}
-                snowQuality={snowQuality}
-              />
-            </div>
-          )}
+          <RunDetailContent 
+            analysis={analysis}
+            stats={stats}
+            snowQuality={snowQuality}
+          />
           
           {/* Action buttons */}
           <div className="flex gap-2">
@@ -550,33 +571,12 @@ const SelectedRunDetail = memo(function SelectedRunDetail({
         )}
       </div>
       
-      {/* Sun distribution chart */}
-      {analysis && (
-        <div className="mb-2">
-          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Sun exposure by hour</div>
-          <SunDistributionChart hourlyData={analysis.hourlyPercentages} />
-        </div>
-      )}
-      
-      {/* Run stats */}
-      {stats && (
-        <div className="mb-2">
-          <RunStatsDisplay stats={stats} />
-        </div>
-      )}
-      
-      {/* Elevation profile with snow quality */}
-      {stats?.hasElevation && stats.elevationProfile.length > 1 && (
-        <div className="mb-2">
-          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Elevation & snow quality</div>
-          <ElevationProfileChart 
-            profile={stats.elevationProfile} 
-            maxSlope={stats.maxSlope}
-            avgSlope={stats.avgSlope}
-            snowQuality={snowQuality}
-          />
-        </div>
-      )}
+      {/* Shared run detail content */}
+      <RunDetailContent 
+        analysis={analysis}
+        stats={stats}
+        snowQuality={snowQuality}
+      />
       
       {/* Action button */}
       <button
