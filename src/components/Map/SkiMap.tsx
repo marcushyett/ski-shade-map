@@ -23,15 +23,55 @@ interface MapViewState {
   zoom: number;
 }
 
+export interface UserLocationMarker {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+}
+
+export interface MountainHomeMarker {
+  latitude: number;
+  longitude: number;
+  name: string;
+}
+
+export interface SharedLocationMarker {
+  latitude: number;
+  longitude: number;
+  name: string;
+  id: string;
+}
+
+export interface MapRef {
+  flyTo: (lat: number, lng: number, zoom?: number) => void;
+  getCenter: () => { lat: number; lng: number } | null;
+}
+
+export interface SearchPlaceMarker {
+  latitude: number;
+  longitude: number;
+  name: string;
+  placeType?: string;
+}
+
 interface SkiMapProps {
   skiArea: SkiAreaDetails | null;
   selectedTime: Date;
   is3D: boolean;
   onMapReady?: () => void;
   highlightedFeatureId?: string | null;
+  highlightedFeatureType?: 'run' | 'lift' | null;
   cloudCover?: CloudCover | null;
   initialView?: MapViewState | null;
   onViewChange?: (view: MapViewState) => void;
+  userLocation?: UserLocationMarker | null;
+  mountainHome?: MountainHomeMarker | null;
+  sharedLocations?: SharedLocationMarker[];
+  onRemoveSharedLocation?: (id: string) => void;
+  onSetMountainHome?: (lat: number, lng: number) => void;
+  mapRef?: React.MutableRefObject<MapRef | null>;
+  searchPlaceMarker?: SearchPlaceMarker | null;
+  onClearSearchPlace?: () => void;
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -49,7 +89,7 @@ interface SegmentProperties {
   shadedColor: string;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, onSetMountainHome, mapRef, searchPlaceMarker, onClearSearchPlace }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -60,6 +100,33 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const pendingUpdateRef = useRef<{ area: SkiAreaDetails; time: Date } | null>(null);
   const currentSunAzimuth = useRef<number>(0);
   const currentSkiAreaRef = useRef<SkiAreaDetails | null>(null);
+  const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const mountainHomeMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressCoords = useRef<{ lat: number; lng: number } | null>(null);
+  const highlightPopupRef = useRef<maplibregl.Popup | null>(null);
+  const searchPlaceMarkerRef = useRef<maplibregl.Marker | null>(null);
+
+  // Expose map methods via ref
+  useEffect(() => {
+    if (mapRef) {
+      mapRef.current = {
+        flyTo: (lat: number, lng: number, zoom?: number) => {
+          map.current?.flyTo({
+            center: [lng, lat],
+            zoom: zoom ?? 15,
+            duration: 1000,
+          });
+        },
+        getCenter: () => {
+          if (!map.current) return null;
+          const center = map.current.getCenter();
+          return { lat: center.lat, lng: center.lng };
+        },
+      };
+    }
+  }, [mapRef, mapLoaded]);
 
   // Initialize map
   useEffect(() => {
@@ -96,9 +163,73 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }
     });
 
+    // Long press to set mountain home (500ms)
+    map.current.on('mousedown', (e) => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+      longPressCoords.current = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+      longPressTimerRef.current = setTimeout(() => {
+        if (longPressCoords.current) {
+          onSetMountainHome?.(longPressCoords.current.lat, longPressCoords.current.lng);
+          longPressCoords.current = null;
+        }
+      }, 500);
+    });
+
+    map.current.on('mouseup', () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    });
+
+    map.current.on('mousemove', () => {
+      // Cancel long press if mouse moves
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    });
+
+    // Touch events for mobile
+    map.current.on('touchstart', (e) => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+      const touch = e.originalEvent.touches?.[0];
+      if (touch && map.current) {
+        const point = map.current.unproject([touch.clientX - map.current.getContainer().getBoundingClientRect().left, touch.clientY - map.current.getContainer().getBoundingClientRect().top]);
+        longPressCoords.current = { lat: point.lat, lng: point.lng };
+        longPressTimerRef.current = setTimeout(() => {
+          if (longPressCoords.current) {
+            onSetMountainHome?.(longPressCoords.current.lat, longPressCoords.current.lng);
+            longPressCoords.current = null;
+          }
+        }, 500);
+      }
+    });
+
+    map.current.on('touchend', () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    });
+
+    map.current.on('touchmove', () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    });
+
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
+      }
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
       }
       map.current?.remove();
       map.current = null;
@@ -289,6 +420,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny-glow', 'ski-segments-sunny', 'ski-segments-shaded', 
+      'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded', 'ski-runs-polygon-outline',
       'ski-runs-line', 'ski-lifts', 'ski-lifts-symbols'
     ];
     layersToRemove.forEach(layerId => {
@@ -297,7 +429,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }
     });
 
-    const sourcesToRemove = ['sun-indicator', 'ski-segments', 'ski-runs', 'ski-lifts'];
+    const sourcesToRemove = ['sun-indicator', 'ski-segments', 'ski-runs', 'ski-runs-polygons', 'ski-lifts'];
     sourcesToRemove.forEach(sourceId => {
       if (map.current?.getSource(sourceId)) {
         map.current.removeSource(sourceId);
@@ -428,7 +560,103 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Runs source and layer
+    // Polygon runs source (for fill) - only runs that are polygons
+    // Calculate sun/shade for each polygon based on its orientation (sunPos already defined above)
+    const polygonRunsGeoJSON = {
+      type: 'FeatureCollection' as const,
+      features: area.runs
+        .filter(run => run.geometry.type === 'Polygon')
+        .map(run => {
+          // Calculate polygon's slope aspect from its bounding box
+          const ring = run.geometry.coordinates[0] as number[][];
+          let minLat = Infinity, maxLat = -Infinity;
+          let minLng = Infinity, maxLng = -Infinity;
+          
+          for (const [lng, lat] of ring) {
+            minLat = Math.min(minLat, lat);
+            maxLat = Math.max(maxLat, lat);
+            minLng = Math.min(minLng, lng);
+            maxLng = Math.max(maxLng, lng);
+          }
+          
+          // Calculate slope aspect based on polygon orientation
+          const latRange = maxLat - minLat;
+          const lngRange = maxLng - minLng;
+          
+          // If taller than wide, slope faces E or W; if wider, faces N or S
+          // Use the center to determine which direction it faces
+          const slopeAspect = latRange > lngRange ? 90 : 0; // Simplified: E-facing if tall, N-facing if wide
+          
+          // Calculate if polygon is in shade
+          const isShaded = sunPos.altitudeDegrees <= 0 ? true : 
+            calculateSegmentShade(slopeAspect, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+          
+          return {
+            type: 'Feature' as const,
+            properties: {
+              id: run.id,
+              name: run.name,
+              difficulty: run.difficulty,
+              status: run.status,
+              isShaded,
+              color: getDifficultyColor(run.difficulty),
+              sunnyColor: getDifficultyColorSunny(run.difficulty),
+              shadedColor: getDifficultyColorShaded(run.difficulty),
+            },
+            geometry: run.geometry,
+          };
+        }),
+    };
+
+    if (polygonRunsGeoJSON.features.length > 0) {
+      map.current.addSource('ski-runs-polygons', {
+        type: 'geojson',
+        data: polygonRunsGeoJSON,
+      });
+
+      // Polygon fill layer for sunny areas - very faint opacity with sunny color
+      map.current.addLayer({
+        id: 'ski-runs-polygon-fill-sunny',
+        type: 'fill',
+        source: 'ski-runs-polygons',
+        filter: ['==', ['get', 'isShaded'], false],
+        paint: {
+          'fill-color': ['get', 'sunnyColor'],
+          'fill-opacity': isNight ? 0 : 0.12,
+        },
+      });
+
+      // Polygon fill layer for shaded areas - very faint opacity with shaded color
+      map.current.addLayer({
+        id: 'ski-runs-polygon-fill-shaded',
+        type: 'fill',
+        source: 'ski-runs-polygons',
+        filter: ['==', ['get', 'isShaded'], true],
+        paint: {
+          'fill-color': ['get', 'shadedColor'],
+          'fill-opacity': 0.12,
+        },
+      });
+
+      // Polygon outline layer - subtle border using appropriate color
+      map.current.addLayer({
+        id: 'ski-runs-polygon-outline',
+        type: 'line',
+        source: 'ski-runs-polygons',
+        paint: {
+          'line-color': [
+            'case',
+            ['get', 'isShaded'],
+            ['get', 'shadedColor'],
+            ['get', 'sunnyColor']
+          ],
+          'line-width': 1,
+          'line-opacity': 0.4,
+        },
+      });
+    }
+
+    // Runs source and layer (all runs for click detection)
     const runsGeoJSON = {
       type: 'FeatureCollection' as const,
       features: area.runs.map(run => ({
@@ -524,20 +752,30 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     layersInitialized.current = true;
   }, []);
 
-  // Handle highlighted feature
+  // Handle highlighted feature with orange glow and popup
   useEffect(() => {
-    if (!map.current || !mapLoaded || !layersInitialized.current) return;
+    if (!map.current || !mapLoaded) return;
 
-    // Highlight segments for the selected run
+    // Remove any existing highlight popup
+    if (highlightPopupRef.current) {
+      highlightPopupRef.current.remove();
+      highlightPopupRef.current = null;
+    }
+    
+    // Highlight segments for the selected run using width increase and orange glow
     const highlightWidth = highlightedFeatureId 
-      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 6, 4]
+      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 8, 4]
       : 4;
     const highlightGlowWidth = highlightedFeatureId 
-      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 14, 10]
+      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 20, 10]
       : 10;
+    const highlightGlowOpacity = highlightedFeatureId 
+      ? ['case', ['==', ['get', 'runId'], highlightedFeatureId], 0.9, 0.6]
+      : 0.6;
     
     if (map.current.getLayer('ski-segments-sunny-glow')) {
       map.current.setPaintProperty('ski-segments-sunny-glow', 'line-width', highlightGlowWidth);
+      map.current.setPaintProperty('ski-segments-sunny-glow', 'line-opacity', highlightGlowOpacity);
     }
     if (map.current.getLayer('ski-segments-sunny')) {
       map.current.setPaintProperty('ski-segments-sunny', 'line-width', highlightWidth);
@@ -545,34 +783,270 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     if (map.current.getLayer('ski-segments-shaded')) {
       map.current.setPaintProperty('ski-segments-shaded', 'line-width', highlightWidth);
     }
-
+    
+    // For lifts, update lift layer width
     if (map.current.getLayer('ski-lifts')) {
-      map.current.setPaintProperty('ski-lifts', 'line-width',
-        highlightedFeatureId
-          ? ['case', ['==', ['get', 'id'], highlightedFeatureId], 5, 2]
-          : 2
-      );
+      const liftWidth = highlightedFeatureId 
+        ? ['case', ['==', ['get', 'id'], highlightedFeatureId], 5, 2]
+        : 2;
+      map.current.setPaintProperty('ski-lifts', 'line-width', liftWidth);
     }
 
-    // Zoom to highlighted feature if it exists
-    if (highlightedFeatureId && skiArea) {
-      const run = skiArea.runs.find(r => r.id === highlightedFeatureId);
-      const lift = skiArea.lifts.find(l => l.id === highlightedFeatureId);
-      
-      const geometry = run?.geometry || lift?.geometry;
-      if (geometry && geometry.type === 'LineString' && geometry.coordinates.length > 0) {
-        const coords = geometry.coordinates;
-        const midIndex = Math.floor(coords.length / 2);
-        const midPoint = coords[midIndex];
-        
-        map.current.easeTo({
-          center: [midPoint[0], midPoint[1]],
-          zoom: 15,
-          duration: 500,
-        });
-      }
+    // Reset when no highlight
+    if (!highlightedFeatureId) {
+      return;
+    }
+
+    if (!skiArea) return;
+
+    const run = skiArea.runs.find(r => r.id === highlightedFeatureId);
+    const lift = skiArea.lifts.find(l => l.id === highlightedFeatureId);
+    const isRun = !!run;
+    const feature = run || lift;
+
+    if (!feature) return;
+
+    // Get center point of the geometry for popup and zoom
+    const geometry = feature.geometry;
+    let centerPoint: [number, number] | null = null;
+
+    if (geometry.type === 'LineString' && geometry.coordinates.length > 0) {
+      const coords = geometry.coordinates as [number, number][];
+      const midIndex = Math.floor(coords.length / 2);
+      centerPoint = coords[midIndex];
+    } else if (geometry.type === 'Polygon' && geometry.coordinates.length > 0) {
+      // For polygons, get the centroid of the first ring
+      const coords = geometry.coordinates[0] as [number, number][];
+      const sumLng = coords.reduce((sum, c) => sum + c[0], 0);
+      const sumLat = coords.reduce((sum, c) => sum + c[1], 0);
+      centerPoint = [sumLng / coords.length, sumLat / coords.length];
+    }
+
+    if (centerPoint) {
+      // Fly to the feature
+      map.current.easeTo({
+        center: centerPoint,
+        zoom: 16,
+        duration: 500,
+      });
+
+      // Show popup with feature info
+      const popupContent = isRun
+        ? `<div class="highlight-popup">
+            <strong>${run.name || 'Unnamed Run'}</strong>
+            ${run.difficulty ? `<br><span style="color: ${getDifficultyColor(run.difficulty)}">● ${run.difficulty}</span>` : ''}
+          </div>`
+        : `<div class="highlight-popup">
+            <strong>${lift?.name || 'Unnamed Lift'}</strong>
+            ${lift?.liftType ? `<br><span style="opacity: 0.7">${lift.liftType}</span>` : ''}
+          </div>`;
+
+      highlightPopupRef.current = new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: false,
+        className: 'search-highlight-popup',
+      })
+        .setLngLat(centerPoint)
+        .setHTML(popupContent)
+        .addTo(map.current);
     }
   }, [highlightedFeatureId, mapLoaded, skiArea]);
+
+  // Handle user location marker
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Remove existing marker if location is null
+    if (!userLocation) {
+      if (userLocationMarkerRef.current) {
+        userLocationMarkerRef.current.remove();
+        userLocationMarkerRef.current = null;
+      }
+      return;
+    }
+
+    // Create or update marker
+    if (userLocationMarkerRef.current) {
+      userLocationMarkerRef.current.setLngLat([userLocation.longitude, userLocation.latitude]);
+    } else {
+      // Create custom marker element
+      const el = document.createElement('div');
+      el.className = 'user-location-marker';
+      el.innerHTML = `
+        <div class="user-location-dot"></div>
+        <div class="user-location-pulse"></div>
+      `;
+
+      userLocationMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([userLocation.longitude, userLocation.latitude])
+        .addTo(map.current);
+    }
+  }, [userLocation, mapLoaded]);
+
+  // Handle mountain home marker
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Remove existing marker if home is null
+    if (!mountainHome) {
+      if (mountainHomeMarkerRef.current) {
+        mountainHomeMarkerRef.current.remove();
+        mountainHomeMarkerRef.current = null;
+      }
+      return;
+    }
+
+    // Create or update marker
+    if (mountainHomeMarkerRef.current) {
+      mountainHomeMarkerRef.current.setLngLat([mountainHome.longitude, mountainHome.latitude]);
+    } else {
+      // Create custom marker element with home icon
+      const el = document.createElement('div');
+      el.className = 'mountain-home-marker';
+      el.innerHTML = `
+        <div class="mountain-home-circle">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+          </svg>
+        </div>
+      `;
+      el.title = mountainHome.name;
+
+      mountainHomeMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([mountainHome.longitude, mountainHome.latitude])
+        .setPopup(
+          new maplibregl.Popup({ offset: 25 })
+            .setHTML(`<div style="padding: 4px; font-size: 11px;"><strong>${mountainHome.name}</strong></div>`)
+        )
+        .addTo(map.current);
+    }
+  }, [mountainHome, mapLoaded]);
+
+  // Handle shared location markers
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    const currentMarkerIds = new Set(sharedLocations?.map(l => l.id) || []);
+    
+    // Remove markers that are no longer in the list
+    sharedLocationMarkersRef.current.forEach((marker, id) => {
+      if (!currentMarkerIds.has(id)) {
+        marker.remove();
+        sharedLocationMarkersRef.current.delete(id);
+      }
+    });
+
+    // Add or update markers
+    sharedLocations?.forEach(location => {
+      const existingMarker = sharedLocationMarkersRef.current.get(location.id);
+      
+      if (existingMarker) {
+        existingMarker.setLngLat([location.longitude, location.latitude]);
+      } else {
+        // Create custom marker element with person icon
+        const el = document.createElement('div');
+        el.className = 'shared-location-marker';
+        el.innerHTML = `
+          <div class="shared-location-circle">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+          </div>
+        `;
+        el.title = location.name + ' (click to dismiss)';
+        
+        // Add click handler to remove marker
+        el.addEventListener('click', () => {
+          onRemoveSharedLocation?.(location.id);
+        });
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([location.longitude, location.latitude])
+          .setPopup(
+            new maplibregl.Popup({ offset: 25, closeOnClick: false })
+              .setHTML(`
+                <div style="padding: 6px; font-size: 11px;">
+                  <strong>${location.name}</strong>
+                  <div style="margin-top: 4px; font-size: 9px; color: #888;">Click marker to dismiss</div>
+                </div>
+              `)
+          )
+          .addTo(map.current!);
+        
+        sharedLocationMarkersRef.current.set(location.id, marker);
+      }
+    });
+  }, [sharedLocations, mapLoaded, onRemoveSharedLocation]);
+
+  // Handle search place marker
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Remove existing marker if null
+    if (!searchPlaceMarker) {
+      if (searchPlaceMarkerRef.current) {
+        searchPlaceMarkerRef.current.remove();
+        searchPlaceMarkerRef.current = null;
+      }
+      return;
+    }
+
+    // Get icon based on place type
+    const getPlaceIcon = (placeType?: string) => {
+      switch (placeType) {
+        case 'hotel':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z"/></svg>';
+        case 'restaurant':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>';
+        case 'shop':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>';
+        case 'road':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M11 8.5v-6h2v6h-2zm-9.5 4h6v-2h-6v2zm9.5 8.5v-6h2v6h-2zm8-10.5h-6v2h6v-2z"/></svg>';
+        case 'building':
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/></svg>';
+        default:
+          return '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>';
+      }
+    };
+
+    // Remove existing marker first
+    if (searchPlaceMarkerRef.current) {
+      searchPlaceMarkerRef.current.remove();
+      searchPlaceMarkerRef.current = null;
+    }
+
+    // Create custom marker element
+    const el = document.createElement('div');
+    el.className = 'search-place-marker';
+    el.innerHTML = `
+      <div class="search-place-circle">
+        ${getPlaceIcon(searchPlaceMarker.placeType)}
+      </div>
+    `;
+    el.title = searchPlaceMarker.name;
+    
+    // Add click handler to clear the marker
+    el.addEventListener('click', () => {
+      onClearSearchPlace?.();
+    });
+
+    searchPlaceMarkerRef.current = new maplibregl.Marker({ element: el })
+      .setLngLat([searchPlaceMarker.longitude, searchPlaceMarker.latitude])
+      .setPopup(
+        new maplibregl.Popup({ offset: 25, closeOnClick: false, className: 'search-highlight-popup' })
+          .setHTML(`
+            <div class="highlight-popup">
+              <strong>${searchPlaceMarker.name}</strong>
+              ${searchPlaceMarker.placeType ? `<br><span style="opacity: 0.7; text-transform: capitalize">${searchPlaceMarker.placeType}</span>` : ''}
+              <div style="margin-top: 4px; font-size: 9px; color: #888;">Click marker to dismiss</div>
+            </div>
+          `)
+      )
+      .addTo(map.current);
+
+    // Open popup automatically
+    searchPlaceMarkerRef.current.togglePopup();
+  }, [searchPlaceMarker, mapLoaded, onClearSearchPlace]);
 
   // Update shading without recreating layers
   const updateShading = useCallback((area: SkiAreaDetails, time: Date) => {
@@ -620,12 +1094,60 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       segmentsSource.setData(segments);
     }
 
+    // Update polygon fills with new sun/shade data
+    const polygonsSource = map.current.getSource('ski-runs-polygons') as maplibregl.GeoJSONSource | undefined;
+    if (polygonsSource) {
+      const polygonRunsGeoJSON = {
+        type: 'FeatureCollection' as const,
+        features: area.runs
+          .filter(run => run.geometry.type === 'Polygon')
+          .map(run => {
+            const ring = run.geometry.coordinates[0] as number[][];
+            let minLat = Infinity, maxLat = -Infinity;
+            let minLng = Infinity, maxLng = -Infinity;
+            
+            for (const [lng, lat] of ring) {
+              minLat = Math.min(minLat, lat);
+              maxLat = Math.max(maxLat, lat);
+              minLng = Math.min(minLng, lng);
+              maxLng = Math.max(maxLng, lng);
+            }
+            
+            const latRange = maxLat - minLat;
+            const lngRange = maxLng - minLng;
+            const slopeAspect = latRange > lngRange ? 90 : 0;
+            const isShaded = isNight ? true : calculateSegmentShade(slopeAspect, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+            
+            return {
+              type: 'Feature' as const,
+              properties: {
+                id: run.id,
+                name: run.name,
+                difficulty: run.difficulty,
+                status: run.status,
+                isShaded,
+                color: getDifficultyColor(run.difficulty),
+                sunnyColor: getDifficultyColorSunny(run.difficulty),
+                shadedColor: getDifficultyColorShaded(run.difficulty),
+              },
+              geometry: run.geometry,
+            };
+          }),
+      };
+      polygonsSource.setData(polygonRunsGeoJSON);
+    }
+
     // Hide sunny segments and glow at night, show shaded colors for all runs
     if (map.current.getLayer('ski-segments-sunny-glow')) {
       map.current.setPaintProperty('ski-segments-sunny-glow', 'line-opacity', isNight ? 0 : 0.6);
     }
     if (map.current.getLayer('ski-segments-sunny')) {
       map.current.setPaintProperty('ski-segments-sunny', 'line-opacity', isNight ? 0 : 1);
+    }
+    
+    // Hide sunny polygon fills at night
+    if (map.current.getLayer('ski-runs-polygon-fill-sunny')) {
+      map.current.setPaintProperty('ski-runs-polygon-fill-sunny', 'fill-opacity', isNight ? 0 : 0.12);
     }
     // Shaded segments always show their difficulty colors (no NIGHT_COLOR override)
   }, []);
@@ -787,14 +1309,10 @@ function createRunSegments(
   const features: Feature<LineString, SegmentProperties>[] = [];
 
   for (const run of area.runs) {
-    let coords: number[][] = [];
+    // Only process LineString runs - polygons are rendered as fills, not centerlines
+    if (run.geometry.type !== 'LineString') continue;
     
-    if (run.geometry.type === 'LineString') {
-      coords = run.geometry.coordinates;
-    } else if (run.geometry.type === 'Polygon') {
-      coords = run.geometry.coordinates[0];
-    }
-
+    const coords = run.geometry.coordinates;
     if (coords.length < 2) continue;
 
     for (let i = 0; i < coords.length - 1; i++) {

@@ -35,49 +35,59 @@ export async function GET(request: NextRequest) {
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             padding: '20px 40px',
             backgroundColor: '#000000',
+            borderBottom: '1px solid #222',
           }}
         >
-          {/* Mountain logo */}
-          <svg width="40" height="40" viewBox="0 0 40 40">
-            <defs>
-              <linearGradient id="shade" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#f0f0f0" />
-                <stop offset="61.8%" stopColor="#f0f0f0" />
-                <stop offset="61.8%" stopColor="#404040" />
-                <stop offset="100%" stopColor="#404040" />
-              </linearGradient>
-            </defs>
-            <polygon points="20,5 35,35 5,35" fill="url(#shade)" />
-          </svg>
-          
-          {/* Brand text */}
-          <div style={{ display: 'flex', marginLeft: 16 }}>
-            <div
-              style={{
-                backgroundColor: '#ffffff',
-                color: '#0a0a0a',
-                padding: '4px 8px',
-                fontSize: 20,
-                fontWeight: 'bold',
-              }}
-            >
-              SKI
-            </div>
-            <div
-              style={{
-                backgroundColor: '#0a0a0a',
-                color: '#ffffff',
-                border: '1px solid #333',
-                padding: '4px 8px',
-                fontSize: 20,
-                fontWeight: 'bold',
-              }}
-            >
-              SHADE
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {/* Mountain logo */}
+            <svg width="40" height="40" viewBox="0 0 40 40">
+              <defs>
+                <linearGradient id="shade" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#f0f0f0" />
+                  <stop offset="61.8%" stopColor="#f0f0f0" />
+                  <stop offset="61.8%" stopColor="#404040" />
+                  <stop offset="100%" stopColor="#404040" />
+                </linearGradient>
+              </defs>
+              <polygon points="20,5 35,35 5,35" fill="url(#shade)" />
+            </svg>
+            
+            {/* Brand text */}
+            <div style={{ display: 'flex', marginLeft: 16 }}>
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  color: '#0a0a0a',
+                  padding: '4px 8px',
+                  fontSize: 24,
+                  fontWeight: 'bold',
+                }}
+              >
+                SKI
+              </div>
+              <div
+                style={{
+                  backgroundColor: '#0a0a0a',
+                  color: '#ffffff',
+                  border: '1px solid #333',
+                  padding: '4px 8px',
+                  fontSize: 24,
+                  fontWeight: 'bold',
+                }}
+              >
+                SHADE
+              </div>
             </div>
           </div>
+          
+          {timeDisplay && (
+            <div style={{ fontSize: 20, color: '#888' }}>
+              {timeDisplay}
+            </div>
+          )}
         </div>
 
         {/* Main content */}
@@ -90,6 +100,7 @@ export async function GET(request: NextRequest) {
             justifyContent: 'center',
             padding: '40px',
             position: 'relative',
+            background: 'linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%)',
           }}
         >
           {/* Background mountains */}
@@ -108,11 +119,11 @@ export async function GET(request: NextRequest) {
               fill="#252525"
             />
             
-            {/* Ski runs with sun/shade */}
-            <line x1="400" y1="150" x2="350" y2="350" stroke="#ffffff" strokeWidth="12" opacity="0.8" />
-            <line x1="550" y1="120" x2="600" y2="380" stroke="#1a1a1a" strokeWidth="12" opacity="0.8" />
-            <line x1="700" y1="160" x2="680" y2="400" stroke="#ffffff" strokeWidth="12" opacity="0.8" />
-            <line x1="850" y1="100" x2="900" y2="420" stroke="#1a1a1a" strokeWidth="12" opacity="0.8" />
+            {/* Ski runs with sun/shade - single colored lines */}
+            <line x1="400" y1="150" x2="350" y2="350" stroke="#81C784" strokeWidth="6" opacity="0.9" />
+            <line x1="550" y1="120" x2="600" y2="380" stroke="#0D47A1" strokeWidth="6" opacity="0.9" />
+            <line x1="700" y1="160" x2="680" y2="400" stroke="#FF8A80" strokeWidth="6" opacity="0.9" />
+            <line x1="850" y1="100" x2="900" y2="420" stroke="#7F0000" strokeWidth="6" opacity="0.9" />
           </svg>
 
           {/* Sun */}
@@ -162,8 +173,10 @@ export async function GET(request: NextRequest) {
           style={{
             display: 'flex',
             justifyContent: 'center',
+            alignItems: 'center',
             padding: '20px 40px',
             backgroundColor: '#000000',
+            borderTop: '1px solid #222',
           }}
         >
           <div style={{ fontSize: 18, color: '#666666' }}>
