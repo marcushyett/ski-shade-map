@@ -272,10 +272,10 @@ h5.ant-typography {
   border-top-color: var(--background-secondary) !important;
 }
 
-/* Search highlight popup with orange border */
+/* Search highlight popup with yellow border */
 .search-highlight-popup .maplibregl-popup-content {
-  border: 2px solid #f97316 !important;
-  box-shadow: 0 0 12px rgba(249, 115, 22, 0.4);
+  border: 2px solid #faad14 !important;
+  box-shadow: 0 0 12px rgba(250, 173, 20, 0.4);
 }
 
 .highlight-popup {
@@ -662,8 +662,58 @@ h5.ant-typography {
 }
 
 .location-btn.has-home {
-  color: #f97316;
-  border-color: #f97316;
+  color: #faad14;
+  border-color: #faad14;
+}
+
+.location-btn.editing {
+  color: #faad14;
+  border-color: #faad14;
+  background: rgba(250, 173, 20, 0.2);
+  animation: pulse-edit 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-edit {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(250, 173, 20, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(250, 173, 20, 0);
+  }
+}
+
+/* Edit home mode banner */
+.edit-home-banner {
+  position: fixed;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(250, 173, 20, 0.95);
+  color: #000;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.edit-home-cancel {
+  background: rgba(0, 0, 0, 0.2);
+  border: none;
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.edit-home-cancel:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .location-btn.has-home:hover {
@@ -723,14 +773,14 @@ h5.ant-typography {
 .mountain-home-circle {
   width: 32px;
   height: 32px;
-  background: #f97316;
+  background: #faad14;
   border: 2px solid #ffffff;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.4);
+  box-shadow: 0 2px 8px rgba(250, 173, 20, 0.4);
   transition: transform 0.2s;
 }
 

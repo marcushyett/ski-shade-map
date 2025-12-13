@@ -80,7 +80,7 @@ function getPlaceType(osmClass: string, osmType: string): PlaceType {
 function getPlaceIcon(placeType: PlaceType) {
   switch (placeType) {
     case 'hotel':
-      return <HomeOutlined style={{ fontSize: 10, color: '#f97316', marginRight: 6 }} />;
+      return <HomeOutlined style={{ fontSize: 10, color: '#faad14', marginRight: 6 }} />;
     case 'restaurant':
       return <CoffeeOutlined style={{ fontSize: 10, color: '#ef4444', marginRight: 6 }} />;
     case 'shop':

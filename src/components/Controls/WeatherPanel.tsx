@@ -7,18 +7,18 @@ import {
   CloudOutlined,
   ThunderboltOutlined,
   EyeOutlined,
-  DashboardOutlined,
   ArrowUpOutlined,
   ReloadOutlined,
   SunOutlined,
   MoonOutlined,
   CloudFilled,
+  DownOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import type { WeatherData, UnitPreferences, HourlyWeather } from '@/lib/weather-types';
 import {
   WEATHER_CODES,
   getVisibilityDescription,
-  getCloudCoverDescription,
   celsiusToFahrenheit,
   kmhToMph,
   cmToInches,
@@ -91,6 +91,7 @@ function WeatherPanelInner({
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const [units, setUnits] = useState<UnitPreferences>({
     temperature: 'celsius',
     speed: 'kmh',
@@ -221,162 +222,120 @@ function WeatherPanelInner({
 
   return (
     <div className="weather-panel">
-      {/* Unit toggle */}
-      <div className="flex items-center justify-between mb-2">
-        <Text strong style={{ fontSize: 10 }}>WEATHER</Text>
-        <Segmented
-          size="small"
-          options={[
-            { label: '°C', value: 'metric' },
-            { label: '°F', value: 'imperial' },
-          ]}
-          value={units.temperature === 'celsius' ? 'metric' : 'imperial'}
-          onChange={(v) => updateUnits({
-            temperature: v === 'metric' ? 'celsius' : 'fahrenheit',
-            speed: v === 'metric' ? 'kmh' : 'mph',
-            length: v === 'metric' ? 'cm' : 'inches',
-          })}
-        />
-      </div>
-
-      {/* Current conditions */}
-      <div className="current-weather mb-2 p-2 rounded" style={{ background: 'rgba(255,255,255,0.03)' }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <WeatherIcon code={displayWeather.weatherCode} isDay={displayWeather.isDay} size={20} />
-            <div>
-              <Text strong style={{ fontSize: 16 }}>{formatTemp(displayWeather.temperature)}</Text>
-              <br />
-              <Text type="secondary" style={{ fontSize: 9 }}>
-                Feels {formatTemp(displayWeather.apparentTemperature)}
-              </Text>
-            </div>
-          </div>
-          <Tooltip title="Refresh weather">
+      {/* Header row with unit toggle */}
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <WeatherIcon code={displayWeather.weatherCode} isDay={displayWeather.isDay} size={16} />
+          <Text strong style={{ fontSize: 14 }}>{formatTemp(displayWeather.temperature)}</Text>
+          <Text type="secondary" style={{ fontSize: 9 }}>{weatherInfo.description}</Text>
+        </div>
+        <div className="flex items-center gap-1">
+          <Segmented
+            size="small"
+            options={[
+              { label: '°C', value: 'metric' },
+              { label: '°F', value: 'imperial' },
+            ]}
+            value={units.temperature === 'celsius' ? 'metric' : 'imperial'}
+            onChange={(v) => updateUnits({
+              temperature: v === 'metric' ? 'celsius' : 'fahrenheit',
+              speed: v === 'metric' ? 'kmh' : 'mph',
+              length: v === 'metric' ? 'cm' : 'inches',
+            })}
+            style={{ fontSize: 9 }}
+          />
+          <Tooltip title="Refresh">
             <ReloadOutlined 
-              style={{ fontSize: 10, opacity: 0.5, cursor: 'pointer' }} 
+              style={{ fontSize: 10, opacity: 0.5, cursor: 'pointer', marginLeft: 4 }} 
               onClick={() => fetchWeather()}
               spin={loading}
             />
           </Tooltip>
         </div>
-        <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 4 }}>
-          {weatherInfo.description}
-        </Text>
       </div>
 
-      {/* Key metrics grid */}
-      <div className="grid grid-cols-2 gap-1" style={{ fontSize: 10 }}>
-        {/* Wind */}
-        <div className="flex items-center gap-1 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <ArrowUpOutlined style={{ transform: `rotate(${displayWeather.windDirection}deg)`, fontSize: 10 }} />
-          <div>
-            <Text style={{ fontSize: 10 }}>{formatSpeed(displayWeather.windSpeed)}</Text>
-            <Text type="secondary" style={{ fontSize: 8, display: 'block' }}>
-              {getWindDirection(displayWeather.windDirection)} gusts {formatSpeed(displayWeather.windGusts)}
-            </Text>
+      {/* Key metrics - compact single row */}
+      <div className="flex items-center gap-3 text-center" style={{ fontSize: 9 }}>
+        <div className="flex items-center gap-1">
+          <ArrowUpOutlined style={{ transform: `rotate(${displayWeather.windDirection}deg)`, fontSize: 9 }} />
+          <span>{formatSpeed(displayWeather.windSpeed)}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <CloudOutlined style={{ fontSize: 9 }} />
+          <span>{displayWeather.cloudCover}%</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <EyeOutlined style={{ fontSize: 9 }} />
+          <span>{getVisibilityDescription(displayWeather.visibility)}</span>
+        </div>
+        {current.snowDepth > 0 && (
+          <div className="flex items-center gap-1">
+            <span style={{ color: '#e8e8e8' }}>❄</span>
+            <span>{formatLength(current.snowDepth)}</span>
           </div>
-        </div>
-
-        {/* Visibility */}
-        <div className="flex items-center gap-1 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <EyeOutlined style={{ fontSize: 10 }} />
-          <div>
-            <Text style={{ fontSize: 10 }}>{formatAltitude(displayWeather.visibility)}</Text>
-            <Text type="secondary" style={{ fontSize: 8, display: 'block' }}>
-              {getVisibilityDescription(displayWeather.visibility)}
-            </Text>
-          </div>
-        </div>
-
-        {/* Cloud cover */}
-        <div className="flex items-center gap-1 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <CloudOutlined style={{ fontSize: 10 }} />
-          <div>
-            <Text style={{ fontSize: 10 }}>{displayWeather.cloudCover}%</Text>
-            <Text type="secondary" style={{ fontSize: 8, display: 'block' }}>
-              {getCloudCoverDescription(displayWeather.cloudCover)}
-            </Text>
-          </div>
-        </div>
-
-        {/* Humidity */}
-        <div className="flex items-center gap-1 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <DashboardOutlined style={{ fontSize: 10 }} />
-          <div>
-            <Text style={{ fontSize: 10 }}>{displayWeather.humidity}%</Text>
-            <Text type="secondary" style={{ fontSize: 8, display: 'block' }}>Humidity</Text>
-          </div>
-        </div>
-      </div>
-
-      {/* Cloud layers with altitude info */}
-      <div className="mt-2 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
-        <Tooltip title="Sky coverage at each altitude band. 0% = clear, 100% = fully overcast. Low clouds reduce visibility most for skiers.">
-          <Text type="secondary" style={{ fontSize: 9, cursor: 'help' }}>CLOUD LAYERS (% sky covered)</Text>
-        </Tooltip>
-        <div className="flex justify-between mt-1" style={{ fontSize: 9 }}>
-          <Tooltip title="High clouds: Above 6000m (cirrus, thin ice clouds). Usually don't affect skiing visibility.">
-            <div className="text-center cursor-help">
-              <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverHigh}%</Text>
-              <br />
-              <Text type="secondary" style={{ fontSize: 8 }}>High</Text>
-              <br />
-              <Text type="secondary" style={{ fontSize: 7 }}>&gt;6km</Text>
-            </div>
-          </Tooltip>
-          <Tooltip title="Mid clouds: 2000-6000m (altostratus, altocumulus). Can create flat light on upper slopes.">
-            <div className="text-center cursor-help">
-              <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverMid}%</Text>
-              <br />
-              <Text type="secondary" style={{ fontSize: 8 }}>Mid</Text>
-              <br />
-              <Text type="secondary" style={{ fontSize: 7 }}>2-6km</Text>
-            </div>
-          </Tooltip>
-          <Tooltip title="Low clouds: Below 2000m (stratus, fog). Most impact on ski visibility - you may be skiing in cloud!">
-            <div className="text-center cursor-help">
-              <Text style={{ fontSize: 10 }}>{displayWeather.cloudCoverLow}%</Text>
-              <br />
-              <Text type="secondary" style={{ fontSize: 8 }}>Low</Text>
-              <br />
-              <Text type="secondary" style={{ fontSize: 7 }}>&lt;2km</Text>
-            </div>
-          </Tooltip>
-        </div>
-      </div>
-
-      {/* Snow info with elevation context */}
-      <div className="mt-2 p-1 rounded" style={{ background: 'rgba(255,255,255,0.02)' }}>
-        <Tooltip title={`Snow data at resort elevation: ${formatAltitude(weather.elevation)}. Depth varies significantly with altitude - typically more snow at higher elevations.`}>
-          <Text type="secondary" style={{ fontSize: 9, cursor: 'help' }}>SNOW @ {formatAltitude(weather.elevation)}</Text>
-        </Tooltip>
-        <div className="flex justify-between mt-1">
-          <div>
-            <Text style={{ fontSize: 10 }}>Depth: {formatLength(current.snowDepth)}</Text>
-          </div>
-          {current.snowfall > 0 && (
-            <div>
-              <Text style={{ fontSize: 10 }}>New: {formatLength(current.snowfall * 100)}</Text>
-            </div>
-          )}
-          {current.snowDepth === 0 && current.snowfall === 0 && (
-            <Text type="secondary" style={{ fontSize: 9 }}>No snow reported</Text>
-          )}
-        </div>
-        {displayWeather.freezingLevelHeight > 0 && (
-          <Text type="secondary" style={{ fontSize: 8, display: 'block', marginTop: 2 }}>
-            Snow line: ~{formatAltitude(displayWeather.freezingLevelHeight)}
-          </Text>
         )}
       </div>
 
-      {/* Precipitation probability */}
-      {hourlyWeather && hourlyWeather.precipitationProbability > 0 && (
-        <div className="mt-1">
-          <Text type="secondary" style={{ fontSize: 9 }}>
-            {hourlyWeather.precipitationProbability}% chance of precipitation
-          </Text>
+      {/* Expandable details section */}
+      <div 
+        className="flex items-center gap-1 mt-2 cursor-pointer hover:bg-white/5 rounded py-0.5"
+        onClick={() => setShowDetails(!showDetails)}
+        style={{ fontSize: 9, color: '#888' }}
+      >
+        {showDetails ? <DownOutlined style={{ fontSize: 7 }} /> : <RightOutlined style={{ fontSize: 7 }} />}
+        <span>More details</span>
+      </div>
+
+      {showDetails && (
+        <div className="mt-1 pt-1 border-t border-white/10" style={{ fontSize: 9 }}>
+          {/* Wind details */}
+          <div className="flex justify-between mb-1">
+            <Text type="secondary">Wind</Text>
+            <Text>{formatSpeed(displayWeather.windSpeed)} {getWindDirection(displayWeather.windDirection)}, gusts {formatSpeed(displayWeather.windGusts)}</Text>
+          </div>
+          
+          {/* Feels like */}
+          <div className="flex justify-between mb-1">
+            <Text type="secondary">Feels like</Text>
+            <Text>{formatTemp(displayWeather.apparentTemperature)}</Text>
+          </div>
+          
+          {/* Humidity */}
+          <div className="flex justify-between mb-1">
+            <Text type="secondary">Humidity</Text>
+            <Text>{displayWeather.humidity}%</Text>
+          </div>
+          
+          {/* Cloud layers */}
+          <div className="flex justify-between mb-1">
+            <Text type="secondary">Cloud layers</Text>
+            <Text>L:{displayWeather.cloudCoverLow}% M:{displayWeather.cloudCoverMid}% H:{displayWeather.cloudCoverHigh}%</Text>
+          </div>
+
+          {/* Snow info */}
+          <div className="flex justify-between mb-1">
+            <Text type="secondary">Snow @ {formatAltitude(weather.elevation)}</Text>
+            <Text>
+              {current.snowDepth > 0 ? formatLength(current.snowDepth) : 'No snow'}
+              {current.snowfall > 0 && ` (+${formatLength(current.snowfall * 100)} new)`}
+            </Text>
+          </div>
+
+          {/* Freezing level */}
+          {displayWeather.freezingLevelHeight > 0 && (
+            <div className="flex justify-between mb-1">
+              <Text type="secondary">Snow line</Text>
+              <Text>~{formatAltitude(displayWeather.freezingLevelHeight)}</Text>
+            </div>
+          )}
+
+          {/* Precipitation probability */}
+          {hourlyWeather && hourlyWeather.precipitationProbability > 0 && (
+            <div className="flex justify-between">
+              <Text type="secondary">Precip chance</Text>
+              <Text>{hourlyWeather.precipitationProbability}%</Text>
+            </div>
+          )}
         </div>
       )}
     </div>

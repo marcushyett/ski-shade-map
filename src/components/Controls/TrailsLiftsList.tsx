@@ -1,28 +1,37 @@
 'use client';
 
 import { useState, useMemo, useCallback, memo, useTransition } from 'react';
-import { Input, Typography, Button } from 'antd';
+import { Input } from 'antd';
 import { 
   SearchOutlined, 
   NodeIndexOutlined, 
   SwapOutlined,
   DownOutlined,
   RightOutlined,
-  QuestionCircleOutlined
+  StarFilled,
+  DeleteOutlined,
+  SunOutlined,
 } from '@ant-design/icons';
 import type { RunData, LiftData } from '@/lib/types';
+import type { HourlyWeather } from '@/lib/weather-types';
+import type { FavouriteRun } from '@/hooks/useFavourites';
 import { getDifficultyColor } from '@/lib/shade-calculator';
+import { analyzeRuns, formatTime, calculateRunStats, type SunLevel, type HourlySunData, type RunSunAnalysis, type RunStats } from '@/lib/sunny-time-calculator';
+import { Tooltip } from 'antd';
 
-const { Text } = Typography;
 
-// Max items to show per group
 const ITEMS_PER_PAGE = 15;
 
 interface TrailsLiftsListProps {
   runs: RunData[];
   lifts: LiftData[];
+  favourites: FavouriteRun[];
+  latitude: number;
+  longitude: number;
+  hourlyWeather?: HourlyWeather[];
   onSelectRun?: (run: RunData) => void;
   onSelectLift?: (lift: LiftData) => void;
+  onRemoveFavourite?: (runId: string) => void;
 }
 
 // Simple run item - minimal DOM
@@ -71,6 +80,292 @@ const LiftItem = memo(function LiftItem({
   );
 });
 
+// Sun icon based on level - using CSS clip to show partial sun
+function SunIcon({ level }: { level: SunLevel }) {
+  if (level === 'full') {
+    // Full sun - bright yellow
+    return <SunOutlined style={{ fontSize: 10, color: '#faad14' }} />;
+  } else if (level === 'partial') {
+    // Partial sun - 3/4 of a sun (clipped)
+    return (
+      <span style={{ 
+        display: 'inline-block', 
+        width: 10, 
+        height: 10, 
+        overflow: 'hidden',
+        position: 'relative',
+      }}>
+        <SunOutlined style={{ 
+          fontSize: 10, 
+          color: '#d4a017',
+          clipPath: 'inset(0 25% 0 0)', // Show 75% of the sun
+        }} />
+      </span>
+    );
+  } else if (level === 'low') {
+    // Low sun - half sun (clipped)
+    return (
+      <span style={{ 
+        display: 'inline-block', 
+        width: 10, 
+        height: 10, 
+        overflow: 'hidden',
+        position: 'relative',
+      }}>
+        <SunOutlined style={{ 
+          fontSize: 10, 
+          color: '#888',
+          clipPath: 'inset(0 50% 0 0)', // Show 50% of the sun
+        }} />
+      </span>
+    );
+  }
+  return null;
+}
+
+// Sun distribution chart - shows hourly sun percentages
+function SunDistributionChart({ hourlyData }: { hourlyData: HourlySunData[] }) {
+  if (hourlyData.length === 0) {
+    return (
+      <div style={{ fontSize: 9, color: '#666', textAlign: 'center', padding: '8px 0' }}>
+        No sun data available
+      </div>
+    );
+  }
+  
+  return (
+    <div className="sun-distribution-chart" style={{ padding: '4px 0' }}>
+      <div className="flex items-end gap-px" style={{ height: 40 }}>
+        {hourlyData.map((data, i) => (
+          <Tooltip key={i} title={`${data.hour}:00 - ${Math.round(data.percentage)}% sun`}>
+            <div
+              style={{
+                flex: 1,
+                height: `${data.percentage}%`,
+                minHeight: 2,
+                background: data.percentage > 75 ? '#faad14' : data.percentage > 50 ? '#d4a017' : data.percentage > 25 ? '#8b7500' : '#333',
+                borderRadius: '2px 2px 0 0',
+                cursor: 'help',
+              }}
+            />
+          </Tooltip>
+        ))}
+      </div>
+      <div className="flex justify-between" style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
+        <span>{hourlyData[0]?.hour}:00</span>
+        <span>{hourlyData[hourlyData.length - 1]?.hour}:00</span>
+      </div>
+    </div>
+  );
+}
+
+// Elevation profile chart with max slope indicator
+function ElevationProfileChart({ profile, maxSlope, avgSlope }: { 
+  profile: { distance: number; elevation: number }[];
+  maxSlope: number;
+  avgSlope: number;
+}) {
+  if (profile.length < 2) return null;
+  
+  const maxElev = Math.max(...profile.map(p => p.elevation));
+  const minElev = Math.min(...profile.map(p => p.elevation));
+  const elevRange = maxElev - minElev || 1;
+  const maxDist = profile[profile.length - 1].distance || 1;
+  
+  // Create SVG path points - use percentage of width
+  const points = profile.map(p => ({
+    x: maxDist > 0 ? (p.distance / maxDist) * 100 : 0,
+    y: ((p.elevation - minElev) / elevRange) * 100,
+  }));
+  
+  // Find steepest segment for highlighting
+  let steepestIdx = 0;
+  let steepestSlope = 0;
+  for (let i = 1; i < profile.length; i++) {
+    const dx = profile[i].distance - profile[i-1].distance;
+    const dy = Math.abs(profile[i].elevation - profile[i-1].elevation);
+    if (dx > 0) {
+      const slope = Math.atan(dy / dx) * 180 / Math.PI;
+      if (slope > steepestSlope) {
+        steepestSlope = slope;
+        steepestIdx = i;
+      }
+    }
+  }
+  
+  return (
+    <div style={{ padding: '4px 0' }}>
+      <div style={{ position: 'relative', width: '100%', height: 35, background: '#1a1a1a', borderRadius: 4 }}>
+        <svg 
+          viewBox="0 0 100 100" 
+          style={{ width: '100%', height: '100%', display: 'block' }} 
+          preserveAspectRatio="none"
+        >
+          {/* Filled area under the line */}
+          <path
+            d={`M 0 100 ${points.map(p => `L ${p.x} ${100 - p.y}`).join(' ')} L 100 100 Z`}
+            fill="rgba(102, 102, 102, 0.2)"
+          />
+          {/* Main elevation line */}
+          <path
+            d={points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${100 - p.y}`).join(' ')}
+            fill="none"
+            stroke="#888"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+          {/* Steepest section highlight */}
+          {steepestIdx > 0 && (
+            <line
+              x1={points[steepestIdx - 1].x}
+              y1={100 - points[steepestIdx - 1].y}
+              x2={points[steepestIdx].x}
+              y2={100 - points[steepestIdx].y}
+              stroke="#ff6b6b"
+              strokeWidth="3"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+        </svg>
+      </div>
+      <div className="flex justify-between items-center" style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
+        <span>{Math.round(maxElev)}m → {Math.round(minElev)}m</span>
+        <span>
+          avg <span style={{ color: '#888' }}>{Math.round(avgSlope)}°</span>
+          {' · '}
+          max <span style={{ color: '#ff6b6b' }}>{Math.round(maxSlope)}°</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Run stats display
+function RunStatsDisplay({ stats }: { stats: RunStats }) {
+  const formatDistance = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
+  
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-0.5" style={{ fontSize: 9, color: '#888' }}>
+      <span>📏 <span style={{ color: '#ccc' }}>{formatDistance(stats.distance)}</span></span>
+      {stats.hasElevation && (
+        <>
+          <span>↓ <span style={{ color: '#ccc' }}>{Math.round(stats.descent)}m</span></span>
+          {stats.ascent > 10 && (
+            <span>↑ <span style={{ color: '#ccc' }}>{Math.round(stats.ascent)}m</span></span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Favourite run item - expandable
+const FavouriteItem = memo(function FavouriteItem({
+  run,
+  analysis,
+  stats,
+  isExpanded,
+  onToggleExpand,
+  onSelect,
+  onRemove,
+}: {
+  run: RunData;
+  analysis?: RunSunAnalysis;
+  stats: RunStats | null;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onSelect: () => void;
+  onRemove: () => void;
+}) {
+  const difficultyColor = getDifficultyColor(run.difficulty || 'unknown');
+  const sunLevel = analysis?.sunLevel;
+  const hasSunInfo = analysis?.sunniestWindow && sunLevel && sunLevel !== 'none';
+  const sunnyTime = hasSunInfo 
+    ? `${formatTime(analysis.sunniestWindow!.startTime)}-${formatTime(analysis.sunniestWindow!.endTime)}`
+    : null;
+  const sunColor = sunLevel === 'full' ? '#faad14' : sunLevel === 'partial' ? '#d4a017' : '#888';
+  
+  return (
+    <div className="favourite-item mb-1">
+      {/* Header row */}
+      <div 
+        className="flex items-center gap-1.5 py-0.5 px-1 cursor-pointer hover:bg-white/5 rounded group"
+        onClick={onToggleExpand}
+      >
+        {isExpanded ? <DownOutlined style={{ fontSize: 7, color: '#666' }} /> : <RightOutlined style={{ fontSize: 7, color: '#666' }} />}
+        <div 
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ backgroundColor: difficultyColor }}
+        />
+        <span style={{ fontSize: 10, color: '#ccc' }} className="truncate flex-1">
+          {run.name || 'Unnamed'}
+        </span>
+        {hasSunInfo && (
+          <span style={{ fontSize: 9, color: sunColor }} className="flex-shrink-0 flex items-center gap-0.5">
+            <SunIcon level={sunLevel} />
+            <span style={{ marginLeft: 2 }}>{sunnyTime}</span>
+          </span>
+        )}
+        <button
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#666' }}
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          title="Remove"
+        >
+          <DeleteOutlined style={{ fontSize: 9 }} />
+        </button>
+      </div>
+      
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="ml-4 mt-1 p-2 rounded" style={{ background: 'rgba(255,255,255,0.02)', fontSize: 9 }}>
+          {/* Sun distribution chart */}
+          {analysis && (
+            <div className="mb-2">
+              <div style={{ color: '#888', marginBottom: 2 }}>Sun exposure by hour</div>
+              <SunDistributionChart hourlyData={analysis.hourlyPercentages} />
+            </div>
+          )}
+          
+          {/* Run stats */}
+          {stats && (
+            <div className="mb-2">
+              <RunStatsDisplay stats={stats} />
+            </div>
+          )}
+          
+          {/* Elevation profile */}
+          {stats?.hasElevation && stats.elevationProfile.length > 1 && (
+            <div className="mb-2">
+              <div style={{ color: '#888', marginBottom: 2 }}>Elevation profile</div>
+              <ElevationProfileChart 
+                profile={stats.elevationProfile} 
+                maxSlope={stats.maxSlope}
+                avgSlope={stats.avgSlope}
+              />
+            </div>
+          )}
+          
+          {/* Go to run button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onSelect(); }}
+            className="w-full py-1 px-2 rounded text-center hover:bg-white/10 transition-colors"
+            style={{ 
+              fontSize: 10, 
+              color: '#faad14', 
+              background: 'rgba(250, 173, 20, 0.1)',
+              border: '1px solid rgba(250, 173, 20, 0.3)',
+              cursor: 'pointer',
+            }}
+          >
+            Go to run on map
+          </button>
+        </div>
+      )}
+    </div>
+  );
+});
+
 // Difficulty group header
 const DifficultyHeader = memo(function DifficultyHeader({
   difficulty,
@@ -104,9 +399,14 @@ const DifficultyHeader = memo(function DifficultyHeader({
 
 function TrailsListInner({ 
   runs, 
-  lifts, 
+  lifts,
+  favourites,
+  latitude,
+  longitude,
+  hourlyWeather,
   onSelectRun, 
-  onSelectLift 
+  onSelectLift,
+  onRemoveFavourite,
 }: TrailsLiftsListProps) {
   const [searchText, setSearchText] = useState('');
   const [runsExpanded, setRunsExpanded] = useState(false);
@@ -121,6 +421,41 @@ function TrailsListInner({
       setSearchText(value);
     });
   }, []);
+
+  // Get favourite runs with sun analysis
+  const favouriteRuns = useMemo(() => {
+    return favourites
+      .map(fav => runs.find(r => r.id === fav.id))
+      .filter((r): r is RunData => r !== undefined);
+  }, [favourites, runs]);
+
+  // Analyze favourite runs for sun exposure
+  const runAnalyses = useMemo(() => {
+    if (favouriteRuns.length === 0) return [];
+    const today = new Date();
+    return analyzeRuns(favouriteRuns, today, latitude, longitude, hourlyWeather);
+  }, [favouriteRuns, latitude, longitude, hourlyWeather]);
+
+  // Create a map of runId to analysis
+  const analysisMap = useMemo(() => {
+    const map: Record<string, RunSunAnalysis> = {};
+    runAnalyses.forEach(analysis => {
+      map[analysis.runId] = analysis;
+    });
+    return map;
+  }, [runAnalyses]);
+
+  // Calculate stats for favourite runs
+  const statsMap = useMemo(() => {
+    const map: Record<string, RunStats | null> = {};
+    favouriteRuns.forEach(run => {
+      map[run.id] = calculateRunStats(run);
+    });
+    return map;
+  }, [favouriteRuns]);
+
+  // Track expanded favourite
+  const [expandedFavouriteId, setExpandedFavouriteId] = useState<string | null>(null);
 
   // Filter runs and lifts by search
   const filteredRuns = useMemo(() => {
@@ -141,6 +476,16 @@ function TrailsListInner({
     );
   }, [lifts, searchText]);
 
+  // Filter favourites by search
+  const filteredFavourites = useMemo(() => {
+    if (!searchText) return favouriteRuns;
+    const lower = searchText.toLowerCase();
+    return favouriteRuns.filter(r => 
+      r.name?.toLowerCase().includes(lower) ||
+      r.difficulty?.toLowerCase().includes(lower)
+    );
+  }, [favouriteRuns, searchText]);
+
   // Group runs by difficulty - compute once
   const runsByDifficulty = useMemo(() => {
     const groups: Record<string, RunData[]> = {};
@@ -154,7 +499,7 @@ function TrailsListInner({
     });
     
     // Only return non-empty groups
-    return Object.entries(groups).filter(([_, arr]) => arr.length > 0);
+    return Object.entries(groups).filter((entry) => entry[1].length > 0);
   }, [filteredRuns]);
 
   const difficultyLabels: Record<string, string> = {
@@ -201,6 +546,32 @@ function TrailsListInner({
 
       {isPending && (
         <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>Filtering...</div>
+      )}
+
+      {/* Favourites Section - only show if there are favourites */}
+      {filteredFavourites.length > 0 && (
+        <div className="mb-2 pb-2 border-b border-white/10">
+          <div className="flex items-center gap-1.5 mb-1">
+            <StarFilled style={{ fontSize: 10, color: '#faad14' }} />
+            <span style={{ fontSize: 10, color: '#faad14' }}>Favourites ({filteredFavourites.length})</span>
+          </div>
+          <div>
+            {filteredFavourites.map(run => (
+              <FavouriteItem
+                key={run.id}
+                run={run}
+                analysis={analysisMap[run.id]}
+                stats={statsMap[run.id]}
+                isExpanded={expandedFavouriteId === run.id}
+                onToggleExpand={() => setExpandedFavouriteId(
+                  expandedFavouriteId === run.id ? null : run.id
+                )}
+                onSelect={() => onSelectRun?.(run)}
+                onRemove={() => onRemoveFavourite?.(run.id)}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Runs Section */}
@@ -297,26 +668,6 @@ function TrailsListInner({
             )}
           </div>
         )}
-      </div>
-
-      {/* Credits */}
-      <div className="mt-2 pt-2 border-t border-white/10">
-        <span style={{ fontSize: 9, color: '#666' }}>
-          <a 
-            href="https://openskimap.org" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            style={{ color: '#888' }}
-          >
-            OpenSkiMap
-          </a>
-          {' '}© OSM
-        </span>
-        <br />
-        <span style={{ fontSize: 9, color: '#555' }}>
-          <QuestionCircleOutlined style={{ marginRight: 3 }} />
-          Live status unavailable
-        </span>
       </div>
     </div>
   );

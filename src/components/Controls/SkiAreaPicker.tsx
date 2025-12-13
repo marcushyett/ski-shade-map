@@ -96,7 +96,7 @@ export default function SkiAreaPicker({ onSelect, selectedArea, disabled }: SkiA
 
   return (
     <div className="ski-area-picker">
-      <Space direction="vertical" size="small" className="w-full">
+      <Space orientation="vertical" size="small" className="w-full">
         <Select
           placeholder="Select Country"
           value={selectedCountry}

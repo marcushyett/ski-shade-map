@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useCallback, useEffect, memo } from 'react';
-import { Tooltip, message, Modal, Input } from 'antd';
+import { Tooltip, Modal, Input, App } from 'antd';
 import {
   AimOutlined,
   HomeOutlined,
   ShareAltOutlined,
   CheckOutlined,
+  EditOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 
 export interface MountainHome {
@@ -32,6 +34,9 @@ interface LocationControlsProps {
   onToggleTracking: (tracking: boolean) => void;
   skiAreaId?: string | null;
   skiAreaName?: string | null;
+  isEditingHome: boolean;
+  onEditingHomeChange: (editing: boolean) => void;
+  pendingHomeLocation?: { lat: number; lng: number } | null;
 }
 
 const MOUNTAIN_HOME_STORAGE_KEY = 'ski-shade-mountain-home';
@@ -46,7 +51,11 @@ function LocationControlsInner({
   onToggleTracking,
   skiAreaId,
   skiAreaName,
+  isEditingHome,
+  onEditingHomeChange,
+  pendingHomeLocation,
 }: LocationControlsProps) {
+  const { message } = App.useApp();
   const [showHomeModal, setShowHomeModal] = useState(false);
   const [homeName, setHomeName] = useState('');
   const [pendingHomeCoords, setPendingHomeCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -64,6 +73,16 @@ function LocationControlsInner({
       // Ignore storage errors
     }
   }, [onMountainHomeChange]);
+
+  // When a location is selected from the map in edit mode, show the modal
+  useEffect(() => {
+    if (pendingHomeLocation && isEditingHome) {
+      setPendingHomeCoords(pendingHomeLocation);
+      setHomeName(mountainHome?.name || 'Mountain Home');
+      setShowHomeModal(true);
+      onEditingHomeChange(false);
+    }
+  }, [pendingHomeLocation, isEditingHome, mountainHome?.name, onEditingHomeChange]);
 
   // Handle current location button click
   const handleCurrentLocation = useCallback(() => {
@@ -115,7 +134,7 @@ function LocationControlsInner({
         maximumAge: 30000,
       }
     );
-  }, [isTrackingLocation, userLocation, onUserLocationChange, onGoToLocation, onToggleTracking]);
+  }, [isTrackingLocation, userLocation, onUserLocationChange, onGoToLocation, onToggleTracking, message]);
 
   // Share current location - creates an app link with location marker
   const handleShareLocation = useCallback(async () => {
@@ -169,36 +188,18 @@ function LocationControlsInner({
     } catch {
       message.info('Copy this link: ' + shareUrl);
     }
-  }, [userLocation, skiAreaId, skiAreaName]);
+  }, [userLocation, skiAreaId, skiAreaName, message]);
 
-  // Set Mountain Home - use current location or prompt for location
-  const handleSetMountainHome = useCallback(() => {
-    if (userLocation) {
-      setPendingHomeCoords({
-        lat: userLocation.latitude,
-        lng: userLocation.longitude,
-      });
-      setHomeName('My Mountain Home');
-      setShowHomeModal(true);
-    } else if (navigator.geolocation) {
-      setIsGettingLocation(true);
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setPendingHomeCoords({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setHomeName('My Mountain Home');
-          setShowHomeModal(true);
-          setIsGettingLocation(false);
-        },
-        () => {
-          message.error('Enable location to set Mountain Home');
-          setIsGettingLocation(false);
-        }
-      );
-    }
-  }, [userLocation]);
+  // Enter edit mode to place mountain home on map
+  const handleEnterEditMode = useCallback(() => {
+    onEditingHomeChange(true);
+    message.info('Tap on the map to set your Mountain Home location');
+  }, [onEditingHomeChange, message]);
+
+  // Cancel edit mode
+  const handleCancelEditMode = useCallback(() => {
+    onEditingHomeChange(false);
+  }, [onEditingHomeChange]);
 
   // Confirm Mountain Home
   const handleConfirmHome = useCallback(() => {
@@ -220,7 +221,7 @@ function LocationControlsInner({
     setShowHomeModal(false);
     setPendingHomeCoords(null);
     message.success('Mountain Home set!');
-  }, [pendingHomeCoords, homeName, onMountainHomeChange]);
+  }, [pendingHomeCoords, homeName, onMountainHomeChange, message]);
 
   // Clear Mountain Home
   const handleClearHome = useCallback(() => {
@@ -231,7 +232,7 @@ function LocationControlsInner({
     }
     onMountainHomeChange?.(null);
     message.info('Mountain Home cleared');
-  }, [onMountainHomeChange]);
+  }, [onMountainHomeChange, message]);
 
   // Go to Mountain Home
   const handleGoToHome = useCallback(() => {
@@ -279,31 +280,73 @@ function LocationControlsInner({
 
         {/* Mountain Home Button */}
         <Tooltip 
-          title={mountainHome ? `Go to ${mountainHome.name}` : 'Long-press map to set home'} 
+          title={
+            isEditingHome 
+              ? 'Cancel editing' 
+              : mountainHome 
+                ? `Go to ${mountainHome.name}` 
+                : 'Set Mountain Home'
+          } 
           placement="left"
         >
           <button
-            className={`location-btn home-btn ${mountainHome ? 'has-home' : ''}`}
-            onClick={mountainHome ? handleGoToHome : handleSetMountainHome}
+            className={`location-btn home-btn ${mountainHome ? 'has-home' : ''} ${isEditingHome ? 'editing' : ''}`}
+            onClick={() => {
+              if (isEditingHome) {
+                handleCancelEditMode();
+              } else if (mountainHome) {
+                handleGoToHome();
+              } else {
+                handleEnterEditMode();
+              }
+            }}
             onContextMenu={(e) => {
               e.preventDefault();
               if (mountainHome) {
                 handleClearHome();
-              } else {
-                handleSetMountainHome();
               }
             }}
           >
-            <HomeOutlined style={{ fontSize: 16 }} />
+            {isEditingHome ? (
+              <CloseOutlined style={{ fontSize: 14 }} />
+            ) : (
+              <HomeOutlined style={{ fontSize: 16 }} />
+            )}
           </button>
         </Tooltip>
+
+        {/* Edit/Move Mountain Home Button (visible when home exists) */}
+        {mountainHome && !isEditingHome && (
+          <Tooltip title="Move Mountain Home" placement="left">
+            <button
+              className="location-btn"
+              onClick={handleEnterEditMode}
+            >
+              <EditOutlined style={{ fontSize: 14 }} />
+            </button>
+          </Tooltip>
+        )}
       </div>
+
+      {/* Edit Mode Indicator */}
+      {isEditingHome && (
+        <div className="edit-home-banner">
+          <HomeOutlined style={{ marginRight: 6 }} />
+          Tap on map to set location
+          <button 
+            className="edit-home-cancel"
+            onClick={handleCancelEditMode}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Set Mountain Home Modal */}
       <Modal
         title={
           <span style={{ fontSize: 12, fontWeight: 500 }}>
-            <HomeOutlined style={{ marginRight: 8, color: '#f97316' }} />
+            <HomeOutlined style={{ marginRight: 8, color: '#faad14' }} />
             Set Mountain Home
           </span>
         }
@@ -329,7 +372,7 @@ function LocationControlsInner({
             />
           </div>
           <div style={{ fontSize: 10, color: '#666' }}>
-            This will mark your current location on the map with a home icon.
+            This will mark the selected location on the map with a home icon.
           </div>
           <div className="flex gap-2 justify-end">
             <button

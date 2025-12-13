@@ -70,8 +70,9 @@ interface SkiMapProps {
   mountainHome?: MountainHomeMarker | null;
   sharedLocations?: SharedLocationMarker[];
   onRemoveSharedLocation?: (id: string) => void;
-  onSetMountainHome?: (lat: number, lng: number) => void;
   mapRef?: React.MutableRefObject<MapRef | null>;
+  isEditingHome?: boolean;
+  onSetHomeLocation?: (location: { lat: number; lng: number }) => void;
   searchPlaceMarker?: SearchPlaceMarker | null;
   onClearSearchPlace?: () => void;
 }
@@ -91,7 +92,7 @@ interface SegmentProperties {
   shadedColor: string;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, onSetMountainHome, mapRef, searchPlaceMarker, onClearSearchPlace,favouriteIds = [], onToggleFavourite }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, isEditingHome = false, onSetHomeLocation }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -104,15 +105,17 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const currentSkiAreaRef = useRef<SkiAreaDetails | null>(null);
   const favouriteIdsRef = useRef<string[]>([]);
   const onToggleFavouriteRef = useRef(onToggleFavourite);
+  const isEditingHomeRef = useRef(isEditingHome);
+  const onSetHomeLocationRef = useRef(onSetHomeLocation);
   
   // Keep refs updated
   favouriteIdsRef.current = favouriteIds;
   onToggleFavouriteRef.current = onToggleFavourite;
+  isEditingHomeRef.current = isEditingHome;
+  onSetHomeLocationRef.current = onSetHomeLocation;
   const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const mountainHomeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const longPressCoords = useRef<{ lat: number; lng: number } | null>(null);
   const highlightPopupRef = useRef<maplibregl.Popup | null>(null);
   const searchPlaceMarkerRef = useRef<maplibregl.Marker | null>(null);
 
@@ -171,73 +174,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }
     });
 
-    // Long press to set mountain home (500ms)
-    map.current.on('mousedown', (e) => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-      }
-      longPressCoords.current = { lat: e.lngLat.lat, lng: e.lngLat.lng };
-      longPressTimerRef.current = setTimeout(() => {
-        if (longPressCoords.current) {
-          onSetMountainHome?.(longPressCoords.current.lat, longPressCoords.current.lng);
-          longPressCoords.current = null;
-        }
-      }, 500);
-    });
-
-    map.current.on('mouseup', () => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-    });
-
-    map.current.on('mousemove', () => {
-      // Cancel long press if mouse moves
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-    });
-
-    // Touch events for mobile
-    map.current.on('touchstart', (e) => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-      }
-      const touch = e.originalEvent.touches?.[0];
-      if (touch && map.current) {
-        const point = map.current.unproject([touch.clientX - map.current.getContainer().getBoundingClientRect().left, touch.clientY - map.current.getContainer().getBoundingClientRect().top]);
-        longPressCoords.current = { lat: point.lat, lng: point.lng };
-        longPressTimerRef.current = setTimeout(() => {
-          if (longPressCoords.current) {
-            onSetMountainHome?.(longPressCoords.current.lat, longPressCoords.current.lng);
-            longPressCoords.current = null;
-          }
-        }, 500);
-      }
-    });
-
-    map.current.on('touchend', () => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-    });
-
-    map.current.on('touchmove', () => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-    });
-
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
-      }
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
       }
       map.current?.remove();
       map.current = null;
@@ -288,7 +227,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
           'hillshade-shadow-color': '#000000',
           'hillshade-highlight-color': '#ffffff',
           'hillshade-accent-color': '#000000',
-          'hillshade-exaggeration': 0.8, // Increased from 0.5
+          'hillshade-exaggeration': 0.35, // Reduced for better readability
         },
       }, insertBefore);
     }
@@ -702,7 +641,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Favourite runs orange outline layer
+    // Favourite runs - subtle golden glow underneath
     map.current.addLayer({
       id: 'ski-runs-favourite',
       type: 'line',
@@ -713,12 +652,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'line-join': 'round',
       },
       paint: {
-        'line-color': '#ff8c00', // Orange color
-        'line-width': 7,
-        'line-opacity': 0.8,
-        'line-blur': 1,
+        'line-color': '#faad14', // Golden color
+        'line-width': 12, // Wider than the run
+        'line-opacity': 0.4,
+        'line-blur': 3, // Soft glow effect
       },
-    }, 'ski-runs-line'); // Place below the main run line
+    }, 'ski-segments-shaded'); // Place below ALL segment layers so it's just a glow
 
     // Lifts source and layer
     const liftsGeoJSON = {
@@ -1102,11 +1041,11 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       map.current.setPaintProperty('night-overlay', 'background-opacity', isNight ? 0.4 : 0);
     }
 
-    // Update hillshade - more intense shadows
+    // Update hillshade - subtle terrain shading
     if (map.current.getLayer('terrain-hillshade')) {
       const illuminationDir = isNight ? 315 : sunPos.azimuthDegrees;
-      // Much higher exaggeration, especially at low sun angles
-      const exaggeration = isNight ? 0.3 : Math.min(1.0, 0.5 + (90 - sunPos.altitudeDegrees) / 90);
+      // Subtle exaggeration for better readability
+      const exaggeration = isNight ? 0.2 : Math.min(0.5, 0.25 + (90 - sunPos.altitudeDegrees) / 180);
       
       map.current.setPaintProperty('terrain-hillshade', 'hillshade-illumination-direction', illuminationDir);
       map.current.setPaintProperty('terrain-hillshade', 'hillshade-exaggeration', exaggeration);
@@ -1194,8 +1133,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const setupClickHandlers = useCallback(() => {
     if (!map.current) return;
 
+    // General map click handler for edit home mode
+    map.current.on('click', (e) => {
+      // Only handle if we're in edit home mode
+      if (!isEditingHomeRef.current) return;
+      
+      // Set the home location
+      onSetHomeLocationRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+    });
+
     map.current.on('click', 'ski-runs-line', (e) => {
       if (!e.features?.length || !map.current) return;
+      if (isEditingHomeRef.current) return; // Don't show popup in edit mode
       
       const feature = e.features[0];
       const props = feature.properties;
@@ -1225,13 +1174,13 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
                 align-items: center;
                 justify-content: center;
                 gap: 6px;
-                background: ${isFavourite ? 'rgba(255, 140, 0, 0.2)' : 'rgba(250, 173, 20, 0.1)'};
-                color: ${isFavourite ? '#ff8c00' : '#faad14'};
-                border: 1px solid ${isFavourite ? '#ff8c00' : '#faad14'};
+                background: ${isFavourite ? 'rgba(250, 173, 20, 0.25)' : 'rgba(250, 173, 20, 0.1)'};
+                color: #faad14;
+                border: 1px solid #faad14;
                 transition: all 0.2s;
               "
-              onmouseover="this.style.background='${isFavourite ? 'rgba(255, 140, 0, 0.3)' : 'rgba(250, 173, 20, 0.2)'}'"
-              onmouseout="this.style.background='${isFavourite ? 'rgba(255, 140, 0, 0.2)' : 'rgba(250, 173, 20, 0.1)'}'"
+              onmouseover="this.style.background='rgba(250, 173, 20, 0.3)'"
+              onmouseout="this.style.background='${isFavourite ? 'rgba(250, 173, 20, 0.25)' : 'rgba(250, 173, 20, 0.1)'}'"
             >
               <span style="font-size: 14px;">${isFavourite ? '★' : '☆'}</span>
               ${isFavourite ? 'Remove from Favourites' : 'Add to Favourites'}
@@ -1254,6 +1203,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
     map.current.on('click', 'ski-lifts', (e) => {
       if (!e.features?.length || !map.current) return;
+      if (isEditingHomeRef.current) return; // Don't show popup in edit mode
       
       const feature = e.features[0];
       const props = feature.properties;

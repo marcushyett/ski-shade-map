@@ -1,14 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
-import { Typography, Alert, Button, Drawer, message } from 'antd';
+import { Typography, Alert, Button, Drawer } from 'antd';
 import { 
   MenuOutlined, 
   InfoCircleOutlined,
-  EnvironmentOutlined,
-  NodeIndexOutlined,
-  SwapOutlined,
   CloudOutlined,
+  SettingOutlined,
+  DeleteOutlined,
+  DownOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
@@ -20,7 +21,7 @@ import Logo from '@/components/Logo';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TrailsLiftsList from '@/components/Controls/TrailsLiftsList';
 import WeatherPanel from '@/components/Controls/WeatherPanel';
-import FavouritesPanel from '@/components/Controls/FavouritesPanel';
+import { QuestionCircleOutlined } from '@ant-design/icons';
 import { useFavourites } from '@/hooks/useFavourites';
 import OfflineBanner from '@/components/OfflineBanner';
 import CacheButton from '@/components/CacheButton';
@@ -76,12 +77,18 @@ const ControlsContent = memo(function ControlsContent({
   onWeatherLoad: (weather: WeatherData) => void;
   onRemoveFavourite: (runId: string) => void;
 }) {
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
+
+  const handleReset = useCallback(() => {
+    window.location.href = '/reset';
+  }, []);
+
   return (
-    <div className="flex flex-col gap-3 h-full">
+    <div className="flex flex-col gap-2 h-full">
       <div className="flex-shrink-0">
         <Logo size="md" />
-        <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 4 }}>
-          Find sunny or shaded slopes
+        <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 2 }}>
+          Chase the sun, on the snow
         </Text>
       </div>
 
@@ -98,28 +105,7 @@ const ControlsContent = memo(function ControlsContent({
 
       {skiAreaDetails && (
         <>
-          <div className="stats-summary flex-shrink-0 flex gap-4">
-            <div className="flex items-center gap-1">
-              <NodeIndexOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-              <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.runs.length} runs</Text>
-            </div>
-            <div className="flex items-center gap-1">
-              <SwapOutlined style={{ fontSize: 10, opacity: 0.5 }} />
-              <Text type="secondary" style={{ fontSize: 10 }}>{skiAreaDetails.lifts.length} lifts</Text>
-            </div>
-          </div>
-
-          {/* Trails and lifts list */}
-          <div className="flex-shrink-0">
-            <TrailsLiftsList 
-              runs={skiAreaDetails.runs}
-              lifts={skiAreaDetails.lifts}
-              onSelectRun={onSelectRun}
-              onSelectLift={onSelectLift}
-            />
-          </div>
-
-          {/* Weather panel */}
+          {/* Weather panel - compact at top */}
           <div className="flex-shrink-0">
             <WeatherPanel
               latitude={skiAreaDetails.latitude}
@@ -129,15 +115,17 @@ const ControlsContent = memo(function ControlsContent({
             />
           </div>
 
-          {/* Favourites panel - shows favourite runs with sunniest times */}
+          {/* Trails, lifts, and favourites list */}
           <div className="flex-1 overflow-y-auto min-h-0">
-            <FavouritesPanel
-              favourites={favourites}
+            <TrailsLiftsList 
               runs={skiAreaDetails.runs}
+              lifts={skiAreaDetails.lifts}
+              favourites={favourites}
               latitude={skiAreaDetails.latitude}
               longitude={skiAreaDetails.longitude}
               hourlyWeather={weather?.hourly}
               onSelectRun={onSelectRun}
+              onSelectLift={onSelectLift}
               onRemoveFavourite={onRemoveFavourite}
             />
           </div>
@@ -161,6 +149,61 @@ const ControlsContent = memo(function ControlsContent({
           </Text>
         </div>
       )}
+
+      {/* Advanced section */}
+      <div className="flex-shrink-0 mt-2">
+        <div 
+          className="flex items-center gap-1.5 py-1 cursor-pointer hover:bg-white/5 rounded"
+          onClick={() => setAdvancedExpanded(!advancedExpanded)}
+          style={{ fontSize: 10, color: '#666' }}
+        >
+          {advancedExpanded ? <DownOutlined style={{ fontSize: 7 }} /> : <RightOutlined style={{ fontSize: 7 }} />}
+          <SettingOutlined style={{ fontSize: 10 }} />
+          <span>Advanced</span>
+        </div>
+        
+        {advancedExpanded && (
+          <div className="ml-4 mt-1 flex flex-col gap-1">
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1.5 py-1 px-2 rounded hover:bg-white/10 transition-colors text-left"
+              style={{ 
+                fontSize: 10, 
+                color: '#ff4d4f',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <DeleteOutlined style={{ fontSize: 10 }} />
+              Clear cache & storage
+            </button>
+            <span style={{ fontSize: 9, color: '#555', paddingLeft: 4 }}>
+              Clears all cached data and reloads the app
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Copyright - always at bottom */}
+      <div className="flex-shrink-0 mt-auto pt-2 border-t border-white/10">
+        <span style={{ fontSize: 9, color: '#666' }}>
+          <a 
+            href="https://openskimap.org" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{ color: '#888' }}
+          >
+            OpenSkiMap
+          </a>
+          {' '}© OSM
+        </span>
+        <br />
+        <span style={{ fontSize: 9, color: '#555' }}>
+          <QuestionCircleOutlined style={{ marginRight: 3 }} />
+          Live status unavailable
+        </span>
+      </div>
     </div>
   );
 });
@@ -195,6 +238,8 @@ export default function Home() {
   const [mountainHome, setMountainHome] = useState<MountainHome | null>(null);
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
   const [sharedLocations, setSharedLocations] = useState<SharedLocation[]>([]);
+  const [isEditingHome, setIsEditingHome] = useState(false);
+  const [pendingHomeLocation, setPendingHomeLocation] = useState<{ lat: number; lng: number } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
   
   // Offline support
@@ -485,21 +530,6 @@ export default function Home() {
     });
   }, []);
 
-  // Handler for setting mountain home from map long-press
-  const handleSetMountainHomeFromMap = useCallback((lat: number, lng: number) => {
-    const home: MountainHome = {
-      latitude: lat,
-      longitude: lng,
-      name: 'Mountain Home',
-    };
-    try {
-      localStorage.setItem('ski-shade-mountain-home', JSON.stringify(home));
-    } catch {
-      // Ignore storage errors
-    }
-    setMountainHome(home);
-    message.success('Mountain Home set! Long press to move it.');
-  }, []);
 
   // Convert location types for map
   const userLocationMarker: UserLocationMarker | null = userLocation
@@ -599,8 +629,10 @@ export default function Home() {
         placement="right"
         onClose={() => setMobileMenuOpen(false)}
         open={mobileMenuOpen}
-        width={280}
-        styles={{ body: { padding: 12, display: 'flex', flexDirection: 'column' } }}
+        styles={{ 
+          wrapper: { width: 280 },
+          body: { padding: 12, display: 'flex', flexDirection: 'column' } 
+        }}
       >
         <ControlsContent 
           selectedArea={selectedArea}
@@ -659,10 +691,13 @@ export default function Home() {
           mountainHome={mountainHomeMarker}
           sharedLocations={sharedLocationMarkers}
           onRemoveSharedLocation={handleRemoveSharedLocation}
-          onSetMountainHome={handleSetMountainHomeFromMap}
           mapRef={mapRef}
           searchPlaceMarker={searchPlaceMarker}
           onClearSearchPlace={handleClearSearchPlace}
+          favouriteIds={favouriteIds}
+          onToggleFavourite={handleToggleFavourite}
+          isEditingHome={isEditingHome}
+          onSetHomeLocation={setPendingHomeLocation}
         />
 
         {/* Search bar on map - desktop only */}
@@ -692,6 +727,9 @@ export default function Home() {
             onToggleTracking={setIsTrackingLocation}
             skiAreaId={skiAreaDetails?.id}
             skiAreaName={skiAreaDetails?.name}
+            isEditingHome={isEditingHome}
+            onEditingHomeChange={setIsEditingHome}
+            pendingHomeLocation={pendingHomeLocation}
           />
         </div>
 
