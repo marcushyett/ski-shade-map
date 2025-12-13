@@ -124,7 +124,7 @@ export function SunDistributionChart({ hourlyData }: { hourlyData: HourlySunData
   );
 }
 
-// Run stats display - exported for reuse
+// Run stats display - exported for reuse (distance and elevation only - slopes shown on chart)
 export function RunStatsDisplay({ stats }: { stats: RunStats }) {
   const formatDistance = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
   
@@ -140,13 +140,6 @@ export function RunStatsDisplay({ stats }: { stats: RunStats }) {
             <span>↑ <span style={{ color: '#ccc' }}>{Math.round(stats.ascent)}m</span></span>
           )}
         </>
-      )}
-      {stats.hasElevation && (
-        <span>
-          avg <span style={{ color: '#ccc' }}>{Math.round(stats.avgSlope)}°</span>
-          {' · '}
-          max <span style={{ color: '#f97316' }}>{Math.round(stats.maxSlope)}°</span>
-        </span>
       )}
     </div>
   );
@@ -246,13 +239,43 @@ export function ElevationProfileChart({
       </div>
       <div className="flex justify-between items-center" style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
         <span>{Math.round(maxElev)}m → {Math.round(minElev)}m</span>
-        <span>
-          avg {Math.round(avgSlope)}° · max <span style={{ color: '#f97316' }}>{Math.round(maxSlope)}°</span>
-        </span>
+        <Tooltip title="Average and maximum slope steepness">
+          <span style={{ cursor: 'help' }}>
+            slope: avg {Math.round(avgSlope)}° · max <span style={{ color: '#f97316' }}>{Math.round(maxSlope)}°</span>
+          </span>
+        </Tooltip>
       </div>
       {avgSnowScore !== null && (
-        <div style={{ fontSize: 9, color: '#888', marginTop: 4 }}>
-          Snow Score: <span style={{ color: getSnowScoreColor(avgSnowScore), fontWeight: 600 }}>{avgSnowScore}%</span>
+        <div style={{ marginTop: 6 }}>
+          <div style={{ fontSize: 9, color: '#888', marginBottom: 4 }}>
+            <Tooltip 
+              title={
+                <div style={{ fontSize: 11 }}>
+                  <div style={{ marginBottom: 4 }}><strong>Snow Quality Score</strong></div>
+                  <div>Based on recent weather, altitude, aspect, and time of day:</div>
+                  <div style={{ marginTop: 4 }}>
+                    <span style={{ color: '#22c55e' }}>● 70%+</span> Excellent conditions<br/>
+                    <span style={{ color: '#84cc16' }}>● 50-70%</span> Good conditions<br/>
+                    <span style={{ color: '#a3a3a3' }}>● 40-50%</span> Fair conditions<br/>
+                    <span style={{ color: '#f97316' }}>● 25-40%</span> Poor conditions<br/>
+                    <span style={{ color: '#ef4444' }}>● &lt;25%</span> Bad conditions
+                  </div>
+                </div>
+              }
+            >
+              <span style={{ cursor: 'help', borderBottom: '1px dotted #666' }}>
+                Snow Score: <span style={{ color: getSnowScoreColor(avgSnowScore), fontWeight: 600 }}>{avgSnowScore}%</span>
+              </span>
+            </Tooltip>
+          </div>
+          {/* Color legend for the graph */}
+          <div className="flex gap-2 flex-wrap" style={{ fontSize: 7, color: '#666' }}>
+            <span><span style={{ color: '#22c55e' }}>■</span> Excellent</span>
+            <span><span style={{ color: '#84cc16' }}>■</span> Good</span>
+            <span><span style={{ color: '#a3a3a3' }}>■</span> Fair</span>
+            <span><span style={{ color: '#f97316' }}>■</span> Poor</span>
+            <span><span style={{ color: '#ef4444' }}>■</span> Bad</span>
+          </div>
         </div>
       )}
     </div>
