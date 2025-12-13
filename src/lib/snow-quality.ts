@@ -85,28 +85,80 @@ export type SnowIconType =
 // Condition metadata
 const CONDITION_INFO: Record<
   SnowCondition,
-  { iconType: SnowIconType; label: string; color: string }
+  { iconType: SnowIconType; label: string; color: string; tooltip: string }
 > = {
-  powder: { iconType: "snowflake", label: "Powder", color: "#60a5fa" },
+  powder: { 
+    iconType: "snowflake", 
+    label: "Powder", 
+    color: "#60a5fa",
+    tooltip: "Fresh, light, untracked snow - the dream!"
+  },
   "fresh-groomed": {
     iconType: "check-circle",
     label: "Groomed",
     color: "#34d399",
+    tooltip: "Recently groomed corduroy - smooth and fast"
   },
-  "packed-powder": { iconType: "compress", label: "Packed", color: "#4ade80" },
-  "hard-pack": { iconType: "dash", label: "Hard Pack", color: "#a3a3a3" },
-  "spring-corn": { iconType: "rise", label: "Soft", color: "#fbbf24" },
-  variable: { iconType: "swap", label: "Variable", color: "#a78bfa" },
+  "packed-powder": { 
+    iconType: "compress", 
+    label: "Packed", 
+    color: "#4ade80",
+    tooltip: "Well-consolidated snow - reliable and grippy"
+  },
+  "hard-pack": { 
+    iconType: "dash", 
+    label: "Hard Pack", 
+    color: "#a3a3a3",
+    tooltip: "Firm, compacted snow - edges recommended"
+  },
+  "spring-corn": { 
+    iconType: "rise", 
+    label: "Soft", 
+    color: "#fbbf24",
+    tooltip: "Warming snow - soft and forgiving but can get heavy"
+  },
+  variable: { 
+    iconType: "swap", 
+    label: "Variable", 
+    color: "#a78bfa",
+    tooltip: "Mixed conditions - expect changes across the run"
+  },
   "wind-affected": {
     iconType: "cloud",
     label: "Wind-affected",
     color: "#94a3b8",
+    tooltip: "Wind-packed or scoured - can be firm or uneven"
   },
-  crusty: { iconType: "border", label: "Crusty", color: "#d4a574" },
-  moguls: { iconType: "bar-chart", label: "Moguls", color: "#f472b6" },
-  icy: { iconType: "stop", label: "Icy", color: "#64748b" },
-  slush: { iconType: "fall", label: "Slush", color: "#38bdf8" },
-  poor: { iconType: "warning", label: "Poor", color: "#ef4444" },
+  crusty: { 
+    iconType: "border", 
+    label: "Crusty", 
+    color: "#d4a574",
+    tooltip: "Frozen crust on surface - can break through unexpectedly"
+  },
+  moguls: { 
+    iconType: "bar-chart", 
+    label: "Moguls", 
+    color: "#f472b6",
+    tooltip: "Bumpy terrain - great for technique practice"
+  },
+  icy: { 
+    iconType: "stop", 
+    label: "Icy", 
+    color: "#64748b",
+    tooltip: "Hard, slippery surface - sharp edges essential"
+  },
+  slush: { 
+    iconType: "fall", 
+    label: "Slush", 
+    color: "#38bdf8",
+    tooltip: "Wet, heavy snow - slow and tiring"
+  },
+  poor: { 
+    iconType: "warning", 
+    label: "Poor", 
+    color: "#ef4444",
+    tooltip: "Generally challenging conditions - proceed with caution"
+  },
 };
 
 export function getConditionInfo(condition: SnowCondition) {

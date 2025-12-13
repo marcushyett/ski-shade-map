@@ -159,16 +159,27 @@ export function ElevationProfileChart({
   const elevRange = maxElev - minElev || 1;
   const maxDist = profile[profile.length - 1].distance || 1;
   
+  // Chart margins for axes
+  const MARGIN = { left: 32, right: 8, top: 8, bottom: 20 };
+  const CHART_WIDTH = 100 - MARGIN.left - MARGIN.right;
+  const CHART_HEIGHT = 100 - MARGIN.top - MARGIN.bottom;
+  
   const points = profile.map(p => ({
-    x: maxDist > 0 ? (p.distance / maxDist) * 100 : 0,
-    y: ((p.elevation - minElev) / elevRange) * 100,
+    x: MARGIN.left + (maxDist > 0 ? (p.distance / maxDist) * CHART_WIDTH : 0),
+    y: MARGIN.top + CHART_HEIGHT - ((p.elevation - minElev) / elevRange) * CHART_HEIGHT,
     elevation: p.elevation,
+    distance: p.distance,
   }));
   
   const pointsWithSnow = points.map(p => {
     const snowPoint = snowQuality?.find(sq => Math.abs(sq.altitude - p.elevation) < 50);
     return { ...p, condition: snowPoint?.condition };
   });
+
+  // Get unique conditions for legend
+  const uniqueConditions = snowQuality && snowQuality.length > 0
+    ? [...new Set(snowQuality.map(sq => sq.condition))]
+    : [];
 
   // Get the dominant condition (most common)
   const dominantCondition = snowQuality && snowQuality.length > 0
@@ -182,14 +193,91 @@ export function ElevationProfileChart({
     ? Object.entries(dominantCondition).sort((a, b) => b[1] - a[1])[0]?.[0] as SnowCondition
     : null;
   
+  // Format distance for axis labels
+  const formatDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
+  
+  // Calculate nice Y-axis ticks
+  const yAxisTicks = [maxElev, Math.round((maxElev + minElev) / 2), minElev];
+  
+  // Calculate X-axis ticks (start, middle, end)
+  const xAxisTicks = [0, maxDist / 2, maxDist];
+  
   return (
     <div style={{ padding: '4px 0' }}>
-      <div style={{ position: 'relative', width: '100%', height: 40, background: '#1a1a1a', borderRadius: 4 }}>
+      {/* Chart container */}
+      <div style={{ position: 'relative', width: '100%', height: 70, background: '#1a1a1a', borderRadius: 4 }}>
         <svg 
           viewBox="0 0 100 100" 
           style={{ width: '100%', height: '100%', display: 'block' }} 
           preserveAspectRatio="none"
         >
+          {/* Y-axis (altitude) */}
+          <line 
+            x1={MARGIN.left} y1={MARGIN.top} 
+            x2={MARGIN.left} y2={MARGIN.top + CHART_HEIGHT} 
+            stroke="#444" 
+            strokeWidth="0.5" 
+            vectorEffect="non-scaling-stroke"
+          />
+          {/* Y-axis ticks and labels */}
+          {yAxisTicks.map((elev, i) => {
+            const y = MARGIN.top + CHART_HEIGHT - ((elev - minElev) / elevRange) * CHART_HEIGHT;
+            return (
+              <g key={`y-${i}`}>
+                <line 
+                  x1={MARGIN.left - 2} y1={y} 
+                  x2={MARGIN.left} y2={y} 
+                  stroke="#666" 
+                  strokeWidth="0.5" 
+                  vectorEffect="non-scaling-stroke"
+                />
+                <text 
+                  x={MARGIN.left - 4} 
+                  y={y} 
+                  textAnchor="end" 
+                  dominantBaseline="middle"
+                  style={{ fontSize: 5, fill: '#666' }}
+                >
+                  {Math.round(elev)}m
+                </text>
+              </g>
+            );
+          })}
+          
+          {/* X-axis (distance) */}
+          <line 
+            x1={MARGIN.left} y1={MARGIN.top + CHART_HEIGHT} 
+            x2={MARGIN.left + CHART_WIDTH} y2={MARGIN.top + CHART_HEIGHT} 
+            stroke="#444" 
+            strokeWidth="0.5" 
+            vectorEffect="non-scaling-stroke"
+          />
+          {/* X-axis ticks and labels */}
+          {xAxisTicks.map((dist, i) => {
+            const x = MARGIN.left + (dist / maxDist) * CHART_WIDTH;
+            return (
+              <g key={`x-${i}`}>
+                <line 
+                  x1={x} y1={MARGIN.top + CHART_HEIGHT} 
+                  x2={x} y2={MARGIN.top + CHART_HEIGHT + 2} 
+                  stroke="#666" 
+                  strokeWidth="0.5" 
+                  vectorEffect="non-scaling-stroke"
+                />
+                <text 
+                  x={x} 
+                  y={MARGIN.top + CHART_HEIGHT + 6} 
+                  textAnchor="middle" 
+                  dominantBaseline="hanging"
+                  style={{ fontSize: 4.5, fill: '#666' }}
+                >
+                  {formatDist(dist)}
+                </text>
+              </g>
+            );
+          })}
+          
+          {/* Fill gradient under curve */}
           {snowQuality && snowQuality.length > 0 && (
             <>
               <defs>
@@ -197,33 +285,35 @@ export function ElevationProfileChart({
                   {pointsWithSnow.map((p, i) => (
                     <stop 
                       key={i} 
-                      offset={`${p.x}%`} 
+                      offset={`${((p.x - MARGIN.left) / CHART_WIDTH) * 100}%`} 
                       stopColor={p.condition ? getConditionColor(p.condition) : '#333'}
-                      stopOpacity="0.3"
+                      stopOpacity="0.35"
                     />
                   ))}
                 </linearGradient>
               </defs>
               <path
-                d={`M 0 100 ${points.map(p => `L ${p.x} ${100 - p.y}`).join(' ')} L 100 100 Z`}
+                d={`M ${MARGIN.left} ${MARGIN.top + CHART_HEIGHT} ${points.map(p => `L ${p.x} ${p.y}`).join(' ')} L ${MARGIN.left + CHART_WIDTH} ${MARGIN.top + CHART_HEIGHT} Z`}
                 fill="url(#snowGradient)"
               />
             </>
           )}
           {(!snowQuality || snowQuality.length === 0) && (
             <path
-              d={`M 0 100 ${points.map(p => `L ${p.x} ${100 - p.y}`).join(' ')} L 100 100 Z`}
+              d={`M ${MARGIN.left} ${MARGIN.top + CHART_HEIGHT} ${points.map(p => `L ${p.x} ${p.y}`).join(' ')} L ${MARGIN.left + CHART_WIDTH} ${MARGIN.top + CHART_HEIGHT} Z`}
               fill="rgba(102, 102, 102, 0.2)"
             />
           )}
+          
+          {/* Elevation profile line - colored by snow condition */}
           {snowQuality && snowQuality.length > 0 ? (
             pointsWithSnow.slice(1).map((p, i) => (
               <line
                 key={i}
                 x1={pointsWithSnow[i].x}
-                y1={100 - pointsWithSnow[i].y}
+                y1={pointsWithSnow[i].y}
                 x2={p.x}
-                y2={100 - p.y}
+                y2={p.y}
                 stroke={p.condition ? getConditionColor(p.condition) : '#888'}
                 strokeWidth="2"
                 vectorEffect="non-scaling-stroke"
@@ -231,7 +321,7 @@ export function ElevationProfileChart({
             ))
           ) : (
             <path
-              d={points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${100 - p.y}`).join(' ')}
+              d={points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
               fill="none"
               stroke="#888"
               strokeWidth="2"
@@ -240,15 +330,69 @@ export function ElevationProfileChart({
           )}
         </svg>
       </div>
-      <div className="flex justify-between items-center" style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
-        <span>{Math.round(maxElev)}m → {Math.round(minElev)}m</span>
-        <Tooltip title="Average and maximum slope steepness">
+      
+      {/* Slope info */}
+      <div className="flex justify-between items-center" style={{ fontSize: 9, color: '#666', marginTop: 4 }}>
+        <Tooltip title="Average and maximum slope steepness (gradient)">
           <span style={{ cursor: 'help' }}>
-            slope: avg {Math.round(avgSlope)}° · max <span style={{ color: '#f97316' }}>{Math.round(maxSlope)}°</span>
+            ⛷️ Gradient: avg <span style={{ color: '#aaa' }}>{Math.round(avgSlope)}°</span> · max <span style={{ color: '#f97316', fontWeight: 600 }}>{Math.round(maxSlope)}°</span>
           </span>
         </Tooltip>
+        <span style={{ color: '#555' }}>
+          ↓{Math.round(maxElev - minElev)}m drop
+        </span>
       </div>
-      {mainCondition && (
+      
+      {/* Snow condition legend */}
+      {uniqueConditions.length > 0 && (
+        <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>
+            Snow quality along run:
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {uniqueConditions.map(condition => {
+              const info = getConditionInfo(condition);
+              const count = snowQuality!.filter(sq => sq.condition === condition).length;
+              const percentage = Math.round((count / snowQuality!.length) * 100);
+              return (
+                <Tooltip 
+                  key={condition}
+                  title={info.tooltip || `${info.label} conditions`}
+                >
+                  <span 
+                    style={{ 
+                      fontSize: 9, 
+                      display: 'inline-flex', 
+                      alignItems: 'center', 
+                      gap: 3,
+                      cursor: 'help',
+                    }}
+                  >
+                    <span 
+                      style={{ 
+                        width: 8, 
+                        height: 8, 
+                        borderRadius: 2, 
+                        background: info.color,
+                        flexShrink: 0,
+                      }} 
+                    />
+                    <span style={{ color: info.color }}>
+                      {info.label}
+                    </span>
+                    <span style={{ color: '#555' }}>
+                      {percentage}%
+                    </span>
+                  </span>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
+      {/* Main condition summary when no detailed breakdown */}
+      {mainCondition && uniqueConditions.length === 0 && (
         <div style={{ marginTop: 6 }}>
           <div style={{ fontSize: 9, color: '#888' }}>
             <Tooltip 
