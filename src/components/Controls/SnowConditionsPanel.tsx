@@ -148,7 +148,7 @@ function getConditionDescription(condition: string): string {
     'fresh-groomed': 'Recently groomed corduroy - smooth and fast',
     'packed-powder': 'Well-consolidated snow - reliable skiing',
     'hard-pack': 'Firm, compacted snow - good edge grip needed',
-    'spring-corn': 'Softening snow (0-5°C) - still nice to ski, best in morning before it gets too soft',
+    'spring-corn': 'Soft, warming snow (0-5°C) - still enjoyable, best earlier in the day',
     'variable': 'Mixed conditions - expect changes across the run',
     'wind-affected': 'Wind-packed or scoured areas - uneven surface',
     'crusty': 'Frozen crust on surface - can break through unexpectedly',
