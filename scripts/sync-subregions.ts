@@ -8,6 +8,7 @@
  *   npx tsx scripts/sync-subregions.ts --ski-area-id=ID   # Sync specific ski area
  *   npx tsx scripts/sync-subregions.ts --connections-only # Only detect connected ski areas
  *   npx tsx scripts/sync-subregions.ts --skip-connections # Sync without detecting connections
+ *   npx tsx scripts/sync-subregions.ts --force-restart    # Delete all and start fresh
  *   npx tsx scripts/sync-subregions.ts --dry-run          # Preview without writing to DB
  */
 
@@ -468,11 +469,44 @@ async function main() {
   const connectionsOnly = args.includes('--connections-only');
   const skipConnections = args.includes('--skip-connections');
 
+  const forceRestart = args.includes('--force-restart');
+
   console.log('=== Sub-Region Sync ===');
   console.log(`Dry run: ${dryRun}`);
   console.log(`Connections only: ${connectionsOnly}`);
+  console.log(`Force restart: ${forceRestart}`);
 
   try {
+    // If force restart, delete all existing sub-regions and connections
+    if (forceRestart && !dryRun) {
+      console.log('\n🗑️  Force restart: Deleting all existing sub-regions and connections...');
+      
+      // First, clear subRegionId from all runs and lifts
+      const runsUpdated = await prisma.run.updateMany({
+        where: { subRegionId: { not: null } },
+        data: { subRegionId: null },
+      });
+      console.log(`  Cleared subRegionId from ${runsUpdated.count} runs`);
+      
+      const liftsUpdated = await prisma.lift.updateMany({
+        where: { subRegionId: { not: null } },
+        data: { subRegionId: null },
+      });
+      console.log(`  Cleared subRegionId from ${liftsUpdated.count} lifts`);
+      
+      // Delete all sub-regions
+      const subRegionsDeleted = await prisma.subRegion.deleteMany({});
+      console.log(`  Deleted ${subRegionsDeleted.count} sub-regions`);
+      
+      // Delete all connections
+      const connectionsDeleted = await prisma.skiAreaConnection.deleteMany({});
+      console.log(`  Deleted ${connectionsDeleted.count} connections`);
+      
+      console.log('  ✓ Force restart complete\n');
+    } else if (forceRestart && dryRun) {
+      console.log('\n[DRY RUN] Would delete all sub-regions and connections\n');
+    }
+
     if (connectionsOnly) {
       // Only detect ski area connections
       await detectConnectedSkiAreas(dryRun);
