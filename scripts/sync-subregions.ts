@@ -46,39 +46,34 @@ const MANUAL_CONNECTED_SKI_AREAS: Record<string, string[]> = {
 };
 
 // Distance threshold in degrees (~500m at alpine latitudes)
+// At 45° latitude: 1° lat ≈ 111km, 1° lng ≈ 78km
+// So 0.005° ≈ 500m for latitude, ~400m for longitude
 const CONNECTION_THRESHOLD_DEGREES = 0.005;
 
-// Check if two bounding boxes overlap or are adjacent
-function boundsOverlapOrAdjacent(
+// Check if two bounding boxes are within threshold distance of each other
+// This returns true if they overlap OR if any edge is within ~500m
+function boundsWithinDistance(
   bounds1: { minLat: number; maxLat: number; minLng: number; maxLng: number },
   bounds2: { minLat: number; maxLat: number; minLng: number; maxLng: number },
   threshold: number = CONNECTION_THRESHOLD_DEGREES
 ): boolean {
-  // Expand bounds by threshold
-  const b1 = {
+  // Expand bounds1 by threshold in all directions
+  const expanded = {
     minLat: bounds1.minLat - threshold,
     maxLat: bounds1.maxLat + threshold,
     minLng: bounds1.minLng - threshold,
     maxLng: bounds1.maxLng + threshold,
   };
   
-  // Check if bounds intersect
-  return !(
-    b1.maxLat < bounds2.minLat ||
-    b1.minLat > bounds2.maxLat ||
-    b1.maxLng < bounds2.minLng ||
-    b1.minLng > bounds2.maxLng
+  // Check if expanded bounds1 intersects with bounds2
+  const intersects = !(
+    expanded.maxLat < bounds2.minLat ||
+    expanded.minLat > bounds2.maxLat ||
+    expanded.maxLng < bounds2.minLng ||
+    expanded.minLng > bounds2.maxLng
   );
-}
-
-// Calculate overlap area (for ranking connections)
-function calculateOverlapArea(
-  bounds1: { minLat: number; maxLat: number; minLng: number; maxLng: number },
-  bounds2: { minLat: number; maxLat: number; minLng: number; maxLng: number }
-): number {
-  const overlapLat = Math.max(0, Math.min(bounds1.maxLat, bounds2.maxLat) - Math.max(bounds1.minLat, bounds2.minLat));
-  const overlapLng = Math.max(0, Math.min(bounds1.maxLng, bounds2.maxLng) - Math.max(bounds1.minLng, bounds2.minLng));
-  return overlapLat * overlapLng;
+  
+  return intersects;
 }
 
 async function fetchSubRegionsFromOverpass(bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }): Promise<OverpassElement[]> {
@@ -325,57 +320,43 @@ async function detectConnectedSkiAreas(dryRun: boolean = false) {
       if (processedPairs.has(pairKey)) continue;
       processedPairs.add(pairKey);
 
-      // Check if bounds overlap or are adjacent
-      if (boundsOverlapOrAdjacent(bounds1, bounds2)) {
-        const overlapArea = calculateOverlapArea(bounds1, bounds2);
-        
-        // Only connect if there's significant overlap or they're very close
-        // (avoid connecting far-away resorts that happen to have large bounds)
-        const area1Size = (bounds1.maxLat - bounds1.minLat) * (bounds1.maxLng - bounds1.minLng);
-        const area2Size = (bounds2.maxLat - bounds2.minLat) * (bounds2.maxLng - bounds2.minLng);
-        const minSize = Math.min(area1Size, area2Size);
-        
-        // Require at least 5% overlap relative to smaller area, or be very close
-        const isSignificantOverlap = overlapArea > 0 && (overlapArea / minSize) > 0.05;
-        const isVeryClose = overlapArea === 0; // Adjacent but not overlapping (within threshold)
-        
-        if (isSignificantOverlap || isVeryClose) {
-          console.log(`  Found connection: ${area1.name} <-> ${area2.name} (overlap: ${(overlapArea / minSize * 100).toFixed(1)}%)`);
-          connectionsFound++;
+      // Check if bounds are within ~500m of each other
+      if (boundsWithinDistance(bounds1, bounds2)) {
+        console.log(`  Found connection: ${area1.name} <-> ${area2.name}`);
+        connectionsFound++;
 
-          if (!dryRun) {
-            // Create bidirectional connection
-            try {
-              await prisma.skiAreaConnection.upsert({
-                where: {
-                  fromAreaId_toAreaId: {
-                    fromAreaId: area1.id,
-                    toAreaId: area2.id,
-                  },
-                },
-                create: {
+        if (!dryRun) {
+          // Create bidirectional connection
+          try {
+            await prisma.skiAreaConnection.upsert({
+              where: {
+                fromAreaId_toAreaId: {
                   fromAreaId: area1.id,
                   toAreaId: area2.id,
                 },
-                update: {},
-              });
+              },
+              create: {
+                fromAreaId: area1.id,
+                toAreaId: area2.id,
+              },
+              update: {},
+            });
 
-              await prisma.skiAreaConnection.upsert({
-                where: {
-                  fromAreaId_toAreaId: {
-                    fromAreaId: area2.id,
-                    toAreaId: area1.id,
-                  },
-                },
-                create: {
+            await prisma.skiAreaConnection.upsert({
+              where: {
+                fromAreaId_toAreaId: {
                   fromAreaId: area2.id,
                   toAreaId: area1.id,
                 },
-                update: {},
-              });
-            } catch (e) {
-              // Ignore duplicate key errors
-            }
+              },
+              create: {
+                fromAreaId: area2.id,
+                toAreaId: area1.id,
+              },
+              update: {},
+            });
+          } catch (e) {
+            // Ignore duplicate key errors
           }
         }
       }
