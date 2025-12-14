@@ -335,7 +335,7 @@ export default function Home() {
   const [fakeLocation, setFakeLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isFakeLocationDropMode, setIsFakeLocationDropMode] = useState(false);
   const [navReturnPoint, setNavReturnPoint] = useState<{ lat: number; lng: number } | null>(null);
-  const [isNavWeatherCollapsed, setIsNavWeatherCollapsed] = useState(false);
+  const [isWeatherCardCollapsed, setIsWeatherCardCollapsed] = useState(false);
   
   // Effective user location - uses fake location for debugging if set
   const effectiveUserLocation = useMemo<UserLocation | null>(() => {
@@ -791,6 +791,7 @@ export default function Home() {
   // Navigation handlers
   const handleNavigationOpen = useCallback(() => {
     setIsNavigationOpen(true);
+    setIsWeatherCardCollapsed(true); // Collapse weather card when opening route planner
     trackEvent('navigation_opened');
   }, []);
 
@@ -801,6 +802,7 @@ export default function Home() {
     setNavMapClickMode(null);
     setExternalNavOrigin(null);
     setExternalNavDestination(null);
+    setIsWeatherCardCollapsed(false); // Uncollapse weather card when closing route planner
     trackEvent('navigation_closed');
   }, []);
 
@@ -821,6 +823,7 @@ export default function Home() {
     setNavigationState(null);
     setNavigationRoute(null);
     setCurrentNavSegment(0);
+    setIsWeatherCardCollapsed(false); // Uncollapse weather card when ending navigation
   }, []);
 
   const handleNavMapClickRequest = useCallback((field: 'origin' | 'destination') => {
@@ -884,6 +887,67 @@ export default function Home() {
     name: loc.name,
     id: loc.id,
   }));
+
+  // Get navigation marker coordinates from navigation state
+  // For location/mapPoint/home types, use lat/lng directly
+  // For run/lift types, find the feature and get its coordinates
+  const getNavMarkerCoords = useCallback((point: SelectedPoint | null | undefined): { lat: number; lng: number; name?: string } | null => {
+    if (!point) return null;
+    
+    // For types with direct coordinates
+    if ((point.type === 'location' || point.type === 'mapPoint' || point.type === 'home') && point.lat && point.lng) {
+      return { lat: point.lat, lng: point.lng, name: point.name };
+    }
+    
+    // For runs, get the first/last coordinate based on position
+    if (point.type === 'run' && skiAreaDetails) {
+      const run = skiAreaDetails.runs.find(r => r.id === point.id);
+      if (run?.geometry) {
+        // Handle both LineString and Polygon geometries
+        let coords: number[][] | undefined;
+        if (run.geometry.type === 'LineString') {
+          coords = run.geometry.coordinates as number[][];
+        } else if (run.geometry.type === 'Polygon') {
+          // Use the outer ring for polygons
+          coords = run.geometry.coordinates[0] as number[][];
+        }
+        
+        if (coords && coords.length > 0) {
+          // Use first coord for top (start), last for bottom (end)
+          const useFirst = point.position === 'top';
+          const coord = useFirst ? coords[0] : coords[coords.length - 1];
+          if (coord && coord.length >= 2) {
+            return { lat: coord[1], lng: coord[0], name: point.name };
+          }
+        }
+      }
+    }
+    
+    // For lifts, get the first/last coordinate based on position
+    if (point.type === 'lift' && skiAreaDetails) {
+      const lift = skiAreaDetails.lifts.find(l => l.id === point.id);
+      if (lift?.geometry?.coordinates) {
+        const coords = lift.geometry.coordinates as number[][];
+        // Use first coord for bottom (start), last for top (end)
+        const useLast = point.position === 'top';
+        const coord = useLast ? coords[coords.length - 1] : coords[0];
+        if (coord && coord.length >= 2) {
+          return { lat: coord[1], lng: coord[0], name: point.name };
+        }
+      }
+    }
+    
+    return null;
+  }, [skiAreaDetails]);
+
+  // Navigation marker positions derived from navigationState (not external props)
+  const navigationOriginMarker = useMemo(() => {
+    return getNavMarkerCoords(navigationState?.origin);
+  }, [navigationState?.origin, getNavMarkerCoords]);
+
+  const navigationDestinationMarker = useMemo(() => {
+    return getNavMarkerCoords(navigationState?.destination);
+  }, [navigationState?.destination, getNavMarkerCoords]);
 
   const mapCenter = useMemo(() => 
     skiAreaDetails 
@@ -1194,12 +1258,8 @@ export default function Home() {
           userHeading={userHeading}
           navMapClickMode={navMapClickMode}
           isFakeLocationDropMode={isFakeLocationDropMode}
-          navigationOrigin={externalNavOrigin && externalNavOrigin.lat && externalNavOrigin.lng 
-            ? { lat: externalNavOrigin.lat, lng: externalNavOrigin.lng, name: externalNavOrigin.name || undefined } 
-            : null}
-          navigationDestination={externalNavDestination && externalNavDestination.lat && externalNavDestination.lng
-            ? { lat: externalNavDestination.lat, lng: externalNavDestination.lng, name: externalNavDestination.name || undefined }
-            : null}
+          navigationOrigin={navigationOriginMarker}
+          navigationDestination={navigationDestinationMarker}
           navigationReturnPoint={navReturnPoint}
         />
 
@@ -1236,26 +1296,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Navigation panel */}
-        {skiAreaDetails && isNavigationOpen && (
-          <div className="nav-container">
-            <NavigationPanel
-              skiArea={skiAreaDetails}
-              userLocation={effectiveUserLocation}
-              mountainHome={mountainHome}
-              onRouteChange={handleRouteChange}
-              onNavigationStateChange={handleNavigationStateChange}
-              onClose={handleNavigationClose}
-              isExpanded={true}
-              externalOrigin={externalNavOrigin}
-              externalDestination={externalNavDestination}
-              onClearExternalOrigin={handleClearExternalNavOrigin}
-              onClearExternalDestination={handleClearExternalNavDestination}
-              onRequestMapClick={handleNavMapClickRequest}
-              mapClickMode={navMapClickMode}
-            />
-          </div>
-        )}
 
         {/* Location controls */}
         <div className="location-controls-container">
@@ -1343,8 +1383,29 @@ export default function Home() {
           <ViewToggle is3D={is3D} onChange={setIs3D} />
         </div>
 
-        {/* Time slider with optional navigation instruction bar above it */}
+        {/* Time slider with optional navigation panel and instruction bar above it */}
         <div className="time-slider-container">
+          {/* Navigation panel - shown as card above weather when route planning */}
+          {skiAreaDetails && isNavigationOpen && (
+            <div className="nav-panel-inline">
+              <NavigationPanel
+                skiArea={skiAreaDetails}
+                userLocation={effectiveUserLocation}
+                mountainHome={mountainHome}
+                onRouteChange={handleRouteChange}
+                onNavigationStateChange={handleNavigationStateChange}
+                onClose={handleNavigationClose}
+                isExpanded={true}
+                externalOrigin={externalNavOrigin}
+                externalDestination={externalNavDestination}
+                onClearExternalOrigin={handleClearExternalNavOrigin}
+                onClearExternalDestination={handleClearExternalNavDestination}
+                onRequestMapClick={handleNavMapClickRequest}
+                mapClickMode={navMapClickMode}
+              />
+            </div>
+          )}
+          
           {/* Navigation instruction bar - shown when actively navigating */}
           {navigationState?.isNavigating && navigationRoute && (
             <NavigationInstructionBar
@@ -1353,23 +1414,24 @@ export default function Home() {
               onEndNavigation={handleEndNavigation}
               userLocation={effectiveUserLocation ? { lat: effectiveUserLocation.latitude, lng: effectiveUserLocation.longitude } : null}
               onReturnPointChange={setNavReturnPoint}
-              isWeatherCollapsed={isNavWeatherCollapsed}
-              onToggleWeather={() => setIsNavWeatherCollapsed(!isNavWeatherCollapsed)}
+              isWeatherCollapsed={isWeatherCardCollapsed}
+              onToggleWeather={() => setIsWeatherCardCollapsed(!isWeatherCardCollapsed)}
             />
           )}
-          {/* Time slider - collapsed when navigating with weather hidden */}
-          {(!navigationState?.isNavigating || !isNavWeatherCollapsed) && (
-            <TimeSlider 
-              latitude={mapCenter.lat}
-              longitude={mapCenter.lng}
-              selectedTime={selectedTime}
-              onTimeChange={setSelectedTime}
-              hourlyWeather={hourlyWeather}
-              dailyWeather={weather?.daily}
-              units={units}
-              isLoadingWeather={weatherLoading}
-            />
-          )}
+          
+          {/* Time slider - supports collapsed mode */}
+          <TimeSlider 
+            latitude={mapCenter.lat}
+            longitude={mapCenter.lng}
+            selectedTime={selectedTime}
+            onTimeChange={setSelectedTime}
+            hourlyWeather={hourlyWeather}
+            dailyWeather={weather?.daily}
+            units={units}
+            isLoadingWeather={weatherLoading}
+            isCollapsed={isWeatherCardCollapsed}
+            onToggleCollapsed={() => setIsWeatherCardCollapsed(!isWeatherCardCollapsed)}
+          />
         </div>
       </div>
     </div>

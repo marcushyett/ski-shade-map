@@ -16,6 +16,8 @@ import {
   CloudFilled,
   ThunderboltOutlined,
   EyeOutlined,
+  UpOutlined,
+  DownOutlined,
 } from '@ant-design/icons';
 import { format, setHours, setMinutes, startOfDay, addDays, isSameDay } from 'date-fns';
 import dayjs from 'dayjs';
@@ -81,6 +83,8 @@ interface TimeSliderProps {
   dailyWeather?: DailyWeatherDay[];
   units?: UnitPreferences;
   isLoadingWeather?: boolean;
+  isCollapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 export default function TimeSlider({ 
@@ -93,6 +97,8 @@ export default function TimeSlider({
   dailyWeather,
   units = { temperature: 'celsius', speed: 'kmh', length: 'cm' },
   isLoadingWeather = false,
+  isCollapsed = false,
+  onToggleCollapsed,
 }: TimeSliderProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -276,8 +282,100 @@ export default function TimeSlider({
     );
   };
 
+  // Get current hourly weather for collapsed view
+  const currentHourlyWeather = useMemo(() => {
+    if (!hourlyWeather || hourlyWeather.length === 0) return null;
+    const targetHour = selectedTime.getHours();
+    const targetDate = selectedTime.toDateString();
+    
+    return hourlyWeather.find(h => {
+      const d = new Date(h.time);
+      return d.toDateString() === targetDate && d.getHours() === targetHour;
+    }) || null;
+  }, [hourlyWeather, selectedTime]);
+
+  // Collapsed view - compact summary with weather, temp, and time
+  if (isCollapsed) {
+    return (
+      <div 
+        className="time-slider time-slider-collapsed"
+        onClick={onToggleCollapsed}
+        style={{ cursor: 'pointer' }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Weather + Temp */}
+            {mounted && currentHourlyWeather && (
+              <div className="flex items-center gap-1.5">
+                <DayWeatherIcon code={currentHourlyWeather.weatherCode} size={14} />
+                <Text strong style={{ fontSize: 13 }}>
+                  {formatTemp(currentHourlyWeather.temperature)}
+                </Text>
+              </div>
+            )}
+            
+            {/* Divider */}
+            {mounted && currentHourlyWeather && (
+              <span style={{ color: '#444', fontSize: 10 }}>|</span>
+            )}
+            
+            {/* Time + sun/moon */}
+            <div className="flex items-center gap-1.5">
+              {isSunUp ? (
+                <SunOutlined style={{ color: '#faad14', fontSize: 12 }} />
+              ) : (
+                <MoonOutlined style={{ color: '#666', fontSize: 12 }} />
+              )}
+              <Text strong style={{ fontSize: 13 }}>
+                {mounted ? format(selectedTime, 'HH:mm') : '--:--'}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 10 }}>
+                {mounted ? (isToday ? 'today' : format(selectedTime, 'EEE')) : ''}
+              </Text>
+            </div>
+          </div>
+          
+          {/* Expand button */}
+          <Tooltip title="Expand time controls">
+            <div className="flex items-center gap-1" style={{ color: '#666', fontSize: 10 }}>
+              <span>Expand</span>
+              <DownOutlined style={{ fontSize: 8 }} />
+            </div>
+          </Tooltip>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="time-slider">
+      {/* Collapse button at top right */}
+      {onToggleCollapsed && (
+        <div className="flex justify-end mb-1">
+          <Tooltip title="Collapse">
+            <button
+              onClick={onToggleCollapsed}
+              className="time-slider-collapse-btn"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px 6px',
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 9,
+                color: '#666',
+              }}
+            >
+              <span>Collapse</span>
+              <UpOutlined style={{ fontSize: 8 }} />
+            </button>
+          </Tooltip>
+        </div>
+      )}
+      
       {/* Date navigation */}
       <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/10">
         <Button

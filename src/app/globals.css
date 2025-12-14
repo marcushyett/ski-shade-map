@@ -469,6 +469,30 @@ h5.ant-typography {
   padding: 8px !important;
 }
 
+/* Collapsed time slider */
+.time-slider.time-slider-collapsed {
+  padding: 10px 12px !important;
+  transition: all 0.2s ease;
+}
+
+.time-slider.time-slider-collapsed:hover {
+  background-color: var(--background-tertiary) !important;
+}
+
+.time-slider-collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Inline navigation panel (above weather card) */
+.nav-panel-inline {
+  margin-bottom: 8px;
+}
+
+.nav-panel-inline .nav-panel {
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
 /* Compact text utilities */
 .text-xxs {
   font-size: 9px;
@@ -1489,6 +1513,151 @@ h5.ant-typography {
   font-size: 9px;
   color: var(--foreground-muted);
   margin-top: 2px;
+}
+
+/* Route color legend */
+.nav-route-legend {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.nav-legend-title {
+  font-size: 9px;
+  color: var(--foreground-muted);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.nav-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.nav-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--foreground-muted);
+}
+
+.nav-legend-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Advanced options section */
+.nav-advanced-section {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.nav-advanced-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--foreground-muted);
+  background: rgba(255, 255, 255, 0.02);
+  transition: background 0.15s;
+}
+
+.nav-advanced-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.nav-advanced-content {
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  background: var(--background-tertiary);
+}
+
+.nav-filter-group {
+  margin-bottom: 8px;
+}
+
+.nav-filter-group:last-child {
+  margin-bottom: 0;
+}
+
+.nav-filter-label {
+  font-size: 9px;
+  color: var(--foreground-muted);
+  margin-bottom: 4px;
+}
+
+.nav-filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.nav-filter-lifts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.nav-filter-checkbox {
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--foreground);
+  cursor: pointer;
+  padding: 2px 0;
+  gap: 4px;
+}
+
+.nav-filter-checkbox:hover {
+  color: #fff;
+}
+
+/* Custom checkbox indicator - replaces Ant checkbox */
+.nav-filter-check {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.nav-filter-check.checked {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.nav-filter-check.checked::after {
+  content: '✓';
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.nav-filter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+
+.nav-filter-name {
+  white-space: nowrap;
 }
 
 /* Action buttons */

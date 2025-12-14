@@ -13,6 +13,10 @@ import {
   ArrowDownOutlined,
   ArrowUpOutlined,
   HomeOutlined,
+  SettingOutlined,
+  DownOutlined,
+  RightOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
 import type { SkiAreaDetails, RunData, LiftData } from '@/lib/types';
@@ -55,6 +59,51 @@ export interface SelectedPoint {
   // For runs/lifts: whether to use top (start) or bottom (end) of the feature
   position?: 'top' | 'bottom';
 }
+
+// Route filter options
+export interface RouteFilters {
+  // Allowed difficulties (all enabled by default)
+  difficulties: {
+    novice: boolean;
+    easy: boolean;
+    intermediate: boolean;
+    advanced: boolean;
+    expert: boolean;
+  };
+  // Allowed lift types (all enabled by default)
+  liftTypes: {
+    gondola: boolean;
+    cable_car: boolean;
+    chair_lift: boolean;
+    't-bar': boolean;
+    drag_lift: boolean;
+    platter: boolean;
+    rope_tow: boolean;
+    magic_carpet: boolean;
+    funicular: boolean;
+  };
+}
+
+const DEFAULT_FILTERS: RouteFilters = {
+  difficulties: {
+    novice: true,
+    easy: true,
+    intermediate: true,
+    advanced: true,
+    expert: true,
+  },
+  liftTypes: {
+    gondola: true,
+    cable_car: true,
+    chair_lift: true,
+    't-bar': true,
+    drag_lift: true,
+    platter: true,
+    rope_tow: true,
+    magic_carpet: true,
+    funicular: true,
+  },
+};
 
 interface NavigationPanelProps {
   skiArea: SkiAreaDetails;
@@ -465,6 +514,48 @@ function PointSearchInput({
 // Route Summary Component
 // ============================================================================
 
+// Route color legend
+function RouteColorLegend() {
+  return (
+    <div className="nav-route-legend">
+      <div className="nav-legend-title">
+        <InfoCircleOutlined style={{ fontSize: 10, marginRight: 4 }} />
+        Route colors by type
+      </div>
+      <div className="nav-legend-items">
+        <div className="nav-legend-item">
+          <span className="nav-legend-color" style={{ backgroundColor: '#52c41a' }} />
+          <span>Lift</span>
+        </div>
+        <div className="nav-legend-item">
+          <span className="nav-legend-color" style={{ backgroundColor: '#f97316' }} />
+          <span>Walk</span>
+        </div>
+        <div className="nav-legend-item">
+          <span className="nav-legend-color" style={{ backgroundColor: '#22c55e' }} />
+          <span>Novice</span>
+        </div>
+        <div className="nav-legend-item">
+          <span className="nav-legend-color" style={{ backgroundColor: '#3b82f6' }} />
+          <span>Easy</span>
+        </div>
+        <div className="nav-legend-item">
+          <span className="nav-legend-color" style={{ backgroundColor: '#dc2626' }} />
+          <span>Intermediate</span>
+        </div>
+        <div className="nav-legend-item">
+          <span className="nav-legend-color" style={{ backgroundColor: '#1a1a1a', border: '1px solid #666' }} />
+          <span>Advanced</span>
+        </div>
+        <div className="nav-legend-item">
+          <span className="nav-legend-color" style={{ backgroundColor: '#f97316' }} />
+          <span>Expert</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RouteSummary({ route }: { route: NavigationRoute }) {
   return (
     <div className="nav-route-summary">
@@ -492,6 +583,9 @@ function RouteSummary({ route }: { route: NavigationRoute }) {
           <span className="nav-route-stat-label">down</span>
         </div>
       </div>
+      
+      {/* Route color legend */}
+      <RouteColorLegend />
       
       <div className="nav-route-segments">
         {route.segments.map((segment, idx) => (
@@ -572,11 +666,72 @@ function NavigationPanelInner({
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasAutoSetOrigin, setHasAutoSetOrigin] = useState(false);
+  const [hasAutoStartedMapClick, setHasAutoStartedMapClick] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [filters, setFilters] = useState<RouteFilters>(DEFAULT_FILTERS);
 
-  // Build navigation graph
+  // Auto-start map click mode for origin when panel opens (if no origin set)
+  useEffect(() => {
+    if (!hasAutoStartedMapClick && !origin && !externalOrigin && onRequestMapClick) {
+      // Small delay to let the panel render first
+      const timer = setTimeout(() => {
+        onRequestMapClick('origin');
+        setHasAutoStartedMapClick(true);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [hasAutoStartedMapClick, origin, externalOrigin, onRequestMapClick]);
+
+  // Build navigation graph with filters applied
   const graph = useMemo(() => {
-    return buildNavigationGraph(skiArea);
-  }, [skiArea]);
+    const fullGraph = buildNavigationGraph(skiArea);
+    
+    // Check if any filters are disabled
+    const allDifficultiesEnabled = Object.values(filters.difficulties).every(v => v);
+    const allLiftTypesEnabled = Object.values(filters.liftTypes).every(v => v);
+    
+    if (allDifficultiesEnabled && allLiftTypesEnabled) {
+      return fullGraph; // No filtering needed
+    }
+    
+    // Create a filtered copy of the graph
+    const filteredEdges = new Map(fullGraph.edges);
+    const filteredAdjacency = new Map<string, string[]>();
+    
+    // Copy adjacency and filter edges
+    for (const [nodeId, edgeIds] of fullGraph.adjacency) {
+      const allowedEdgeIds = edgeIds.filter(edgeId => {
+        const edge = fullGraph.edges.get(edgeId);
+        if (!edge) return false;
+        
+        // Filter runs by difficulty
+        if (edge.type === 'run' && edge.difficulty) {
+          const diffKey = edge.difficulty.toLowerCase() as keyof typeof filters.difficulties;
+          if (filters.difficulties[diffKey] === false) {
+            return false;
+          }
+        }
+        
+        // Filter lifts by type
+        if (edge.type === 'lift' && edge.liftType) {
+          const liftKey = edge.liftType.toLowerCase().replace(/[_\s]/g, '_') as keyof typeof filters.liftTypes;
+          if (filters.liftTypes[liftKey] === false) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+      
+      filteredAdjacency.set(nodeId, allowedEdgeIds);
+    }
+    
+    return {
+      nodes: fullGraph.nodes,
+      edges: filteredEdges,
+      adjacency: filteredAdjacency,
+    };
+  }, [skiArea, filters]);
 
   // Check if user location is close enough to ski area
   const isUserLocationValid = useMemo(() => {
@@ -804,10 +959,80 @@ function NavigationPanelInner({
           isMapClickActive={mapClickMode === 'destination'}
         />
 
+        {/* Advanced options - collapsible */}
+        <div className="nav-advanced-section">
+          <div 
+            className="nav-advanced-header"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+          >
+            {showAdvanced ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
+            <SettingOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+            <span style={{ marginLeft: 4 }}>Route options</span>
+          </div>
+          
+          {showAdvanced && (
+            <div className="nav-advanced-content">
+              {/* Difficulty filters */}
+              <div className="nav-filter-group">
+                <div className="nav-filter-label">Slope difficulties:</div>
+                <div className="nav-filter-options">
+                  {Object.entries(filters.difficulties).map(([key, checked]) => (
+                    <div 
+                      key={key} 
+                      className="nav-filter-checkbox"
+                      onClick={() => setFilters(prev => ({
+                        ...prev,
+                        difficulties: { ...prev.difficulties, [key]: !prev.difficulties[key as keyof typeof prev.difficulties] }
+                      }))}
+                    >
+                      <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
+                      <span 
+                        className="nav-filter-dot"
+                        style={{ 
+                          backgroundColor: getDifficultyColor(key),
+                          border: key === 'advanced' ? '1px solid #666' : undefined,
+                        }}
+                      />
+                      <span className="nav-filter-name">{key.charAt(0).toUpperCase() + key.slice(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Lift type filters */}
+              <div className="nav-filter-group">
+                <div className="nav-filter-label">Lift types:</div>
+                <div className="nav-filter-options nav-filter-lifts">
+                  {Object.entries(filters.liftTypes).map(([key, checked]) => (
+                    <div 
+                      key={key} 
+                      className="nav-filter-checkbox"
+                      onClick={() => setFilters(prev => ({
+                        ...prev,
+                        liftTypes: { ...prev.liftTypes, [key]: !prev.liftTypes[key as keyof typeof prev.liftTypes] }
+                      }))}
+                    >
+                      <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
+                      <span className="nav-filter-name">
+                        {key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Error message */}
         {error && (
           <div className="nav-error">
             {error}
+            {error.includes('No route found') && (
+              <div style={{ marginTop: 4, fontSize: 9, color: '#f59e0b' }}>
+                💡 Try adjusting route options above to allow more lift types or slope difficulties.
+              </div>
+            )}
           </div>
         )}
 

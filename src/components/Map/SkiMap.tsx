@@ -1381,7 +1381,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     if (!map.current || !mapLoaded) return;
 
     // Remove existing navigation layers
-    const navLayers = ['nav-route-outline', 'nav-route-line', 'nav-route-glow'];
+    const navLayers = ['nav-route-labels', 'nav-route-outline', 'nav-route-line', 'nav-route-glow'];
     navLayers.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
         map.current.removeLayer(layerId);
@@ -1521,6 +1521,39 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         ],
         'line-width': 5,
         'line-opacity': 1,
+      },
+    });
+
+    // Add route labels layer - show names of runs and lifts on the route
+    map.current.addLayer({
+      id: 'nav-route-labels',
+      type: 'symbol',
+      source: 'nav-route',
+      layout: {
+        'symbol-placement': 'line',
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-max-angle': 30,
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'symbol-spacing': 200,
+      },
+      paint: {
+        'text-color': '#ffffff',
+        'text-halo-color': [
+          'case',
+          ['==', ['get', 'type'], 'lift'], '#52c41a',
+          ['==', ['get', 'type'], 'walk'], '#f97316',
+          ['==', ['get', 'difficulty'], 'novice'], '#22c55e',
+          ['==', ['get', 'difficulty'], 'easy'], '#3b82f6',
+          ['==', ['get', 'difficulty'], 'intermediate'], '#dc2626',
+          ['==', ['get', 'difficulty'], 'advanced'], '#1a1a1a',
+          ['==', ['get', 'difficulty'], 'expert'], '#f97316',
+          '#3b82f6',
+        ],
+        'text-halo-width': 2,
+        'text-opacity': 1,
       },
     });
 
@@ -1712,6 +1745,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     
     // Handle polygon run clicks (sunny and shaded fill layers)
     // When clicking on a polygon fill, show the popup for the associated run
+    // Only trigger for named runs - ignore clicks on unnamed polygons as they show unhelpful data
     const handlePolygonClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
       if (!e.features?.length || !map.current) return;
       if (isEditingHomeRef.current) return;
@@ -1719,11 +1753,17 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const feature = e.features[0];
       const props = feature.properties;
       const runId = props.id;
+      const runName = props.name;
+      
+      // Ignore clicks on unnamed polygon runs - they show unhelpful/redundant data
+      if (!runName) {
+        return;
+      }
       
       // Track run click
       trackEvent('run_clicked', {
         run_id: runId,
-        run_name: props.name || undefined,
+        run_name: runName || undefined,
         run_difficulty: props.difficulty || undefined,
         ski_area_id: currentSkiAreaId.current || undefined,
         latitude: e.lngLat.lat,
@@ -1734,24 +1774,14 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       onRunClickRef.current?.(runId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
     };
     
+    // Polygon click handlers - only handle clicks for named runs (unnamed are ignored)
+    // No pointer cursor shown since these are secondary visual elements
     if (map.current.getLayer('ski-runs-polygon-fill-sunny')) {
       map.current.on('click', 'ski-runs-polygon-fill-sunny', handlePolygonClick);
-      map.current.on('mouseenter', 'ski-runs-polygon-fill-sunny', () => {
-        if (map.current) map.current.getCanvas().style.cursor = 'pointer';
-      });
-      map.current.on('mouseleave', 'ski-runs-polygon-fill-sunny', () => {
-        if (map.current) map.current.getCanvas().style.cursor = '';
-      });
     }
     
     if (map.current.getLayer('ski-runs-polygon-fill-shaded')) {
       map.current.on('click', 'ski-runs-polygon-fill-shaded', handlePolygonClick);
-      map.current.on('mouseenter', 'ski-runs-polygon-fill-shaded', () => {
-        if (map.current) map.current.getCanvas().style.cursor = 'pointer';
-      });
-      map.current.on('mouseleave', 'ski-runs-polygon-fill-shaded', () => {
-        if (map.current) map.current.getCanvas().style.cursor = '';
-      });
     }
 
     map.current.on('click', 'ski-lifts', (e) => {
