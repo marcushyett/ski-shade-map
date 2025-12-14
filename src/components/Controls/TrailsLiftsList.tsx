@@ -7,8 +7,7 @@ import {
   NodeIndexOutlined, 
   SwapOutlined,
   DownOutlined,
-  RightOutlined,
-  QuestionCircleOutlined
+  RightOutlined
 } from '@ant-design/icons';
 import type { RunData, LiftData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
@@ -297,26 +296,6 @@ function TrailsListInner({
             )}
           </div>
         )}
-      </div>
-
-      {/* Credits */}
-      <div className="mt-2 pt-2 border-t border-white/10">
-        <span style={{ fontSize: 9, color: '#666' }}>
-          <a 
-            href="https://openskimap.org" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            style={{ color: '#888' }}
-          >
-            OpenSkiMap
-          </a>
-          {' '}© OSM
-        </span>
-        <br />
-        <span style={{ fontSize: 9, color: '#555' }}>
-          <QuestionCircleOutlined style={{ marginRight: 3 }} />
-          Live status unavailable
-        </span>
       </div>
     </div>
   );
