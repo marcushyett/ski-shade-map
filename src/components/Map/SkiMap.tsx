@@ -1381,7 +1381,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     if (!map.current || !mapLoaded) return;
 
     // Remove existing navigation layers
-    const navLayers = ['nav-route-labels', 'nav-route-outline', 'nav-route-line', 'nav-route-glow'];
+    const navLayers = ['nav-route-labels', 'nav-route-expert-stripes', 'nav-route-outline', 'nav-route-line', 'nav-route-glow'];
     navLayers.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
         map.current.removeLayer(layerId);
@@ -1509,18 +1509,36 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       paint: {
         'line-color': [
           'case',
-          ['==', ['get', 'type'], 'lift'], '#52c41a',
+          ['==', ['get', 'type'], 'lift'], '#9ca3af', // Grey for lifts
           ['==', ['get', 'type'], 'walk'], '#f97316',
           // For runs, use difficulty colors
           ['==', ['get', 'difficulty'], 'novice'], '#22c55e',
           ['==', ['get', 'difficulty'], 'easy'], '#3b82f6',
           ['==', ['get', 'difficulty'], 'intermediate'], '#dc2626',
           ['==', ['get', 'difficulty'], 'advanced'], '#1a1a1a',
-          ['==', ['get', 'difficulty'], 'expert'], '#f97316',
+          ['==', ['get', 'difficulty'], 'expert'], '#1a1a1a', // Black base for expert
           '#3b82f6', // Default blue
         ],
         'line-width': 5,
         'line-opacity': 1,
+      },
+    });
+
+    // Add expert route overlay with yellow dashes for hazard stripe effect
+    map.current.addLayer({
+      id: 'nav-route-expert-stripes',
+      type: 'line',
+      source: 'nav-route',
+      filter: ['==', ['get', 'difficulty'], 'expert'],
+      layout: {
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#fbbf24', // Yellow
+        'line-width': 5,
+        'line-opacity': 1,
+        'line-dasharray': [2, 2], // Alternating pattern
       },
     });
 
@@ -1543,13 +1561,13 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'text-color': '#ffffff',
         'text-halo-color': [
           'case',
-          ['==', ['get', 'type'], 'lift'], '#52c41a',
+          ['==', ['get', 'type'], 'lift'], '#6b7280', // Grey for lifts
           ['==', ['get', 'type'], 'walk'], '#f97316',
           ['==', ['get', 'difficulty'], 'novice'], '#22c55e',
           ['==', ['get', 'difficulty'], 'easy'], '#3b82f6',
           ['==', ['get', 'difficulty'], 'intermediate'], '#dc2626',
           ['==', ['get', 'difficulty'], 'advanced'], '#1a1a1a',
-          ['==', ['get', 'difficulty'], 'expert'], '#f97316',
+          ['==', ['get', 'difficulty'], 'expert'], '#fbbf24', // Yellow for expert
           '#3b82f6',
         ],
         'text-halo-width': 2,

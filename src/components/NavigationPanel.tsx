@@ -524,7 +524,7 @@ function RouteColorLegend() {
       </div>
       <div className="nav-legend-items">
         <div className="nav-legend-item">
-          <span className="nav-legend-color" style={{ backgroundColor: '#52c41a' }} />
+          <span className="nav-legend-color" style={{ backgroundColor: '#9ca3af' }} />
           <span>Lift</span>
         </div>
         <div className="nav-legend-item">
@@ -548,7 +548,7 @@ function RouteColorLegend() {
           <span>Advanced</span>
         </div>
         <div className="nav-legend-item">
-          <span className="nav-legend-color" style={{ backgroundColor: '#f97316' }} />
+          <span className="nav-legend-color nav-legend-expert" />
           <span>Expert</span>
         </div>
       </div>
@@ -592,7 +592,7 @@ function RouteSummary({ route }: { route: NavigationRoute }) {
           <div key={idx} className="nav-route-segment">
             <div className="nav-segment-icon">
               {segment.type === 'lift' ? (
-                <SwapOutlined style={{ fontSize: 10, color: '#52c41a' }} />
+                <SwapOutlined style={{ fontSize: 10, color: '#9ca3af' }} />
               ) : segment.type === 'run' ? (
                 <span 
                   className="nav-dot" 
