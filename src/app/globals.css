@@ -1553,16 +1553,9 @@ h5.ant-typography {
   flex-shrink: 0;
 }
 
-/* Expert stripe pattern for legend */
+/* Expert color for legend */
 .nav-legend-expert {
-  background: repeating-linear-gradient(
-    90deg,
-    #fbbf24 0px,
-    #fbbf24 3px,
-    #1a1a1a 3px,
-    #1a1a1a 6px
-  );
-  border: 1px solid #666;
+  background: #fbbf24;
 }
 
 /* Advanced options section */
