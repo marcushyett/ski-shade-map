@@ -6,10 +6,98 @@
  * - Current conditions (temperature, sun exposure, wind)
  * - Slope characteristics (aspect, steepness, altitude)
  * - Time of day (conditions deteriorate through the day)
+ * - Uses resort local time (based on longitude) for all calculations
  */
 
 import type { HourlyWeather, DailyWeatherDay } from "./weather-types";
 import type { RunData } from "./types";
+
+/**
+ * Calculate timezone offset in hours from longitude.
+ * This is an approximation: 15 degrees of longitude = 1 hour.
+ * For ski resorts, this is typically accurate enough.
+ */
+function getTimezoneOffsetFromLongitude(longitude: number): number {
+  return Math.round(longitude / 15);
+}
+
+/**
+ * Convert a UTC time to resort local time based on longitude.
+ */
+function getResortLocalTime(utcTime: Date, resortLongitude: number): Date {
+  const offsetHours = getTimezoneOffsetFromLongitude(resortLongitude);
+  const localTime = new Date(utcTime.getTime() + offsetHours * 60 * 60 * 1000);
+  return localTime;
+}
+
+/**
+ * Get the local hour and minute as decimal hours (e.g., 9:30 = 9.5)
+ */
+function getLocalDecimalHour(utcTime: Date, resortLongitude: number): number {
+  const localTime = getResortLocalTime(utcTime, resortLongitude);
+  return localTime.getUTCHours() + localTime.getUTCMinutes() / 60;
+}
+
+/**
+ * Calculate groomed probability using logarithmic decay.
+ * - Before 09:30: 100% groomed
+ * - Between 09:30 and 10:15 (45 min window): logarithmic decay from 100% to 0%
+ * - After 10:15: 0% groomed
+ * 
+ * Uses logarithmic decay: probability = 1 - log(1 + t) / log(1 + duration)
+ * where t is minutes since 09:30
+ */
+function calculateGroomedProbability(localDecimalHour: number): number {
+  const START_DECAY = 9.5;   // 09:30
+  const END_DECAY = 10.25;   // 10:15
+  const DECAY_DURATION = END_DECAY - START_DECAY; // 0.75 hours = 45 minutes
+  
+  if (localDecimalHour < START_DECAY) {
+    return 1.0; // 100% groomed before 09:30
+  }
+  
+  if (localDecimalHour >= END_DECAY) {
+    return 0.0; // 0% groomed after 10:15
+  }
+  
+  // Logarithmic decay between 09:30 and 10:15
+  const elapsed = localDecimalHour - START_DECAY;
+  const progress = elapsed / DECAY_DURATION; // 0 to 1
+  
+  // Logarithmic decay: faster drop initially, slower at the end
+  // Using log base for smooth decay: 1 - log(1 + progress * base) / log(1 + base)
+  const base = 9; // Controls the steepness of the logarithmic curve
+  const probability = 1 - Math.log(1 + progress * base) / Math.log(1 + base);
+  
+  return Math.max(0, Math.min(1, probability));
+}
+
+/**
+ * Check if a run is marked as ungroomed in its properties.
+ * OSM uses `piste:grooming` tag with values like "mogul", "backcountry", etc.
+ * If grooming is explicitly "no", "mogul", "backcountry", or similar, it's ungroomed.
+ */
+function isRunMarkedAsUngroomed(run: RunData): boolean {
+  const props = run.properties as Record<string, unknown> | null;
+  if (!props) return false;
+  
+  // Check common OSM grooming-related tags
+  const groomingValue = props['piste:grooming'] || props['grooming'] || props['piste_grooming'];
+  
+  if (typeof groomingValue === 'string') {
+    const ungroomedValues = ['no', 'mogul', 'backcountry', 'unknown', 'never', 'none', 'off-piste'];
+    return ungroomedValues.includes(groomingValue.toLowerCase());
+  }
+  
+  // Also check if the piste type indicates it's off-piste
+  const pisteType = props['piste:type'] || props['piste_type'];
+  if (typeof pisteType === 'string') {
+    const offPisteTypes = ['backcountry', 'skitour', 'freeride', 'off-piste'];
+    return offPisteTypes.includes(pisteType.toLowerCase());
+  }
+  
+  return false;
+}
 
 // Snow condition types in order of general desirability for most skiers
 export type SnowCondition =
@@ -276,7 +364,8 @@ export function calculateSnowQuality(
   hourlyWeather: HourlyWeather[],
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
-  sunAltitude: number
+  sunAltitude: number,
+  resortLongitude: number = 0 // Used to calculate resort local time
 ): PisteSnowAnalysis {
   const factors: SnowFactor[] = [];
   let score = 50; // Start at neutral (0-100 scale)
@@ -285,8 +374,15 @@ export function calculateSnowQuality(
   const altitude = calculateAltitude(run.geometry);
   const steepness = calculateSteepness(run.geometry);
   const avgAltitude = altitude ? (altitude.min + altitude.max) / 2 : 2000;
+  
+  // Check if this run is explicitly marked as ungroomed
+  const isUngroomed = isRunMarkedAsUngroomed(run);
 
-  // Get current hour's weather
+  // Calculate resort local time from longitude
+  const localDecimalHour = getLocalDecimalHour(currentTime, resortLongitude);
+  const localHour = Math.floor(localDecimalHour);
+
+  // Get current hour's weather (using UTC time for weather matching)
   const currentHour = currentTime.getHours();
   const todayStr = currentTime.toISOString().split("T")[0];
   const currentWeather = hourlyWeather.find((h) => {
@@ -325,11 +421,14 @@ export function calculateSnowQuality(
   const maxTemp = todayWeather?.maxTemperature ?? 0;
   const minTemp = todayWeather?.minTemperature ?? -5;
 
-  // Time of day factor (conditions generally worse in afternoon)
-  const hourOfDay = currentTime.getHours();
-  const isEarlyMorning = hourOfDay < 10; // Groomed conditions only last until ~10am
-  const isAfternoon = hourOfDay >= 13;
-  const isLateAfternoon = hourOfDay >= 15;
+  // Time of day factor using RESORT LOCAL TIME (conditions generally worse in afternoon)
+  // localHour and localDecimalHour are calculated above from resort longitude
+  const isAfternoon = localHour >= 13;
+  const isLateAfternoon = localHour >= 15;
+  
+  // Calculate groomed probability using logarithmic decay (09:30 to 10:15 local time)
+  // If run is marked as ungroomed, probability is always 0
+  const groomedProbability = isUngroomed ? 0 : calculateGroomedProbability(localDecimalHour);
 
   // Sun exposure
   const sunFacing = isSunFacing(aspect, sunAzimuth);
@@ -460,7 +559,7 @@ export function calculateSnowQuality(
     sunFacing,
     sunUp,
     currentWeather?.windSpeed ?? 0,
-    isEarlyMorning
+    groomedProbability
   );
 
   const conditionInfo = CONDITION_INFO[condition];
@@ -497,16 +596,17 @@ function determineCondition(
   sunFacing: boolean,
   sunUp: boolean,
   windSpeed: number,
-  isEarlyMorning: boolean = false
+  groomedProbability: number = 0 // 0-1 probability that grooming is still intact
 ): SnowCondition {
   // Fresh powder
   if (daysSinceSnow < 1 && recentSnowfall > 15 && currentTemp < 0) {
     return "powder";
   }
 
-  // Recent grooming (only in early morning before ~10am when slopes are first groomed)
-  // Groomed conditions typically only last for the first 1-2 hours after opening
-  if (isEarlyMorning && daysSinceSnow < 3 && currentTemp < 2) {
+  // Recent grooming - uses logarithmic decay probability based on resort local time
+  // groomedProbability is 1.0 before 09:30, decays logarithmically to 0 by 10:15
+  // Only return groomed if probability > 0.5 (majority of grooming still intact)
+  if (groomedProbability > 0.5 && daysSinceSnow < 3 && currentTemp < 2) {
     return "fresh-groomed";
   }
 
@@ -550,9 +650,9 @@ function determineCondition(
     return "hard-pack";
   }
 
-  // Fresh groomed (only early morning before ~10am, decent conditions)
-  // After 10am, groomed runs have been skied enough to lose their fresh corduroy
-  if (isEarlyMorning && score >= 35) {
+  // Fresh groomed - uses logarithmic decay probability
+  // Only return groomed if probability > 0.5 and other conditions are met
+  if (groomedProbability > 0.5 && score >= 35) {
     return "fresh-groomed";
   }
 
@@ -724,7 +824,8 @@ export function analyzeResortSnowQuality(
   hourlyWeather: HourlyWeather[],
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
-  sunAltitude: number
+  sunAltitude: number,
+  resortLongitude: number = 0 // Used to calculate resort local time
 ): { analyses: PisteSnowAnalysis[]; summary: ResortSnowSummary } {
   // For performance: if there are many runs, sample for the summary
   // but still return empty analyses array (individual analysis done on-demand)
@@ -744,7 +845,8 @@ export function analyzeResortSnowQuality(
       hourlyWeather,
       dailyWeather,
       sunAzimuth,
-      sunAltitude
+      sunAltitude,
+      resortLongitude
     )
   );
 
@@ -760,13 +862,17 @@ export function calculateSnowQualityByAltitude(
   hourlyWeather: HourlyWeather[],
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
-  sunAltitude: number
+  sunAltitude: number,
+  resortLongitude: number = 0 // Used to calculate resort local time
 ): SnowQualityAtPoint[] {
   if (run.geometry.type !== "LineString") return [];
 
   const coords = run.geometry.coordinates;
   const aspect = calculateAspect(run.geometry);
   const steepness = calculateSteepness(run.geometry);
+  
+  // Check if this run is explicitly marked as ungroomed
+  const isUngroomed = isRunMarkedAsUngroomed(run);
 
   // Get weather data
   const currentHour = currentTime.getHours();
@@ -801,10 +907,16 @@ export function calculateSnowQualityByAltitude(
   const currentTemp = currentWeather?.temperature ?? 0;
   const maxTemp = todayWeather?.maxTemperature ?? 0;
   const minTemp = todayWeather?.minTemperature ?? -5;
-  const hourOfDay = currentTime.getHours();
-  const isEarlyMorning = hourOfDay < 10; // Groomed conditions only last until ~10am
-  const isAfternoon = hourOfDay >= 13;
-  const isLateAfternoon = hourOfDay >= 15;
+  
+  // Calculate resort local time from longitude
+  const localDecimalHour = getLocalDecimalHour(currentTime, resortLongitude);
+  const localHour = Math.floor(localDecimalHour);
+  const isAfternoon = localHour >= 13;
+  const isLateAfternoon = localHour >= 15;
+  
+  // Calculate groomed probability using logarithmic decay
+  const groomedProbability = isUngroomed ? 0 : calculateGroomedProbability(localDecimalHour);
+  
   const sunFacing = isSunFacing(aspect, sunAzimuth);
   const sunUp = sunAltitude > 0;
 
@@ -853,7 +965,7 @@ export function calculateSnowQualityByAltitude(
       sunFacing,
       sunUp,
       currentWeather?.windSpeed ?? 0,
-      isEarlyMorning
+      groomedProbability
     );
 
     points.push({ altitude, score, condition });
