@@ -1,8 +1,14 @@
 /**
  * Sync sub-regions from OpenStreetMap Overpass API
  * This script fetches site=piste relations and assigns them to parent ski areas
+ * It also automatically detects connected ski areas based on overlapping bounds
  * 
- * Usage: npx tsx scripts/sync-subregions.ts [--ski-area-id=ID] [--dry-run]
+ * Usage:
+ *   npx tsx scripts/sync-subregions.ts                    # Sync all + detect connections
+ *   npx tsx scripts/sync-subregions.ts --ski-area-id=ID   # Sync specific ski area
+ *   npx tsx scripts/sync-subregions.ts --connections-only # Only detect connected ski areas
+ *   npx tsx scripts/sync-subregions.ts --skip-connections # Sync without detecting connections
+ *   npx tsx scripts/sync-subregions.ts --dry-run          # Preview without writing to DB
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -24,10 +30,11 @@ interface OverpassResponse {
   elements: OverpassElement[];
 }
 
-// Known connected ski areas - areas that should load together
+// Known connected ski areas - manual overrides for areas that should load together
 // Format: parentOsmId -> [connectedOsmIds]
-const CONNECTED_SKI_AREAS: Record<string, string[]> = {
-  // Les Trois Vallées connections
+// These supplement the automatic detection algorithm
+const MANUAL_CONNECTED_SKI_AREAS: Record<string, string[]> = {
+  // Les Trois Vallées connections (some sub-areas may not be auto-detected)
   'relation/3545276': [
     'relation/3962216', // Brides Les Bains
     'relation/3962218', // La Tania
@@ -36,10 +43,43 @@ const CONNECTED_SKI_AREAS: Record<string, string[]> = {
     'relation/19757448', // Val Thorens - Orelle
     'relation/19751525', // Orelle
   ],
-  // Paradiski (La Plagne + Les Arcs)
-  'relation/5994157': ['relation/5994162'], // La Plagne -> Les Arcs
-  'relation/5994162': ['relation/5994157'], // Les Arcs -> La Plagne
 };
+
+// Distance threshold in degrees (~500m at alpine latitudes)
+const CONNECTION_THRESHOLD_DEGREES = 0.005;
+
+// Check if two bounding boxes overlap or are adjacent
+function boundsOverlapOrAdjacent(
+  bounds1: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+  bounds2: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+  threshold: number = CONNECTION_THRESHOLD_DEGREES
+): boolean {
+  // Expand bounds by threshold
+  const b1 = {
+    minLat: bounds1.minLat - threshold,
+    maxLat: bounds1.maxLat + threshold,
+    minLng: bounds1.minLng - threshold,
+    maxLng: bounds1.maxLng + threshold,
+  };
+  
+  // Check if bounds intersect
+  return !(
+    b1.maxLat < bounds2.minLat ||
+    b1.minLat > bounds2.maxLat ||
+    b1.maxLng < bounds2.minLng ||
+    b1.minLng > bounds2.maxLng
+  );
+}
+
+// Calculate overlap area (for ranking connections)
+function calculateOverlapArea(
+  bounds1: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+  bounds2: { minLat: number; maxLat: number; minLng: number; maxLng: number }
+): number {
+  const overlapLat = Math.max(0, Math.min(bounds1.maxLat, bounds2.maxLat) - Math.max(bounds1.minLat, bounds2.minLat));
+  const overlapLng = Math.max(0, Math.min(bounds1.maxLng, bounds2.maxLng) - Math.max(bounds1.minLng, bounds2.minLng));
+  return overlapLat * overlapLng;
+}
 
 async function fetchSubRegionsFromOverpass(bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }): Promise<OverpassElement[]> {
   const query = `
@@ -214,17 +254,17 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
     });
   }
 
-  // Handle connected ski areas
-  if (skiArea.osmId && CONNECTED_SKI_AREAS[skiArea.osmId]) {
-    console.log(`\nProcessing connected ski areas for ${skiArea.name}...`);
+  // Handle manual connected ski areas overrides
+  if (skiArea.osmId && MANUAL_CONNECTED_SKI_AREAS[skiArea.osmId]) {
+    console.log(`\nProcessing manual connected ski areas for ${skiArea.name}...`);
     
-    for (const connectedOsmId of CONNECTED_SKI_AREAS[skiArea.osmId]) {
+    for (const connectedOsmId of MANUAL_CONNECTED_SKI_AREAS[skiArea.osmId]) {
       const connectedArea = await prisma.skiArea.findFirst({
         where: { osmId: connectedOsmId },
       });
 
       if (connectedArea) {
-        console.log(`  Connecting: ${skiArea.name} <-> ${connectedArea.name}`);
+        console.log(`  [Manual] Connecting: ${skiArea.name} <-> ${connectedArea.name}`);
         
         if (!dryRun) {
           // Create bidirectional connection
@@ -247,6 +287,102 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
       }
     }
   }
+}
+
+// Automatically detect connected ski areas based on overlapping/adjacent bounds
+async function detectConnectedSkiAreas(dryRun: boolean = false) {
+  console.log('\n=== Detecting Connected Ski Areas ===');
+  
+  const skiAreas = await prisma.skiArea.findMany({
+    where: { bounds: { not: null } },
+    select: {
+      id: true,
+      name: true,
+      osmId: true,
+      bounds: true,
+      latitude: true,
+      longitude: true,
+    },
+  });
+
+  console.log(`Checking ${skiAreas.length} ski areas for connections...`);
+  
+  let connectionsFound = 0;
+  const processedPairs = new Set<string>();
+
+  for (let i = 0; i < skiAreas.length; i++) {
+    const area1 = skiAreas[i];
+    const bounds1 = area1.bounds as { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
+    if (!bounds1) continue;
+
+    for (let j = i + 1; j < skiAreas.length; j++) {
+      const area2 = skiAreas[j];
+      const bounds2 = area2.bounds as { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
+      if (!bounds2) continue;
+
+      // Skip if we've already processed this pair
+      const pairKey = [area1.id, area2.id].sort().join('-');
+      if (processedPairs.has(pairKey)) continue;
+      processedPairs.add(pairKey);
+
+      // Check if bounds overlap or are adjacent
+      if (boundsOverlapOrAdjacent(bounds1, bounds2)) {
+        const overlapArea = calculateOverlapArea(bounds1, bounds2);
+        
+        // Only connect if there's significant overlap or they're very close
+        // (avoid connecting far-away resorts that happen to have large bounds)
+        const area1Size = (bounds1.maxLat - bounds1.minLat) * (bounds1.maxLng - bounds1.minLng);
+        const area2Size = (bounds2.maxLat - bounds2.minLat) * (bounds2.maxLng - bounds2.minLng);
+        const minSize = Math.min(area1Size, area2Size);
+        
+        // Require at least 5% overlap relative to smaller area, or be very close
+        const isSignificantOverlap = overlapArea > 0 && (overlapArea / minSize) > 0.05;
+        const isVeryClose = overlapArea === 0; // Adjacent but not overlapping (within threshold)
+        
+        if (isSignificantOverlap || isVeryClose) {
+          console.log(`  Found connection: ${area1.name} <-> ${area2.name} (overlap: ${(overlapArea / minSize * 100).toFixed(1)}%)`);
+          connectionsFound++;
+
+          if (!dryRun) {
+            // Create bidirectional connection
+            try {
+              await prisma.skiAreaConnection.upsert({
+                where: {
+                  fromAreaId_toAreaId: {
+                    fromAreaId: area1.id,
+                    toAreaId: area2.id,
+                  },
+                },
+                create: {
+                  fromAreaId: area1.id,
+                  toAreaId: area2.id,
+                },
+                update: {},
+              });
+
+              await prisma.skiAreaConnection.upsert({
+                where: {
+                  fromAreaId_toAreaId: {
+                    fromAreaId: area2.id,
+                    toAreaId: area1.id,
+                  },
+                },
+                create: {
+                  fromAreaId: area2.id,
+                  toAreaId: area1.id,
+                },
+                update: {},
+              });
+            } catch (e) {
+              // Ignore duplicate key errors
+            }
+          }
+        }
+      }
+    }
+  }
+
+  console.log(`\nFound ${connectionsFound} ski area connections`);
 }
 
 async function assignRunsToSubRegions(skiAreaId: string, dryRun: boolean = false) {
@@ -343,12 +479,18 @@ async function main() {
   const dryRun = args.includes('--dry-run');
   const skiAreaIdArg = args.find(a => a.startsWith('--ski-area-id='));
   const skiAreaId = skiAreaIdArg?.split('=')[1];
+  const connectionsOnly = args.includes('--connections-only');
+  const skipConnections = args.includes('--skip-connections');
 
   console.log('=== Sub-Region Sync ===');
   console.log(`Dry run: ${dryRun}`);
+  console.log(`Connections only: ${connectionsOnly}`);
 
   try {
-    if (skiAreaId) {
+    if (connectionsOnly) {
+      // Only detect ski area connections
+      await detectConnectedSkiAreas(dryRun);
+    } else if (skiAreaId) {
       // Sync specific ski area
       await syncSubRegionsForSkiArea(skiAreaId, dryRun);
       await assignRunsToSubRegions(skiAreaId, dryRun);
@@ -372,6 +514,11 @@ async function main() {
         } catch (error) {
           console.error(`Error processing ${skiArea.name}:`, error);
         }
+      }
+
+      // After processing all ski areas, detect connections between them
+      if (!skipConnections) {
+        await detectConnectedSkiAreas(dryRun);
       }
     }
 
