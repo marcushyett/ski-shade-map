@@ -3,12 +3,24 @@ import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { ConfigProvider, theme, App } from 'antd';
 import PostHogProvider from '@/components/PostHogProvider';
 import "./globals.css";
+import { BASE_URL, SKI_KEYWORDS } from '@/lib/seo-utils';
 
 export const metadata: Metadata = {
-  title: "SKISHADE",
-  description: "Chase the sun, on the snow. Find sunny or shaded ski slopes throughout the day.",
-  keywords: ["ski", "skiing", "sun", "shade", "map", "slopes", "winter sports"],
+  metadataBase: new URL(BASE_URL),
+  title: {
+    default: "SKISHADE | Live 3D Ski Maps & Real-Time Snow Conditions",
+    template: "%s | SKISHADE",
+  },
+  description: "Find sunny or shaded ski slopes in real-time. Live 3D piste maps, snow conditions, sun tracking, and smart route planning for every ski resort. Optimize every second of your skiing.",
+  keywords: [
+    ...SKI_KEYWORDS,
+    "ski", "skiing", "sun", "shade", "map", "slopes", "winter sports",
+    "piste map", "ski conditions", "snow report", "ski navigation",
+    "alpine skiing", "ski resort finder", "mountain weather",
+  ],
   authors: [{ name: "Marcus Hyett" }],
+  creator: "SKISHADE",
+  publisher: "SKISHADE",
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -20,16 +32,34 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.svg',
   },
   openGraph: {
-    title: 'SKISHADE',
-    description: 'Chase the sun, on the snow. Find sunny or shaded ski slopes throughout the day.',
+    title: 'SKISHADE | Live 3D Ski Maps & Real-Time Snow Conditions',
+    description: 'Find sunny or shaded ski slopes in real-time. Live 3D piste maps, snow conditions, sun tracking, and smart route planning for every ski resort.',
     type: 'website',
     siteName: 'SKISHADE',
+    locale: 'en_US',
+    url: BASE_URL,
   },
   twitter: {
-    card: 'summary',
-    title: 'SKISHADE',
-    description: 'Chase the sun, on the snow. Find sunny or shaded ski slopes throughout the day.',
+    card: 'summary_large_image',
+    title: 'SKISHADE | Live 3D Ski Maps & Real-Time Snow Conditions',
+    description: 'Find sunny or shaded ski slopes in real-time. Live 3D piste maps, snow conditions, and smart route planning.',
+    creator: '@skishade',
   },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  alternates: {
+    canonical: BASE_URL,
+  },
+  category: 'sports',
   other: {
     'mobile-web-app-capable': 'yes',
   },
@@ -43,6 +73,56 @@ export const viewport: Viewport = {
   themeColor: '#0a0a0a',
 };
 
+// JSON-LD structured data for the website
+const websiteJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'SKISHADE',
+  alternateName: ['Ski Shade', 'SkiShade'],
+  url: BASE_URL,
+  description: 'Real-time 3D ski maps with live snow conditions, sun & shade tracking, and smart route planning for every ski resort worldwide.',
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: {
+      '@type': 'EntryPoint',
+      urlTemplate: `${BASE_URL}/?search={search_term_string}`,
+    },
+    'query-input': 'required name=search_term_string',
+  },
+};
+
+const organizationJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'SKISHADE',
+  url: BASE_URL,
+  logo: `${BASE_URL}/favicon.svg`,
+  description: 'Real-time 3D ski maps with live snow conditions and sun tracking.',
+  sameAs: [],
+};
+
+const softwareAppJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'SKISHADE',
+  applicationCategory: 'SportsApplication',
+  operatingSystem: 'Web',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
+  description: 'Live 3D ski maps with real-time snow conditions, sun & shade tracking, and smart route planning.',
+  featureList: [
+    'Real-time 3D piste maps',
+    'Live snow conditions',
+    'Sun and shade tracking',
+    'Smart route planning',
+    'Weather forecasts',
+    'Offline support',
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -51,6 +131,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* JSON-LD Structured Data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareAppJsonLd) }}
+        />
         {/* PWA and iOS specific meta tags */}
         <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
