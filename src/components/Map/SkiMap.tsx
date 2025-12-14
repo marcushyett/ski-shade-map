@@ -9,6 +9,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { trackEvent } from '@/lib/posthog';
 import type { SkiAreaDetails, RunData } from '@/lib/types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
+import type { NavigationRoute } from '@/lib/navigation';
 
 interface CloudCover {
   total: number;
@@ -78,7 +79,10 @@ interface SkiMapProps {
   favouriteIds?: string[];
   onToggleFavourite?: (runId: string) => void;
   onRunClick?: (runId: string, lngLat: { lng: number; lat: number }) => void;
+  onLiftClick?: (liftId: string, lngLat: { lng: number; lat: number }) => void;
   onMapClick?: () => void;
+  // Handler for background map clicks (not on features) - returns true if handled
+  onMapBackgroundClick?: (lngLat: { lng: number; lat: number }) => boolean;
   userLocation?: UserLocationMarker | null;
   mountainHome?: MountainHomeMarker | null;
   sharedLocations?: SharedLocationMarker[];
@@ -89,6 +93,18 @@ interface SkiMapProps {
   searchPlaceMarker?: SearchPlaceMarker | null;
   onClearSearchPlace?: () => void;
   snowAnalyses?: SnowAnalysis[];
+  // Navigation props
+  navigationRoute?: NavigationRoute | null;
+  isNavigating?: boolean;
+  userHeading?: number | null;
+  // Visual indicator for navigation map click mode
+  navMapClickMode?: 'origin' | 'destination' | null;
+  isFakeLocationDropMode?: boolean;
+  // Navigation origin/destination for showing pins
+  navigationOrigin?: { lat: number; lng: number; name?: string } | null;
+  navigationDestination?: { lat: number; lng: number; name?: string } | null;
+  // Return to route point when user is off-route
+  navigationReturnPoint?: { lat: number; lng: number } | null;
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -106,7 +122,7 @@ interface SegmentProperties {
   shadedColor: string;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, onRunClick, onMapClick, isEditingHome = false, onSetHomeLocation, snowAnalyses = [] }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, onRunClick, onLiftClick, onMapClick, onMapBackgroundClick, isEditingHome = false, onSetHomeLocation, snowAnalyses = [], navigationRoute, isNavigating = false, userHeading, navMapClickMode, isFakeLocationDropMode = false, navigationOrigin, navigationDestination, navigationReturnPoint }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -123,22 +139,33 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const onMapClickRef = useRef(onMapClick);
   const isEditingHomeRef = useRef(isEditingHome);
   const onSetHomeLocationRef = useRef(onSetHomeLocation);
+  const navMapClickModeRef = useRef(navMapClickMode);
+  const isFakeLocationDropModeRef = useRef(isFakeLocationDropMode);
   
   const snowAnalysesRef = useRef<SnowAnalysis[]>([]);
+  const onLiftClickRef = useRef(onLiftClick);
   
   // Keep refs updated
   favouriteIdsRef.current = favouriteIds;
   onToggleFavouriteRef.current = onToggleFavourite;
   onRunClickRef.current = onRunClick;
+  onLiftClickRef.current = onLiftClick;
   onMapClickRef.current = onMapClick;
+  const onMapBackgroundClickRef = useRef(onMapBackgroundClick);
+  onMapBackgroundClickRef.current = onMapBackgroundClick;
   isEditingHomeRef.current = isEditingHome;
   onSetHomeLocationRef.current = onSetHomeLocation;
+  navMapClickModeRef.current = navMapClickMode;
+  isFakeLocationDropModeRef.current = isFakeLocationDropMode;
   snowAnalysesRef.current = snowAnalyses;
   const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const mountainHomeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const highlightPopupRef = useRef<maplibregl.Popup | null>(null);
   const searchPlaceMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const navOriginMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const navDestinationMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const navReturnPointMarkerRef = useRef<maplibregl.Marker | null>(null);
 
   // Expose map methods via ref
   useEffect(() => {
@@ -1232,6 +1259,112 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     searchPlaceMarkerRef.current.togglePopup();
   }, [searchPlaceMarker, mapLoaded, onClearSearchPlace]);
 
+  // Navigation origin/destination markers
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Handle origin marker
+    if (navOriginMarkerRef.current) {
+      navOriginMarkerRef.current.remove();
+      navOriginMarkerRef.current = null;
+    }
+    
+    if (navigationOrigin && navigationOrigin.lat && navigationOrigin.lng) {
+      const el = document.createElement('div');
+      el.className = 'nav-origin-marker';
+      el.innerHTML = `
+        <div style="
+          width: 24px;
+          height: 24px;
+          background: #22c55e;
+          border: 2px solid white;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          color: white;
+          font-size: 12px;
+          font-weight: bold;
+        ">A</div>
+      `;
+      el.title = navigationOrigin.name || 'Start';
+      
+      navOriginMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([navigationOrigin.lng, navigationOrigin.lat])
+        .addTo(map.current);
+    }
+
+    // Handle destination marker
+    if (navDestinationMarkerRef.current) {
+      navDestinationMarkerRef.current.remove();
+      navDestinationMarkerRef.current = null;
+    }
+    
+    if (navigationDestination && navigationDestination.lat && navigationDestination.lng) {
+      const el = document.createElement('div');
+      el.className = 'nav-destination-marker';
+      el.innerHTML = `
+        <div style="
+          width: 24px;
+          height: 24px;
+          background: #ef4444;
+          border: 2px solid white;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          color: white;
+          font-size: 12px;
+          font-weight: bold;
+        ">B</div>
+      `;
+      el.title = navigationDestination.name || 'Destination';
+      
+      navDestinationMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([navigationDestination.lng, navigationDestination.lat])
+        .addTo(map.current);
+    }
+  }, [navigationOrigin, navigationDestination, mapLoaded]);
+
+  // Navigation return point marker (shown when user is off-route)
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Remove existing marker
+    if (navReturnPointMarkerRef.current) {
+      navReturnPointMarkerRef.current.remove();
+      navReturnPointMarkerRef.current = null;
+    }
+    
+    if (navigationReturnPoint && navigationReturnPoint.lat && navigationReturnPoint.lng) {
+      const el = document.createElement('div');
+      el.className = 'nav-return-point-marker';
+      el.innerHTML = `
+        <div style="
+          width: 28px;
+          height: 28px;
+          background: #f59e0b;
+          border: 3px solid white;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 10px rgba(245, 158, 11, 0.5);
+          color: white;
+          font-size: 14px;
+          animation: pulse 1.5s infinite;
+        ">📍</div>
+      `;
+      el.title = 'Return to route here';
+      
+      navReturnPointMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([navigationReturnPoint.lng, navigationReturnPoint.lat])
+        .addTo(map.current);
+    }
+  }, [navigationReturnPoint, mapLoaded]);
+
   // Update favourite runs layer filter when favouriteIds change
   useEffect(() => {
     if (!map.current || !mapLoaded || !layersInitialized.current) return;
@@ -1242,6 +1375,185 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       );
     }
   }, [favouriteIds, mapLoaded]);
+
+  // Handle navigation route rendering and dimming
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Remove existing navigation layers
+    const navLayers = ['nav-route-outline', 'nav-route-line', 'nav-route-glow'];
+    navLayers.forEach(layerId => {
+      if (map.current?.getLayer(layerId)) {
+        map.current.removeLayer(layerId);
+      }
+    });
+    if (map.current.getSource('nav-route')) {
+      map.current.removeSource('nav-route');
+    }
+
+    // If no route, reset opacity and return
+    if (!navigationRoute) {
+      // Reset all layer opacities to normal
+      const layersToReset = [
+        'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-sunny-glow',
+        'ski-lifts', 'ski-lifts-symbols', 'ski-runs-labels', 'ski-lifts-labels',
+      ];
+      layersToReset.forEach(layerId => {
+        if (map.current?.getLayer(layerId)) {
+          if (layerId.includes('glow')) {
+            map.current.setPaintProperty(layerId, 'line-opacity', 0.6);
+          } else if (layerId === 'ski-lifts') {
+            map.current.setPaintProperty(layerId, 'line-opacity', 1);
+          } else if (layerId === 'ski-lifts-symbols') {
+            map.current.setPaintProperty(layerId, 'circle-opacity', 1);
+          } else if (layerId.includes('labels')) {
+            map.current.setPaintProperty(layerId, 'text-opacity', 1);
+          } else {
+            map.current.setPaintProperty(layerId, 'line-opacity', 1);
+          }
+        }
+      });
+      return;
+    }
+
+    // Dim all non-route features
+    const dimOpacity = 0.25;
+    const dimLayers = [
+      { id: 'ski-segments-sunny', prop: 'line-opacity' },
+      { id: 'ski-segments-shaded', prop: 'line-opacity' },
+      { id: 'ski-segments-sunny-glow', prop: 'line-opacity' },
+      { id: 'ski-lifts', prop: 'line-opacity' },
+      { id: 'ski-lifts-symbols', prop: 'circle-opacity' },
+      { id: 'ski-runs-labels', prop: 'text-opacity' },
+      { id: 'ski-lifts-labels', prop: 'text-opacity' },
+    ];
+    dimLayers.forEach(({ id, prop }) => {
+      if (map.current?.getLayer(id)) {
+        map.current.setPaintProperty(id, prop, dimOpacity);
+      }
+    });
+
+    // Build route GeoJSON from segments
+    const routeCoordinates: [number, number][][] = [];
+    navigationRoute.segments.forEach(segment => {
+      const coords = segment.coordinates.map(c => [c[0], c[1]] as [number, number]);
+      routeCoordinates.push(coords);
+    });
+
+    const routeGeoJSON: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: navigationRoute.segments.map((segment, idx) => ({
+        type: 'Feature' as const,
+        properties: {
+          type: segment.type,
+          name: segment.name,
+          difficulty: segment.difficulty,
+          liftType: segment.liftType,
+          segmentIndex: idx,
+        },
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: segment.coordinates.map(c => [c[0], c[1]]),
+        },
+      })),
+    };
+
+    // Add route source
+    map.current.addSource('nav-route', {
+      type: 'geojson',
+      data: routeGeoJSON,
+    });
+
+    // Add route glow layer
+    map.current.addLayer({
+      id: 'nav-route-glow',
+      type: 'line',
+      source: 'nav-route',
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#3b82f6',
+        'line-width': 14,
+        'line-blur': 4,
+        'line-opacity': 0.5,
+      },
+    });
+
+    // Add route outline layer (white border)
+    map.current.addLayer({
+      id: 'nav-route-outline',
+      type: 'line',
+      source: 'nav-route',
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#ffffff',
+        'line-width': 8,
+        'line-opacity': 1,
+      },
+    });
+
+    // Add route line layer (colored by segment type)
+    map.current.addLayer({
+      id: 'nav-route-line',
+      type: 'line',
+      source: 'nav-route',
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': [
+          'case',
+          ['==', ['get', 'type'], 'lift'], '#52c41a',
+          ['==', ['get', 'type'], 'walk'], '#f97316',
+          // For runs, use difficulty colors
+          ['==', ['get', 'difficulty'], 'novice'], '#22c55e',
+          ['==', ['get', 'difficulty'], 'easy'], '#3b82f6',
+          ['==', ['get', 'difficulty'], 'intermediate'], '#dc2626',
+          ['==', ['get', 'difficulty'], 'advanced'], '#1a1a1a',
+          ['==', ['get', 'difficulty'], 'expert'], '#f97316',
+          '#3b82f6', // Default blue
+        ],
+        'line-width': 5,
+        'line-opacity': 1,
+      },
+    });
+
+    // Fit bounds to route
+    if (routeCoordinates.length > 0) {
+      const allCoords = routeCoordinates.flat();
+      if (allCoords.length > 0) {
+        const lngs = allCoords.map(c => c[0]);
+        const lats = allCoords.map(c => c[1]);
+        const bounds: [[number, number], [number, number]] = [
+          [Math.min(...lngs), Math.min(...lats)],
+          [Math.max(...lngs), Math.max(...lats)],
+        ];
+        map.current.fitBounds(bounds, {
+          padding: { top: 100, bottom: 150, left: 50, right: 50 },
+          duration: 500,
+        });
+      }
+    }
+  }, [navigationRoute, mapLoaded]);
+
+  // Handle user heading for auto-orientation in navigation mode
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !isNavigating) return;
+
+    if (userHeading !== null && userHeading !== undefined) {
+      // Rotate map to face the direction of travel
+      map.current.easeTo({
+        bearing: -userHeading, // Negative because we want map to rotate opposite to heading
+        duration: 300,
+      });
+    }
+  }, [userHeading, isNavigating, mapLoaded]);
 
   // Update shading without recreating layers
   const updateShading = useCallback((area: SkiAreaDetails, time: Date) => {
@@ -1359,10 +1671,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         return;
       }
       
-      // Check if we clicked on a run or lift - if not, close the detail panel
+      // Check if we clicked on a run or lift
       const features = map.current?.queryRenderedFeatures(e.point, { 
         layers: ['ski-runs-line', 'ski-lifts'] 
       });
+      
+      // If nav click mode or fake location drop mode is active and we didn't click a feature, handle background click
+      if ((!features || features.length === 0) && (navMapClickModeRef.current || isFakeLocationDropModeRef.current)) {
+        const handled = onMapBackgroundClickRef.current?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+        if (handled) return;
+      }
+      
+      // Otherwise, close detail panel if no features clicked
       if (!features || features.length === 0) {
         onMapClickRef.current?.();
       }
@@ -1396,26 +1716,33 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       
       const feature = e.features[0];
       const props = feature.properties;
+      const liftId = props.id;
       
       // Track lift click
       trackEvent('lift_selected', {
-        lift_id: props.id,
+        lift_id: liftId,
         lift_name: props.name || undefined,
         lift_type: props.liftType || undefined,
         ski_area_id: currentSkiAreaId.current || undefined,
       });
       
-      new maplibregl.Popup()
-        .setLngLat(e.lngLat)
-        .setHTML(`
-          <div style="padding: 6px;">
-            <strong>${props.name || 'Unnamed Lift'}</strong>
-            <br/>
-            <small>Type: ${props.liftType || 'Unknown'}</small>
-            ${props.status ? `<br/><small>Status: ${props.status}</small>` : ''}
-          </div>
-        `)
-        .addTo(map.current);
+      // Call the onLiftClick callback with map coordinates (for navigation)
+      onLiftClickRef.current?.(liftId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
+      
+      // Only show popup if not in navigation click mode
+      if (!navMapClickModeRef.current) {
+        new maplibregl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div style="padding: 6px;">
+              <strong>${props.name || 'Unnamed Lift'}</strong>
+              <br/>
+              <small>Type: ${props.liftType || 'Unknown'}</small>
+              ${props.status ? `<br/><small>Status: ${props.status}</small>` : ''}
+            </div>
+          `)
+          .addTo(map.current);
+      }
     });
 
     map.current.on('mouseenter', 'ski-runs-line', () => {
@@ -1425,7 +1752,28 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     map.current.on('mouseleave', 'ski-runs-line', () => {
       if (map.current) map.current.getCanvas().style.cursor = '';
     });
+    
+    // Also make lifts clickable
+    map.current.on('mouseenter', 'ski-lifts', () => {
+      if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+    });
+
+    map.current.on('mouseleave', 'ski-lifts', () => {
+      if (map.current) map.current.getCanvas().style.cursor = '';
+    });
   }, []);
+
+  // Update cursor when nav click mode is active
+  useEffect(() => {
+    if (!map.current) return;
+    
+    if (navMapClickMode || isFakeLocationDropMode) {
+      // Add crosshair cursor when clicking mode is active
+      map.current.getCanvas().style.cursor = 'crosshair';
+    } else {
+      map.current.getCanvas().style.cursor = '';
+    }
+  }, [navMapClickMode, isFakeLocationDropMode]);
 
   return (
     <div className="relative w-full h-full" style={{ minHeight: '400px' }}>
@@ -1436,6 +1784,32 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
              style={{ background: 'rgba(0,0,0,0.85)' }}>
           <LoadingSpinner size={16} />
           <span style={{ fontSize: 10, color: '#888' }}>Updating</span>
+        </div>
+      )}
+      
+      {/* Navigation map click mode indicator - positioned at top on all devices */}
+      {(navMapClickMode || isFakeLocationDropMode) && (
+        <div 
+          className="nav-click-mode-indicator"
+          style={{ 
+            position: 'absolute',
+            top: 60,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            padding: '8px 16px',
+            borderRadius: 20,
+            background: isFakeLocationDropMode ? 'rgba(34, 197, 94, 0.95)' : 'rgba(59, 130, 246, 0.95)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            pointerEvents: 'none',
+          }}
+        >
+          <span style={{ fontSize: 12, color: 'white', fontWeight: 500, whiteSpace: 'nowrap' }}>
+            {isFakeLocationDropMode 
+              ? '📍 Tap to set fake location' 
+              : `Tap anywhere to set ${navMapClickMode === 'origin' ? 'start point' : 'destination'}`
+            }
+          </span>
         </div>
       )}
     </div>

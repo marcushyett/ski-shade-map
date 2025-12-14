@@ -85,6 +85,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ...weatherData,
       cached: false,
+    }, {
+      headers: {
+        // Cache for 15 minutes in browser, 1 hour on CDN
+        'Cache-Control': 'public, max-age=900, s-maxage=3600, stale-while-revalidate=7200',
+      },
     });
   } catch (error) {
     console.error('Weather API error:', error);

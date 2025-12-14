@@ -86,7 +86,15 @@ export type AnalyticsEvent =
   
   // App lifecycle
   | 'app_loaded'
-  | 'pwa_installed';
+  | 'pwa_installed'
+  
+  // Navigation
+  | 'navigation_opened'
+  | 'navigation_closed'
+  | 'navigation_route_calculated'
+  | 'navigation_started'
+  | 'navigation_stopped'
+  | 'navigation_destination_from_click';
 
 export interface AnalyticsProperties {
   // Common properties

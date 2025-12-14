@@ -1025,3 +1025,824 @@ h5.ant-typography {
 .ant-picker-dropdown .ant-picker-content td {
   padding: 2px !important;
 }
+
+/* ============================================================================
+   Navigation Panel Styles
+   ============================================================================ */
+
+/* Navigation trigger button */
+.nav-trigger-btn {
+  width: 29px;
+  height: 29px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--background-secondary);
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.nav-trigger-btn:hover {
+  background: var(--background-tertiary);
+  color: var(--foreground);
+  border-color: var(--foreground-muted);
+}
+
+.nav-trigger-btn.has-route {
+  color: #3b82f6;
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Navigation panel */
+.nav-panel {
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: visible; /* Allow dropdown to overflow */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.nav-panel-collapsed {
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.nav-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--background-tertiary);
+}
+
+.nav-panel-title {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.nav-close-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius);
+  border: none;
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.nav-close-btn:hover {
+  background: var(--background-tertiary);
+  color: var(--foreground);
+}
+
+.nav-panel-content {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Navigation search inputs */
+.nav-search-container {
+  position: relative;
+}
+
+.nav-selected-point {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--background-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nav-selected-point:hover {
+  border-color: var(--foreground-muted);
+}
+
+.nav-selected-name {
+  flex: 1;
+  font-size: 11px;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.nav-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: -12px; /* Extend beyond container */
+  right: -12px;
+  width: calc(100% + 24px);
+  min-width: 280px;
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 1100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Map pick button */
+.nav-map-pick-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 9px;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.nav-map-pick-btn:hover {
+  background: var(--background-tertiary);
+  border-color: var(--foreground-muted);
+  color: var(--foreground);
+}
+
+.nav-map-pick-btn.active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.nav-search-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Position toggle for runs/lifts (top/bottom) */
+.nav-selected-point-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-position-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-position-btn {
+  flex: 1;
+  padding: 3px 8px;
+  font-size: 9px;
+  background: var(--background-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.nav-position-btn:hover {
+  background: var(--background-secondary);
+  border-color: var(--foreground-muted);
+  color: var(--foreground);
+}
+
+.nav-position-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+/* Navigation action buttons using location-btn base */
+.nav-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.nav-start-btn {
+  flex: 1;
+  min-width: 80px;
+  height: 32px !important;
+  padding: 0 16px !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  color: #22c55e !important;
+  border-color: #22c55e !important;
+  white-space: nowrap;
+}
+
+.nav-start-btn:hover {
+  background: rgba(34, 197, 94, 0.15) !important;
+}
+
+.nav-stop-btn {
+  min-width: 60px;
+  height: 32px !important;
+  padding: 0 12px !important;
+  font-size: 11px !important;
+  color: #ef4444 !important;
+  border-color: #ef4444 !important;
+  white-space: nowrap;
+}
+
+.nav-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+}
+
+.nav-map-pick-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+/* Mountain home quick-select button */
+.nav-home-btn {
+  border-color: #faad14 !important;
+}
+
+.nav-home-btn:hover {
+  background: rgba(250, 173, 20, 0.15) !important;
+}
+
+.nav-search-category {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-search-category:last-child {
+  border-bottom: none;
+}
+
+.nav-search-category-header {
+  padding: 4px 10px;
+  font-size: 9px;
+  color: var(--foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+}
+
+.nav-search-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  transition: background 0.1s;
+}
+
+.nav-search-item:hover,
+.nav-search-item.selected {
+  background: var(--background-tertiary);
+}
+
+.nav-search-item-name {
+  flex: 1;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-search-item-meta {
+  margin-left: 8px;
+  font-size: 9px;
+  color: var(--foreground-muted);
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.nav-no-results {
+  padding: 12px 10px;
+  font-size: 10px;
+  color: var(--foreground-muted);
+  text-align: center;
+}
+
+/* Swap button */
+.nav-swap-container {
+  display: flex;
+  justify-content: center;
+  margin: -4px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.nav-swap-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--background-secondary);
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.nav-swap-btn:hover {
+  background: var(--background-tertiary);
+  color: var(--foreground);
+  border-color: var(--foreground-muted);
+}
+
+/* Error message */
+.nav-error {
+  padding: 8px 10px;
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: var(--radius);
+  font-size: 10px;
+  color: #ef4444;
+}
+
+/* Loading state */
+.nav-loading {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--foreground-muted);
+}
+
+/* Route summary */
+.nav-route-summary {
+  background: var(--background-tertiary);
+  border-radius: var(--radius);
+  padding: 10px;
+  margin-top: 4px;
+}
+
+.nav-route-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.nav-route-stat {
+  text-align: center;
+}
+
+.nav-route-stat-value {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.nav-route-stat-label {
+  display: block;
+  font-size: 8px;
+  color: var(--foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+/* Route segments */
+.nav-route-segments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.nav-route-segment {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.nav-route-segment:last-child {
+  border-bottom: none;
+}
+
+.nav-segment-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.nav-segment-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-segment-name {
+  display: block;
+  font-size: 11px;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-segment-meta {
+  display: block;
+  font-size: 9px;
+  color: var(--foreground-muted);
+  margin-top: 2px;
+}
+
+/* Action buttons */
+.nav-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Navigation container on map */
+.nav-container {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: 320px;
+  max-width: calc(100vw - 20px);
+}
+
+/* Mobile navigation adjustments */
+@media (max-width: 767px) {
+  .nav-container {
+    top: auto;
+    bottom: 140px;
+    left: 10px;
+    right: 10px;
+    transform: none;
+    width: auto;
+  }
+  
+  .nav-route-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .nav-route-segments {
+    max-height: 100px;
+  }
+  
+  /* Make pick button more touch-friendly on mobile */
+  .nav-map-pick-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+    min-height: 32px;
+  }
+  
+  /* Position the search dropdown to not get cut off on mobile */
+  .nav-search-dropdown {
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 200px;
+  }
+}
+
+/* Navigation mode user marker with heading indicator */
+.user-location-marker.navigating .user-location-dot {
+  background: #22c55e;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.6);
+}
+
+.user-location-marker.navigating::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 10px solid #22c55e;
+}
+
+/* Navigation Instruction Bar */
+.nav-instruction-bar {
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-instruction-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.nav-instruction-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-tertiary);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.nav-instruction-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-instruction-action {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-instruction-detail {
+  display: block;
+  font-size: 10px;
+  color: var(--foreground-muted);
+  margin-top: 1px;
+}
+
+.nav-instruction-next {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--background-tertiary);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.nav-instruction-next-text {
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--foreground-muted);
+}
+
+.nav-instruction-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nav-instruction-time {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-time-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-time-label {
+  font-size: 8px;
+  color: var(--foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.nav-time-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.nav-time-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
+.nav-end-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid #ef4444;
+  border-radius: var(--radius);
+  color: #ef4444;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.nav-end-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.nav-instruction-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--border);
+}
+
+.nav-instruction-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #10b981);
+  transition: width 0.3s ease;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .nav-instruction-bar {
+    padding: 8px 10px;
+  }
+  
+  .nav-instruction-action {
+    font-size: 12px;
+  }
+  
+  .nav-time-value {
+    font-size: 11px;
+  }
+}
+
+/* Navigation instruction bar - mini/collapsed mode */
+.nav-instruction-bar-mini {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+}
+
+.nav-mini-content {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  cursor: pointer;
+  gap: 4px;
+}
+
+.nav-mini-instruction {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.nav-mini-eta {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--foreground-muted);
+  padding-right: 8px;
+}
+
+.nav-end-btn-mini {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #ef4444;
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.nav-end-btn-mini:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* Header with collapse button */
+.nav-instruction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.nav-collapse-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.nav-collapse-btn:hover {
+  background: var(--background-tertiary);
+  color: var(--foreground);
+}
+
+/* Off-route styles */
+.nav-instruction-bar.off-route {
+  border-color: #f59e0b;
+}
+
+.nav-off-route-warning {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: rgba(245, 158, 11, 0.15);
+  border-radius: 4px;
+  font-size: 11px;
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+/* Footer buttons */
+.nav-footer-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-toggle-weather-btn {
+  padding: 4px 8px;
+  font-size: 9px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.nav-toggle-weather-btn:hover {
+  background: var(--background-tertiary);
+  color: var(--foreground);
+}
+
+/* Return point marker pulse animation */
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 2px 10px rgba(245, 158, 11, 0.5);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.7);
+  }
+}

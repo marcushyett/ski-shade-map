@@ -131,6 +131,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Preconnect to external APIs for faster resource loading */}
+        <link rel="preconnect" href="https://api.maptiler.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://api.open-meteo.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://api.maptiler.com" />
+        <link rel="dns-prefetch" href="https://api.open-meteo.com" />
+        
         {/* JSON-LD Structured Data */}
         <script
           type="application/ld+json"
@@ -144,6 +150,7 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareAppJsonLd) }}
         />
+        
         {/* PWA and iOS specific meta tags */}
         <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
         <meta name="apple-mobile-web-app-capable" content="yes" />

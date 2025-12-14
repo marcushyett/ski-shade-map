@@ -30,6 +30,17 @@ import SearchBar from '@/components/SearchBar';
 import LocationControls from '@/components/LocationControls';
 import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { RunDetailOverlay } from '@/components/RunDetailPanel';
+import dynamic from 'next/dynamic';
+import { NavigationButton, type NavigationState, type SelectedPoint } from '@/components/NavigationPanel';
+import NavigationInstructionBar from '@/components/NavigationInstructionBar';
+
+// Lazy load NavigationPanel - only needed when user opens navigation
+const NavigationPanel = dynamic(() => import('@/components/NavigationPanel').then(mod => ({ default: mod.default })), {
+  ssr: false,
+  loading: () => <div style={{ padding: 20, textAlign: 'center', color: '#666' }}>Loading navigation...</div>,
+});
+import type { NavigationRoute } from '@/lib/navigation';
+import { formatDuration, formatDistance } from '@/lib/navigation';
 import { analyzeRuns, calculateRunStats } from '@/lib/sunny-time-calculator';
 import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
 import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
@@ -45,6 +56,16 @@ const { Text } = Typography;
 const STORAGE_KEY = 'ski-shade-map-state';
 const UNITS_STORAGE_KEY = 'ski-shade-units';
 const SHARED_LOCATIONS_STORAGE_KEY = 'ski-shade-shared-locations';
+const NAVIGATION_STORAGE_KEY = 'ski-shade-navigation';
+
+interface StoredNavigationState {
+  isNavigating: boolean;
+  route: NavigationRoute | null;
+  originName: string | null;
+  destinationName: string | null;
+  skiAreaId: string;
+  savedAt: number;
+}
 
 interface StoredState {
   areaId: string;
@@ -64,12 +85,16 @@ const ControlsContent = memo(function ControlsContent({
   favourites,
   snowSummary,
   snowQualityByRun,
+  fakeLocation,
+  isFakeLocationDropMode,
   onAreaSelect,
   onSelectRun,
   onSelectLift,
   onErrorClose,
   onWeatherLoad,
   onRemoveFavourite,
+  onFakeLocationChange,
+  onFakeLocationDropModeChange,
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
@@ -80,12 +105,16 @@ const ControlsContent = memo(function ControlsContent({
   favourites: { id: string; name: string | null; difficulty: string | null; skiAreaId: string; skiAreaName: string }[];
   snowSummary: ResortSnowSummary | null;
   snowQualityByRun: Record<string, SnowQualityAtPoint[]>;
+  fakeLocation: { lat: number; lng: number } | null;
+  isFakeLocationDropMode: boolean;
   onAreaSelect: (area: SkiAreaSummary) => void;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
   onErrorClose: () => void;
   onWeatherLoad: (weather: WeatherData) => void;
   onRemoveFavourite: (runId: string) => void;
+  onFakeLocationChange: (location: { lat: number; lng: number } | null) => void;
+  onFakeLocationDropModeChange: (enabled: boolean) => void;
 }) {
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
@@ -175,7 +204,41 @@ const ControlsContent = memo(function ControlsContent({
         </div>
         
         {advancedExpanded && (
-          <div className="ml-4 mt-1 flex flex-col gap-1">
+          <div className="ml-4 mt-1 flex flex-col gap-2">
+            {/* Fake location for debugging */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (fakeLocation) {
+                      // Clear fake location
+                      onFakeLocationChange(null);
+                      onFakeLocationDropModeChange(false);
+                    } else {
+                      // Enable drop mode
+                      onFakeLocationDropModeChange(true);
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 py-1 px-2 rounded transition-colors ${isFakeLocationDropMode ? 'fake-loc-btn-active' : ''}`}
+                  style={{ 
+                    fontSize: 10, 
+                    color: fakeLocation ? '#22c55e' : (isFakeLocationDropMode ? '#3b82f6' : '#888'),
+                    background: isFakeLocationDropMode ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                    border: '1px solid',
+                    borderColor: fakeLocation ? '#22c55e' : (isFakeLocationDropMode ? '#3b82f6' : 'var(--border)'),
+                    cursor: 'pointer',
+                  }}
+                >
+                  📍 {fakeLocation ? 'Clear fake location' : (isFakeLocationDropMode ? 'Click map to set...' : 'Drop pin for fake location')}
+                </button>
+              </div>
+              {fakeLocation && (
+                <span style={{ fontSize: 9, color: '#22c55e', paddingLeft: 4 }}>
+                  📍 Faking: {fakeLocation.lat.toFixed(4)}, {fakeLocation.lng.toFixed(4)}
+                </span>
+              )}
+            </div>
+            
             <button
               onClick={handleReset}
               className="flex items-center gap-1.5 py-1 px-2 rounded hover:bg-white/10 transition-colors text-left"
@@ -259,6 +322,33 @@ export default function Home() {
   const [isEditingHome, setIsEditingHome] = useState(false);
   const [pendingHomeLocation, setPendingHomeLocation] = useState<{ lat: number; lng: number } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+  
+  // Navigation state
+  const [isNavigationOpen, setIsNavigationOpen] = useState(false);
+  const [navigationRoute, setNavigationRoute] = useState<NavigationRoute | null>(null);
+  const [navigationState, setNavigationState] = useState<NavigationState | null>(null);
+  const [userHeading, setUserHeading] = useState<number | null>(null);
+  const [navMapClickMode, setNavMapClickMode] = useState<'origin' | 'destination' | null>(null);
+  const [externalNavOrigin, setExternalNavOrigin] = useState<SelectedPoint | null>(null);
+  const [externalNavDestination, setExternalNavDestination] = useState<SelectedPoint | null>(null);
+  const [currentNavSegment, setCurrentNavSegment] = useState(0);
+  const [fakeLocation, setFakeLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isFakeLocationDropMode, setIsFakeLocationDropMode] = useState(false);
+  const [navReturnPoint, setNavReturnPoint] = useState<{ lat: number; lng: number } | null>(null);
+  const [isNavWeatherCollapsed, setIsNavWeatherCollapsed] = useState(false);
+  
+  // Effective user location - uses fake location for debugging if set
+  const effectiveUserLocation = useMemo<UserLocation | null>(() => {
+    if (fakeLocation) {
+      return {
+        latitude: fakeLocation.lat,
+        longitude: fakeLocation.lng,
+        accuracy: 10, // High accuracy for fake location
+        timestamp: Date.now(),
+      };
+    }
+    return userLocation;
+  }, [fakeLocation, userLocation]);
   
   // Offline support
   const { isOffline, wasOffline, lastOnline, clearOfflineWarning } = useOffline();
@@ -409,6 +499,32 @@ export default function Home() {
       }
     }
     
+    // Load persisted navigation state
+    try {
+      const storedNav = localStorage.getItem(NAVIGATION_STORAGE_KEY);
+      if (storedNav) {
+        const navState: StoredNavigationState = JSON.parse(storedNav);
+        // Only restore if less than 4 hours old
+        const maxAge = 4 * 60 * 60 * 1000; // 4 hours
+        if (navState.isNavigating && navState.route && Date.now() - navState.savedAt < maxAge) {
+          setNavigationRoute(navState.route);
+          setNavigationState({
+            isActive: true,
+            origin: null,
+            destination: null,
+            route: navState.route,
+            isNavigating: true,
+            currentHeading: null,
+          });
+        } else {
+          // Clear expired navigation state
+          localStorage.removeItem(NAVIGATION_STORAGE_KEY);
+        }
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    
     setInitialLoadDone(true);
   }, []);
 
@@ -427,6 +543,30 @@ export default function Home() {
       // Ignore localStorage errors
     }
   }, [selectedArea, initialLoadDone]);
+
+  // Persist navigation state to localStorage
+  useEffect(() => {
+    if (!initialLoadDone) return;
+    
+    try {
+      if (navigationState?.isNavigating && navigationRoute && skiAreaDetails) {
+        const navState: StoredNavigationState = {
+          isNavigating: true,
+          route: navigationRoute,
+          originName: navigationState.origin?.name || null,
+          destinationName: navigationState.destination?.name || null,
+          skiAreaId: skiAreaDetails.id,
+          savedAt: Date.now(),
+        };
+        localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(navState));
+      } else {
+        // Clear navigation state when not navigating
+        localStorage.removeItem(NAVIGATION_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [navigationState?.isNavigating, navigationRoute, skiAreaDetails?.id, initialLoadDone]);
 
   useEffect(() => {
     if (!selectedArea) {
@@ -490,18 +630,84 @@ export default function Home() {
     }, 3000);
   }, [selectedArea]);
 
-  // Handle run click on map - show detail overlay
+  // Handle run click on map - show detail overlay or set navigation point
   const handleRunClick = useCallback((runId: string, lngLat: { lng: number; lat: number }) => {
+    // If navigation map click mode is active, set the point
+    if (navMapClickMode && isNavigationOpen && skiAreaDetails) {
+      const run = skiAreaDetails.runs.find(r => r.id === runId);
+      if (run) {
+        const point: SelectedPoint = {
+          type: 'run',
+          id: run.id,
+          name: run.name || 'Unnamed Run',
+          nodeId: `run-${run.id}-start`,
+          difficulty: run.difficulty,
+        };
+        
+        if (navMapClickMode === 'origin') {
+          setExternalNavOrigin(point);
+        } else {
+          setExternalNavDestination(point);
+        }
+        setNavMapClickMode(null);
+        
+        trackEvent('navigation_destination_from_click', {
+          type: 'run',
+          run_id: runId,
+          run_name: run.name || undefined,
+          field: navMapClickMode,
+        });
+        return;
+      }
+    }
+    
     trackEvent('run_detail_viewed', {
       run_id: runId,
       ski_area_id: selectedArea?.id,
     });
     setSelectedRunDetail({ runId, lngLat });
-  }, [selectedArea]);
+  }, [selectedArea, navMapClickMode, isNavigationOpen, skiAreaDetails]);
 
   const handleCloseRunDetail = useCallback(() => {
     setSelectedRunDetail(null);
   }, []);
+
+  // Handle arbitrary map click (background, not on a feature)
+  const handleMapBackgroundClick = useCallback((lngLat: { lng: number; lat: number }) => {
+    // If fake location drop mode is active, set fake location
+    if (isFakeLocationDropMode) {
+      setFakeLocation({ lat: lngLat.lat, lng: lngLat.lng });
+      setIsFakeLocationDropMode(false);
+      return true;
+    }
+    
+    // If navigation map click mode is active, set an arbitrary map point
+    if (navMapClickMode && isNavigationOpen) {
+      const point: SelectedPoint = {
+        type: 'mapPoint',
+        id: `map-${lngLat.lat.toFixed(5)}-${lngLat.lng.toFixed(5)}`,
+        name: `Map location`,
+        lat: lngLat.lat,
+        lng: lngLat.lng,
+      };
+      
+      if (navMapClickMode === 'origin') {
+        setExternalNavOrigin(point);
+      } else {
+        setExternalNavDestination(point);
+      }
+      setNavMapClickMode(null);
+      
+      trackEvent('navigation_destination_from_click', {
+        type: 'mapPoint',
+        latitude: lngLat.lat,
+        longitude: lngLat.lng,
+        field: navMapClickMode,
+      });
+      return true; // Indicate we handled the click
+    }
+    return false; // Did not handle, let default behavior happen
+  }, [navMapClickMode, isNavigationOpen, isFakeLocationDropMode]);
 
   const handleSelectLift = useCallback((lift: LiftData) => {
     setHighlightedFeatureId(lift.id);
@@ -582,10 +788,89 @@ export default function Home() {
     });
   }, []);
 
+  // Navigation handlers
+  const handleNavigationOpen = useCallback(() => {
+    setIsNavigationOpen(true);
+    trackEvent('navigation_opened');
+  }, []);
 
-  // Convert location types for map
-  const userLocationMarker: UserLocationMarker | null = userLocation
-    ? { latitude: userLocation.latitude, longitude: userLocation.longitude, accuracy: userLocation.accuracy }
+  const handleNavigationClose = useCallback(() => {
+    setIsNavigationOpen(false);
+    setNavigationRoute(null);
+    setNavigationState(null);
+    setNavMapClickMode(null);
+    setExternalNavOrigin(null);
+    setExternalNavDestination(null);
+    trackEvent('navigation_closed');
+  }, []);
+
+  const handleRouteChange = useCallback((route: NavigationRoute | null) => {
+    setNavigationRoute(route);
+  }, []);
+
+  const handleNavigationStateChange = useCallback((state: NavigationState) => {
+    setNavigationState(state);
+    // When navigation starts, close the nav panel and reset segment
+    if (state.isNavigating) {
+      setIsNavigationOpen(false);
+      setCurrentNavSegment(0);
+    }
+  }, []);
+  
+  const handleEndNavigation = useCallback(() => {
+    setNavigationState(null);
+    setNavigationRoute(null);
+    setCurrentNavSegment(0);
+  }, []);
+
+  const handleNavMapClickRequest = useCallback((field: 'origin' | 'destination') => {
+    // Toggle: if same field is already active, turn it off
+    setNavMapClickMode(prev => prev === field ? null : field);
+  }, []);
+
+  const handleClearExternalNavOrigin = useCallback(() => {
+    setExternalNavOrigin(null);
+  }, []);
+
+  const handleClearExternalNavDestination = useCallback(() => {
+    setExternalNavDestination(null);
+  }, []);
+
+  // Handle lift click for navigation destination
+  const handleLiftClick = useCallback((liftId: string, lngLat: { lng: number; lat: number }) => {
+    // If navigation map click mode is active, set the point
+    if (navMapClickMode && isNavigationOpen && skiAreaDetails) {
+      const lift = skiAreaDetails.lifts.find(l => l.id === liftId);
+      if (lift) {
+        const point: SelectedPoint = {
+          type: 'lift',
+          id: lift.id,
+          name: lift.name || 'Unnamed Lift',
+          nodeId: `lift-${lift.id}-start`,
+          liftType: lift.liftType,
+        };
+        
+        if (navMapClickMode === 'origin') {
+          setExternalNavOrigin(point);
+        } else {
+          setExternalNavDestination(point);
+        }
+        setNavMapClickMode(null);
+        
+        trackEvent('navigation_destination_from_click', {
+          type: 'lift',
+          lift_id: liftId,
+          lift_name: lift.name || undefined,
+          field: navMapClickMode,
+        });
+        return;
+      }
+    }
+  }, [navMapClickMode, isNavigationOpen, skiAreaDetails]);
+
+  // Convert location types for map - use effective location (which may be fake for debugging)
+  const userLocationMarker: UserLocationMarker | null = effectiveUserLocation
+    ? { latitude: effectiveUserLocation.latitude, longitude: effectiveUserLocation.longitude, accuracy: effectiveUserLocation.accuracy }
     : null;
 
   const mountainHomeMarker: MountainHomeMarker | null = mountainHome
@@ -827,12 +1112,16 @@ export default function Home() {
           favourites={favourites}
           snowSummary={snowQuality.summary}
           snowQualityByRun={snowQualityByRun}
+          fakeLocation={fakeLocation}
+          isFakeLocationDropMode={isFakeLocationDropMode}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
           onRemoveFavourite={removeFavourite}
+          onFakeLocationChange={setFakeLocation}
+          onFakeLocationDropModeChange={setIsFakeLocationDropMode}
         />
       </Drawer>
 
@@ -848,12 +1137,16 @@ export default function Home() {
           favourites={favourites}
           snowSummary={snowQuality.summary}
           snowQualityByRun={snowQualityByRun}
+          fakeLocation={fakeLocation}
+          isFakeLocationDropMode={isFakeLocationDropMode}
           onAreaSelect={handleAreaSelect}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
           onRemoveFavourite={removeFavourite}
+          onFakeLocationChange={setFakeLocation}
+          onFakeLocationDropModeChange={setIsFakeLocationDropMode}
         />
       </div>
 
@@ -884,10 +1177,24 @@ export default function Home() {
           favouriteIds={favouriteIds}
           onToggleFavourite={handleToggleFavourite}
           onRunClick={handleRunClick}
+          onLiftClick={handleLiftClick}
           onMapClick={handleCloseRunDetail}
+          onMapBackgroundClick={handleMapBackgroundClick}
           isEditingHome={isEditingHome}
           onSetHomeLocation={setPendingHomeLocation}
           snowAnalyses={snowAnalysesForMap}
+          navigationRoute={navigationRoute}
+          isNavigating={navigationState?.isNavigating ?? false}
+          userHeading={userHeading}
+          navMapClickMode={navMapClickMode}
+          isFakeLocationDropMode={isFakeLocationDropMode}
+          navigationOrigin={externalNavOrigin && externalNavOrigin.lat && externalNavOrigin.lng 
+            ? { lat: externalNavOrigin.lat, lng: externalNavOrigin.lng, name: externalNavOrigin.name || undefined } 
+            : null}
+          navigationDestination={externalNavDestination && externalNavDestination.lat && externalNavDestination.lng
+            ? { lat: externalNavDestination.lat, lng: externalNavDestination.lng, name: externalNavDestination.name || undefined }
+            : null}
+          navigationReturnPoint={navReturnPoint}
         />
 
         {/* Run detail overlay - shows when a run is clicked */}
@@ -923,6 +1230,27 @@ export default function Home() {
           </div>
         )}
 
+        {/* Navigation panel */}
+        {skiAreaDetails && isNavigationOpen && (
+          <div className="nav-container">
+            <NavigationPanel
+              skiArea={skiAreaDetails}
+              userLocation={effectiveUserLocation}
+              mountainHome={mountainHome}
+              onRouteChange={handleRouteChange}
+              onNavigationStateChange={handleNavigationStateChange}
+              onClose={handleNavigationClose}
+              isExpanded={true}
+              externalOrigin={externalNavOrigin}
+              externalDestination={externalNavDestination}
+              onClearExternalOrigin={handleClearExternalNavOrigin}
+              onClearExternalDestination={handleClearExternalNavDestination}
+              onRequestMapClick={handleNavMapClickRequest}
+              mapClickMode={navMapClickMode}
+            />
+          </div>
+        )}
+
         {/* Location controls */}
         <div className="location-controls-container">
           <LocationControls
@@ -939,6 +1267,20 @@ export default function Home() {
             onEditingHomeChange={setIsEditingHome}
             pendingHomeLocation={pendingHomeLocation}
           />
+          
+          {/* Navigation button */}
+          {skiAreaDetails && !isNavigationOpen && (
+            <div style={{ marginTop: 4, pointerEvents: 'auto' }}>
+              <NavigationButton
+                onClick={handleNavigationOpen}
+                hasRoute={navigationRoute !== null}
+                routeSummary={navigationRoute 
+                  ? `${formatDuration(navigationRoute.totalTime)} · ${formatDistance(navigationRoute.totalDistance)}`
+                  : undefined
+                }
+              />
+            </div>
+          )}
         </div>
 
         {/* Legend and action buttons */}
@@ -995,18 +1337,33 @@ export default function Home() {
           <ViewToggle is3D={is3D} onChange={setIs3D} />
         </div>
 
-        {/* Time slider */}
+        {/* Time slider with optional navigation instruction bar above it */}
         <div className="time-slider-container">
-          <TimeSlider 
-            latitude={mapCenter.lat}
-            longitude={mapCenter.lng}
-            selectedTime={selectedTime}
-            onTimeChange={setSelectedTime}
-            hourlyWeather={hourlyWeather}
-            dailyWeather={weather?.daily}
-            units={units}
-            isLoadingWeather={weatherLoading}
-          />
+          {/* Navigation instruction bar - shown when actively navigating */}
+          {navigationState?.isNavigating && navigationRoute && (
+            <NavigationInstructionBar
+              route={navigationRoute}
+              currentSegmentIndex={currentNavSegment}
+              onEndNavigation={handleEndNavigation}
+              userLocation={effectiveUserLocation ? { lat: effectiveUserLocation.latitude, lng: effectiveUserLocation.longitude } : null}
+              onReturnPointChange={setNavReturnPoint}
+              isWeatherCollapsed={isNavWeatherCollapsed}
+              onToggleWeather={() => setIsNavWeatherCollapsed(!isNavWeatherCollapsed)}
+            />
+          )}
+          {/* Time slider - collapsed when navigating with weather hidden */}
+          {(!navigationState?.isNavigating || !isNavWeatherCollapsed) && (
+            <TimeSlider 
+              latitude={mapCenter.lat}
+              longitude={mapCenter.lng}
+              selectedTime={selectedTime}
+              onTimeChange={setSelectedTime}
+              hourlyWeather={hourlyWeather}
+              dailyWeather={weather?.daily}
+              units={units}
+              isLoadingWeather={weatherLoading}
+            />
+          )}
         </div>
       </div>
     </div>
