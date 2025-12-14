@@ -2,6 +2,7 @@
 
 import { Segmented } from 'antd';
 import { EnvironmentOutlined, BoxPlotOutlined } from '@ant-design/icons';
+import { trackEvent } from '@/lib/posthog';
 
 interface ViewToggleProps {
   is3D: boolean;
@@ -9,6 +10,12 @@ interface ViewToggleProps {
 }
 
 export default function ViewToggle({ is3D, onChange }: ViewToggleProps) {
+  const handleChange = (value: string) => {
+    const new3DState = value === '3d';
+    trackEvent('map_3d_toggle', { is_3d: new3DState });
+    onChange(new3DState);
+  };
+
   return (
     <Segmented
       options={[
@@ -32,7 +39,7 @@ export default function ViewToggle({ is3D, onChange }: ViewToggleProps) {
         },
       ]}
       value={is3D ? '3d' : '2d'}
-      onChange={(value) => onChange(value === '3d')}
+      onChange={handleChange}
     />
   );
 }

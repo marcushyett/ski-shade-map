@@ -3,6 +3,7 @@
 import { memo, useCallback } from 'react';
 import { Tooltip, message } from 'antd';
 import { ShareAltOutlined } from '@ant-design/icons';
+import { trackEvent } from '@/lib/posthog';
 import { dateToYYYYMMDD } from '@/hooks/useUrlState';
 import { format, isSameDay } from 'date-fns';
 
@@ -68,10 +69,23 @@ function ShareButtonInner({
       url: shareUrl,
     };
 
+    // Track share initiated
+    trackEvent('share_initiated', {
+      ski_area_id: skiAreaId,
+      ski_area_name: skiAreaName || undefined,
+      has_highlight: !!highlightedFeatureId,
+      highlight_type: highlightedFeatureType || undefined,
+    });
+
     // Try native share first (iOS, Android, etc.)
     if (navigator.share && navigator.canShare?.(shareData)) {
       try {
         await navigator.share(shareData);
+        trackEvent('share_completed', {
+          share_method: 'native',
+          ski_area_id: skiAreaId,
+          ski_area_name: skiAreaName || undefined,
+        });
         return;
       } catch (error) {
         // User cancelled or share failed, fall through to clipboard
@@ -84,6 +98,10 @@ function ShareButtonInner({
     // Fallback to clipboard
     try {
       await navigator.clipboard.writeText(shareUrl);
+      trackEvent('share_link_copied', {
+        ski_area_id: skiAreaId,
+        ski_area_name: skiAreaName || undefined,
+      });
       message.success('Link copied to clipboard!');
     } catch (error) {
       // Final fallback - show URL in prompt

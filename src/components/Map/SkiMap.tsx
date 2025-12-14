@@ -6,6 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
 import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded } from '@/lib/shade-calculator';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import { trackEvent } from '@/lib/posthog';
 import type { SkiAreaDetails, RunData } from '@/lib/types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 
@@ -203,6 +204,32 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         const zoom = map.current.getZoom();
         onViewChange({ lat: center.lat, lng: center.lng, zoom });
       }
+    });
+
+    // Track zoom changes
+    let lastZoom = map.current.getZoom();
+    map.current.on('zoomend', () => {
+      if (!map.current) return;
+      const newZoom = map.current.getZoom();
+      if (Math.abs(newZoom - lastZoom) > 0.5) {
+        trackEvent('map_zoom', {
+          zoom_level: Math.round(newZoom * 10) / 10,
+          ski_area_id: currentSkiAreaId.current || undefined,
+        });
+        lastZoom = newZoom;
+      }
+    });
+
+    // Track map pans (debounced by moveend)
+    map.current.on('dragend', () => {
+      if (!map.current) return;
+      const center = map.current.getCenter();
+      trackEvent('map_pan', {
+        latitude: Math.round(center.lat * 10000) / 10000,
+        longitude: Math.round(center.lng * 10000) / 10000,
+        zoom_level: Math.round(map.current.getZoom() * 10) / 10,
+        ski_area_id: currentSkiAreaId.current || undefined,
+      });
     });
 
     return () => {
@@ -1349,6 +1376,16 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const props = feature.properties;
       const runId = props.id;
       
+      // Track run click
+      trackEvent('run_clicked', {
+        run_id: runId,
+        run_name: props.name || undefined,
+        run_difficulty: props.difficulty || undefined,
+        ski_area_id: currentSkiAreaId.current || undefined,
+        latitude: e.lngLat.lat,
+        longitude: e.lngLat.lng,
+      });
+      
       // Call the onRunClick callback with map coordinates
       onRunClickRef.current?.(runId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
     });
@@ -1359,6 +1396,14 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       
       const feature = e.features[0];
       const props = feature.properties;
+      
+      // Track lift click
+      trackEvent('lift_selected', {
+        lift_id: props.id,
+        lift_name: props.name || undefined,
+        lift_type: props.liftType || undefined,
+        ski_area_id: currentSkiAreaId.current || undefined,
+      });
       
       new maplibregl.Popup()
         .setLngLat(e.lngLat)
