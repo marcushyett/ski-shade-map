@@ -467,6 +467,10 @@ async function main() {
     },
   });
 
+  // Recalculate bounds from runs and lifts (ski areas often only have Point geometry)
+  console.log('\n📐 Recalculating ski area bounds from runs and lifts...');
+  await recalculateBoundsFromRunsLifts();
+
   // Get final counts
   const [skiAreaCount, runCount, liftCount] = await Promise.all([
     prisma.skiArea.count(),
@@ -478,6 +482,78 @@ async function main() {
   console.log(`   📊 Database totals: ${skiAreaCount} ski areas, ${runCount} runs, ${liftCount} lifts`);
   
   await prisma.$disconnect();
+}
+
+// Recalculate ski area bounds from their runs and lifts
+async function recalculateBoundsFromRunsLifts() {
+  const skiAreas = await prisma.skiArea.findMany({
+    select: { id: true, name: true, bounds: true },
+  });
+
+  let updated = 0;
+  for (const skiArea of skiAreas) {
+    // Get all runs and lifts for this ski area
+    const [runs, lifts] = await Promise.all([
+      prisma.run.findMany({
+        where: { skiAreaId: skiArea.id },
+        select: { geometry: true },
+      }),
+      prisma.lift.findMany({
+        where: { skiAreaId: skiArea.id },
+        select: { geometry: true },
+      }),
+    ]);
+
+    // Calculate bounds from all geometries
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLng = Infinity, maxLng = -Infinity;
+
+    const processGeometry = (geometry: any) => {
+      if (!geometry) return;
+      
+      let coords: number[][] = [];
+      if (geometry.type === 'Point') {
+        coords = [geometry.coordinates];
+      } else if (geometry.type === 'LineString') {
+        coords = geometry.coordinates || [];
+      } else if (geometry.type === 'Polygon') {
+        coords = (geometry.coordinates || []).flat();
+      }
+
+      for (const coord of coords) {
+        if (coord && coord.length >= 2) {
+          const [lng, lat] = coord;
+          minLat = Math.min(minLat, lat);
+          maxLat = Math.max(maxLat, lat);
+          minLng = Math.min(minLng, lng);
+          maxLng = Math.max(maxLng, lng);
+        }
+      }
+    };
+
+    runs.forEach(r => processGeometry(r.geometry));
+    lifts.forEach(l => processGeometry(l.geometry));
+
+    // Only update if we found valid bounds
+    if (minLat !== Infinity && maxLat !== -Infinity) {
+      const newBounds = { minLat, maxLat, minLng, maxLng };
+      
+      // Check if bounds actually changed (more than just a point)
+      const oldBounds = skiArea.bounds as any;
+      const isJustPoint = oldBounds && oldBounds.minLat === oldBounds.maxLat;
+      const hasRealBounds = maxLat - minLat > 0.001 || maxLng - minLng > 0.001;
+      
+      if (isJustPoint || hasRealBounds) {
+        await prisma.skiArea.update({
+          where: { id: skiArea.id },
+          data: { bounds: newBounds },
+        });
+        updated++;
+      }
+    }
+  }
+
+  console.log(`   Updated bounds for ${updated} ski areas`);
 }
 
 main().catch(async (e) => {
