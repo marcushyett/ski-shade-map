@@ -140,17 +140,38 @@ export function RunStatsDisplay({ stats }: { stats: RunStats }) {
   );
 }
 
+// Temperature calculation using standard atmospheric lapse rate
+// Standard lapse rate: 6.5°C per 1000m (0.0065°C per meter)
+const LAPSE_RATE = 6.5; // °C per 1000m
+
+function calculateTemperatureAtAltitude(
+  baseTemp: number,
+  baseAltitude: number,
+  targetAltitude: number
+): number {
+  const altitudeDiff = targetAltitude - baseAltitude;
+  return baseTemp - (altitudeDiff / 1000) * LAPSE_RATE;
+}
+
+// Temperature data for elevation profile
+export interface TemperatureData {
+  temperature: number; // Temperature at the weather station
+  stationAltitude: number; // Altitude of the weather station
+}
+
 // Elevation profile chart - exported for reuse
 export function ElevationProfileChart({ 
   profile, 
   maxSlope, 
   avgSlope, 
-  snowQuality 
+  snowQuality,
+  temperatureData,
 }: { 
   profile: { distance: number; elevation: number }[];
   maxSlope: number;
   avgSlope: number;
   snowQuality?: SnowQualityPoint[];
+  temperatureData?: TemperatureData;
 }) {
   if (profile.length < 2) return null;
   
@@ -192,11 +213,30 @@ export function ElevationProfileChart({
   // Format distance for axis labels
   const formatDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
   
+  // Calculate temperatures at top, middle, and bottom of the run
+  const temperatures = temperatureData ? {
+    top: calculateTemperatureAtAltitude(
+      temperatureData.temperature,
+      temperatureData.stationAltitude,
+      maxElev
+    ),
+    middle: calculateTemperatureAtAltitude(
+      temperatureData.temperature,
+      temperatureData.stationAltitude,
+      (maxElev + minElev) / 2
+    ),
+    bottom: calculateTemperatureAtAltitude(
+      temperatureData.temperature,
+      temperatureData.stationAltitude,
+      minElev
+    ),
+  } : null;
+  
   return (
     <div style={{ padding: '4px 0' }}>
       {/* Chart with HTML labels */}
       <div style={{ display: 'flex', gap: 4 }}>
-        {/* Y-axis labels (HTML, not stretched) */}
+        {/* Y-axis labels - Elevation (left side) */}
         <div style={{ 
           display: 'flex', 
           flexDirection: 'column', 
@@ -288,13 +328,35 @@ export function ElevationProfileChart({
             <span>{formatDist(maxDist)}</span>
           </div>
         </div>
+        
+        {/* Y-axis labels - Temperature (right side) */}
+        {temperatures && (
+          <Tooltip title="Estimated temperature based on altitude (using standard atmospheric lapse rate: -6.5°C per 1000m)">
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              justifyContent: 'space-between', 
+              fontSize: 9, 
+              color: '#4fc3f7',
+              textAlign: 'left',
+              paddingTop: 2,
+              paddingBottom: 2,
+              minWidth: 32,
+              cursor: 'help',
+            }}>
+              <span>{Math.round(temperatures.top)}°C</span>
+              <span style={{ color: '#81d4fa' }}>{Math.round(temperatures.middle)}°C</span>
+              <span>{Math.round(temperatures.bottom)}°C</span>
+            </div>
+          </Tooltip>
+        )}
       </div>
       
       {/* Slope info */}
       <div className="flex justify-between items-center" style={{ fontSize: 9, color: '#666', marginTop: 6 }}>
         <Tooltip title="Average and maximum slope steepness (gradient)">
           <span style={{ cursor: 'help' }}>
-            ⛷️ Gradient: avg <span style={{ color: '#aaa' }}>{Math.round(avgSlope)}°</span> · max <span style={{ color: '#f97316', fontWeight: 600 }}>{Math.round(maxSlope)}°</span>
+            Gradient: avg <span style={{ color: '#aaa' }}>{Math.round(avgSlope)}°</span> · max <span style={{ color: '#f97316', fontWeight: 600 }}>{Math.round(maxSlope)}°</span>
           </span>
         </Tooltip>
         <span style={{ color: '#555' }}>
@@ -385,6 +447,7 @@ export interface RunDetailPanelProps {
   analysis?: RunSunAnalysis;
   stats: RunStats | null;
   snowQuality?: SnowQualityPoint[];
+  temperatureData?: TemperatureData;
   isFavourite: boolean;
   onClose: () => void;
   onToggleFavourite: () => void;
@@ -398,6 +461,7 @@ export const RunDetailPanel = memo(function RunDetailPanel({
   analysis,
   stats,
   snowQuality,
+  temperatureData,
   isFavourite,
   onClose,
   onToggleFavourite,
@@ -509,12 +573,13 @@ export const RunDetailPanel = memo(function RunDetailPanel({
       {/* Elevation profile with snow quality */}
       {stats?.hasElevation && stats.elevationProfile.length > 1 && (
         <div className="mb-3">
-          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Elevation & snow quality</div>
+          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Elevation & snow quality{temperatureData ? ' & temperature' : ''}</div>
           <ElevationProfileChart 
             profile={stats.elevationProfile} 
             maxSlope={stats.maxSlope}
             avgSlope={stats.avgSlope}
             snowQuality={snowQuality}
+            temperatureData={temperatureData}
           />
         </div>
       )}
