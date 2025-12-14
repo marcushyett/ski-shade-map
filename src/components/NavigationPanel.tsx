@@ -120,6 +120,8 @@ interface NavigationPanelProps {
   onClearExternalDestination?: () => void;
   // Callback to request map click mode
   onRequestMapClick?: (field: 'origin' | 'destination') => void;
+  // Callback to cancel map click mode
+  onCancelMapClick?: () => void;
   mapClickMode?: 'origin' | 'destination' | null;
 }
 
@@ -140,6 +142,7 @@ interface PointSearchInputProps {
   autoFocus?: boolean;
   label: string;
   onRequestMapClick?: () => void;
+  onCancelMapClick?: () => void;
   isMapClickActive?: boolean;
 }
 
@@ -156,6 +159,7 @@ function PointSearchInput({
   autoFocus = false,
   label,
   onRequestMapClick,
+  onCancelMapClick,
   isMapClickActive = false,
 }: PointSearchInputProps) {
   const [searchText, setSearchText] = useState('');
@@ -237,7 +241,9 @@ function PointSearchInput({
     setSearchText('');
     setIsFocused(false);
     setSelectedIndex(-1);
-  }, [onChange]);
+    // Cancel map click mode when user selects a point
+    onCancelMapClick?.();
+  }, [onChange, onCancelMapClick]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -275,18 +281,42 @@ function PointSearchInput({
           {label}
         </label>
         <div className="flex items-center gap-1">
+          {/* Current Location quick-select button */}
+          {showCurrentLocation && userLocation && isUserLocationValid && (
+            <Tooltip title="Use current location" placement="top">
+              <button 
+                className="location-btn nav-location-btn"
+                onClick={() => {
+                  onChange({
+                    type: 'location',
+                    id: 'current-location',
+                    name: 'My Current Location',
+                    lat: userLocation.latitude,
+                    lng: userLocation.longitude,
+                  });
+                  onCancelMapClick?.();
+                }}
+                style={{ width: 22, height: 22 }}
+              >
+                <AimOutlined style={{ fontSize: 11, color: '#3b82f6' }} />
+              </button>
+            </Tooltip>
+          )}
           {/* Mountain Home quick-select button */}
           {mountainHome && (
             <Tooltip title={`Go to ${mountainHome.name}`} placement="top">
               <button 
                 className="location-btn nav-home-btn"
-                onClick={() => onChange({
-                  type: 'home',
-                  id: 'mountain-home',
-                  name: mountainHome.name,
-                  lat: mountainHome.latitude,
-                  lng: mountainHome.longitude,
-                })}
+                onClick={() => {
+                  onChange({
+                    type: 'home',
+                    id: 'mountain-home',
+                    name: mountainHome.name,
+                    lat: mountainHome.latitude,
+                    lng: mountainHome.longitude,
+                  });
+                  onCancelMapClick?.();
+                }}
                 style={{ width: 22, height: 22 }}
               >
                 <HomeOutlined style={{ fontSize: 11, color: '#faad14' }} />
@@ -658,6 +688,7 @@ function NavigationPanelInner({
   onClearExternalOrigin,
   onClearExternalDestination,
   onRequestMapClick,
+  onCancelMapClick,
   mapClickMode,
 }: NavigationPanelProps) {
   const [origin, setOrigin] = useState<SelectedPoint | null>(null);
@@ -943,6 +974,7 @@ function NavigationPanelInner({
           mountainHome={mountainHome}
           autoFocus={!origin}
           onRequestMapClick={() => onRequestMapClick?.('origin')}
+          onCancelMapClick={onCancelMapClick}
           isMapClickActive={mapClickMode === 'origin'}
         />
 
@@ -964,7 +996,11 @@ function NavigationPanelInner({
           skiArea={skiArea}
           graph={graph}
           mountainHome={mountainHome}
+          showCurrentLocation={true}
+          userLocation={userLocation}
+          isUserLocationValid={isUserLocationValid}
           onRequestMapClick={() => onRequestMapClick?.('destination')}
+          onCancelMapClick={onCancelMapClick}
           isMapClickActive={mapClickMode === 'destination'}
         />
 

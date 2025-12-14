@@ -1441,6 +1441,7 @@ export default function Home() {
                 onClearExternalOrigin={handleClearExternalNavOrigin}
                 onClearExternalDestination={handleClearExternalNavDestination}
                 onRequestMapClick={handleNavMapClickRequest}
+                onCancelMapClick={() => setNavMapClickMode(null)}
                 mapClickMode={navMapClickMode}
               />
             </div>
