@@ -87,6 +87,9 @@ export type AnalyticsEvent =
   // App lifecycle
   | 'app_loaded'
   | 'pwa_installed'
+  | 'app_update_available'
+  | 'app_update_applied'
+  | 'app_update_dismissed'
   
   // Navigation
   | 'navigation_opened'

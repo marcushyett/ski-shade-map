@@ -24,6 +24,7 @@ import WeatherPanel from '@/components/Controls/WeatherPanel';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import { useFavourites } from '@/hooks/useFavourites';
 import OfflineBanner from '@/components/OfflineBanner';
+import UpdateBanner from '@/components/UpdateBanner';
 import CacheButton from '@/components/CacheButton';
 import ShareButton from '@/components/ShareButton';
 import SearchBar from '@/components/SearchBar';
@@ -42,7 +43,7 @@ const NavigationPanel = dynamic(() => import('@/components/NavigationPanel').the
 import type { NavigationRoute } from '@/lib/navigation';
 import { formatDuration, formatDistance } from '@/lib/navigation';
 import { analyzeRuns, calculateRunStats } from '@/lib/sunny-time-calculator';
-import { useOffline, registerServiceWorker } from '@/hooks/useOffline';
+import { useOffline, useAppUpdate, registerServiceWorker } from '@/hooks/useOffline';
 import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
@@ -352,6 +353,9 @@ export default function Home() {
   
   // Offline support
   const { isOffline, wasOffline, lastOnline, clearOfflineWarning } = useOffline();
+  
+  // App update detection
+  const { updateAvailable, applyUpdate, dismissUpdate } = useAppUpdate();
 
   // Favourites support
   const { 
@@ -1137,13 +1141,23 @@ export default function Home() {
 
   return (
     <div className="app-container">
+      {/* Update available banner */}
+      {updateAvailable && (
+        <UpdateBanner 
+          onUpdate={applyUpdate}
+          onDismiss={dismissUpdate}
+        />
+      )}
+      
       {/* Offline banner */}
-      <OfflineBanner 
-        isOffline={isOffline}
-        wasOffline={wasOffline}
-        lastOnline={lastOnline}
-        onDismiss={clearOfflineWarning}
-      />
+      {!updateAvailable && (
+        <OfflineBanner 
+          isOffline={isOffline}
+          wasOffline={wasOffline}
+          lastOnline={lastOnline}
+          onDismiss={clearOfflineWarning}
+        />
+      )}
       
       {/* Mobile header */}
       <div className="md:hidden controls-panel" style={{ marginTop: (isOffline || wasOffline) ? 44 : 0 }}>

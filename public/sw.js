@@ -1,8 +1,10 @@
 // Service Worker for SKISHADE offline support
-const CACHE_NAME = 'skishade-v1';
-const STATIC_CACHE = 'skishade-static-v1';
-const DATA_CACHE = 'skishade-data-v1';
-const MAP_TILE_CACHE = 'skishade-tiles-v1';
+// Increment this version when you want to trigger an update
+const SW_VERSION = '1.0.1';
+const CACHE_NAME = `skishade-v${SW_VERSION}`;
+const STATIC_CACHE = `skishade-static-v${SW_VERSION}`;
+const DATA_CACHE = 'skishade-data-v1'; // Data cache version is separate - we want to preserve it
+const MAP_TILE_CACHE = 'skishade-tiles-v1'; // Tile cache version is separate - we want to preserve it
 
 // Static assets to cache immediately
 const STATIC_ASSETS = [
@@ -12,22 +14,39 @@ const STATIC_ASSETS = [
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
+  console.log(`[SW] Installing version ${SW_VERSION}`);
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
     })
   );
-  self.skipWaiting();
+  // Don't skipWaiting automatically - let the app control when to update
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches (but preserve data and tile caches)
 self.addEventListener('activate', (event) => {
+  console.log(`[SW] Activating version ${SW_VERSION}`);
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name.startsWith('skishade-') && name !== STATIC_CACHE && name !== DATA_CACHE && name !== MAP_TILE_CACHE)
-          .map((name) => caches.delete(name))
+          .filter((name) => {
+            // Only delete old static caches, preserve data and tile caches
+            if (name === DATA_CACHE || name === MAP_TILE_CACHE) {
+              return false; // Keep these
+            }
+            if (name.startsWith('skishade-static-') && name !== STATIC_CACHE) {
+              return true; // Delete old static caches
+            }
+            if (name.startsWith('skishade-v') && name !== CACHE_NAME) {
+              return true; // Delete old main caches
+            }
+            return false;
+          })
+          .map((name) => {
+            console.log(`[SW] Deleting old cache: ${name}`);
+            return caches.delete(name);
+          })
       );
     })
   );
@@ -109,7 +128,34 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle static assets - cache first, then network
+  // Handle static assets - network first for HTML to get updates, cache for others
+  const isNavigationRequest = event.request.mode === 'navigate';
+  const isHTMLRequest = event.request.headers.get('accept')?.includes('text/html');
+  
+  if (isNavigationRequest || isHTMLRequest) {
+    // For navigation/HTML requests, try network first to get latest version
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const responseToCache = response.clone();
+            caches.open(STATIC_CACHE).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return response;
+        })
+        .catch(() => {
+          // Offline, use cache
+          return caches.match(event.request).then((cachedResponse) => {
+            return cachedResponse || caches.match('/');
+          });
+        })
+    );
+    return;
+  }
+
+  // For other static assets - cache first
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -132,6 +178,15 @@ self.addEventListener('fetch', (event) => {
 
 // Listen for messages from the main thread
 self.addEventListener('message', (event) => {
+  if (event.data.type === 'SKIP_WAITING') {
+    console.log(`[SW] Received SKIP_WAITING, activating new version`);
+    self.skipWaiting();
+  }
+  
+  if (event.data.type === 'GET_VERSION') {
+    event.ports[0].postMessage({ version: SW_VERSION });
+  }
+  
   if (event.data.type === 'CLEAR_CACHE') {
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -139,5 +194,15 @@ self.addEventListener('message', (event) => {
       );
     });
   }
+  
+  if (event.data.type === 'CLEAR_STATIC_CACHE') {
+    // Only clear static cache, preserve data and tiles
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => name.startsWith('skishade-static-') || name.startsWith('skishade-v'))
+          .map((name) => caches.delete(name))
+      );
+    });
+  }
 });
-
