@@ -29,6 +29,7 @@ interface SearchResult {
   liftType?: string | null;
   coordinates?: [number, number];
   placeType?: PlaceType;
+  subRegionName?: string | null;
 }
 
 interface SearchBarProps {
@@ -197,6 +198,7 @@ function SearchBarInner({
         id: run.id,
         name: run.name || 'Unnamed Run',
         difficulty: run.difficulty,
+        subRegionName: run.subRegionName,
       });
     });
     
@@ -362,13 +364,18 @@ function SearchBarInner({
                   <div
                     key={run.id}
                     className={`search-item ${isSelected ? 'selected' : ''}`}
-                    onClick={() => handleSelect({ type: 'run', id: run.id, name: run.name || '', difficulty: run.difficulty })}
+                    onClick={() => handleSelect({ type: 'run', id: run.id, name: run.name || '', difficulty: run.difficulty, subRegionName: run.subRegionName })}
                   >
                     <span
                       className="search-item-dot"
                       style={{ backgroundColor: getDifficultyColor(run.difficulty) }}
                     />
                     <span className="search-item-name">{run.name || 'Unnamed'}</span>
+                    {run.subRegionName && (
+                      <span className="search-item-subregion">
+                        {run.subRegionName}
+                      </span>
+                    )}
                     {run.difficulty && (
                       <span className="search-item-meta" style={{ color: getDifficultyColor(run.difficulty) }}>
                         {run.difficulty}

@@ -23,12 +23,49 @@ model SkiArea {
   properties  Json?    // Additional OSM properties
   runs        Run[]
   lifts       Lift[]
+  subRegions  SubRegion[]
+  // Connected ski areas (for loading adjacent areas together)
+  connectedTo   SkiAreaConnection[] @relation("SkiAreaFrom")
+  connectedFrom SkiAreaConnection[] @relation("SkiAreaTo")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([country])
   @@index([name])
   @@index([latitude, longitude])
+}
+
+// Sub-regions within a ski area (e.g., Méribel within Les Trois Vallées)
+model SubRegion {
+  id          String   @id @default(cuid())
+  osmId       String?  @unique
+  name        String
+  geometry    Json?    // GeoJSON polygon boundary
+  bounds      Json?    // {minLat, maxLat, minLng, maxLng}
+  centroid    Json?    // {lat, lng} center point
+  skiAreaId   String
+  skiArea     SkiArea  @relation(fields: [skiAreaId], references: [id], onDelete: Cascade)
+  runs        Run[]
+  lifts       Lift[]   @relation("LiftSubRegion")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([skiAreaId])
+  @@index([name])
+}
+
+// Connections between ski areas (for loading adjacent areas together)
+model SkiAreaConnection {
+  id          String   @id @default(cuid())
+  fromAreaId  String
+  toAreaId    String
+  fromArea    SkiArea  @relation("SkiAreaFrom", fields: [fromAreaId], references: [id], onDelete: Cascade)
+  toArea      SkiArea  @relation("SkiAreaTo", fields: [toAreaId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([fromAreaId, toAreaId])
+  @@index([fromAreaId])
+  @@index([toAreaId])
 }
 
 model Run {
@@ -41,10 +78,13 @@ model Run {
   properties  Json?
   skiAreaId   String
   skiArea     SkiArea  @relation(fields: [skiAreaId], references: [id], onDelete: Cascade)
+  subRegionId String?
+  subRegion   SubRegion? @relation(fields: [subRegionId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([skiAreaId])
+  @@index([subRegionId])
   @@index([difficulty])
 }
 
@@ -59,15 +99,18 @@ model Lift {
   properties  Json?
   skiAreaId   String
   skiArea     SkiArea  @relation(fields: [skiAreaId], references: [id], onDelete: Cascade)
+  subRegionId String?
+  subRegion   SubRegion? @relation("LiftSubRegion", fields: [subRegionId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([skiAreaId])
+  @@index([subRegionId])
 }
 
 model DataSync {
   id          String   @id @default(cuid())
-  dataType    String   // ski_areas, runs, lifts
+  dataType    String   // ski_areas, runs, lifts, sub_regions
   lastSync    DateTime
   recordCount Int
   status      String   // success, failed, in_progress

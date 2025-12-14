@@ -9,12 +9,21 @@ export interface SkiAreaSummary {
   longitude: number;
 }
 
+export interface SubRegionData {
+  id: string;
+  name: string;
+  bounds: BoundingBox | null;
+  centroid: { lat: number; lng: number } | null;
+}
+
 export interface SkiAreaDetails extends SkiAreaSummary {
   bounds: BoundingBox | null;
   geometry: Geometry | null;
   properties: Record<string, unknown> | null;
   runs: RunData[];
   lifts: LiftData[];
+  subRegions: SubRegionData[];
+  connectedAreas?: SkiAreaSummary[];
 }
 
 export interface RunData {
@@ -24,6 +33,8 @@ export interface RunData {
   status: OperationStatus | null;
   geometry: LineString | Polygon;
   properties: Record<string, unknown> | null;
+  subRegionId: string | null;
+  subRegionName?: string | null;
 }
 
 export interface LiftData {

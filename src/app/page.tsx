@@ -167,6 +167,7 @@ const ControlsContent = memo(function ControlsContent({
             <TrailsLiftsList 
               runs={skiAreaDetails.runs}
               lifts={skiAreaDetails.lifts}
+              subRegions={skiAreaDetails.subRegions}
               onSelectRun={onSelectRun}
               onSelectLift={onSelectLift}
             />
@@ -589,7 +590,7 @@ export default function Home() {
       setError(null);
       
       try {
-        const res = await fetch(`/api/ski-areas/${selectedArea.id}`);
+        const res = await fetch(`/api/ski-areas/${selectedArea.id}?includeConnected=true`);
         if (!res.ok) throw new Error('Failed to load ski area details');
         
         const data = await res.json();

@@ -512,8 +512,21 @@ export const RunDetailPanel = memo(function RunDetailPanel({
             <div style={{ fontSize: 14, color: '#fff', fontWeight: 600, lineHeight: 1.2 }}>
               {run.name || 'Unnamed Run'}
             </div>
-            <div style={{ fontSize: 11, color: difficultyColor }}>
-              {run.difficulty || 'Unknown'}
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: 11, color: difficultyColor }}>
+                {run.difficulty || 'Unknown'}
+              </span>
+              {run.subRegionName && (
+                <span style={{ 
+                  fontSize: 9, 
+                  color: '#60a5fa',
+                  background: 'rgba(96, 165, 250, 0.15)',
+                  padding: '1px 5px',
+                  borderRadius: 3
+                }}>
+                  {run.subRegionName}
+                </span>
+              )}
             </div>
           </div>
         </div>
