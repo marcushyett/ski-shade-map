@@ -6,20 +6,21 @@
  * - Current conditions (temperature, sun exposure, wind)
  * - Slope characteristics (aspect, steepness, altitude)
  * - Time of day (conditions deteriorate through the day)
- * - Uses resort local time (based on geo-tz timezone lookup) for all calculations
+ * - Uses resort local time (based on tz-lookup timezone lookup) for all calculations
  */
 
 import type { HourlyWeather, DailyWeatherDay } from "./weather-types";
 import type { RunData } from "./types";
-import { find as findTimezone } from "geo-tz";
+import tzlookup from "tz-lookup";
 import { toZonedTime } from "date-fns-tz";
 
-// Cache for timezone lookups to avoid repeated geo-tz calls
+// Cache for timezone lookups to avoid repeated calls
 const timezoneCache = new Map<string, string>();
 
 /**
- * Get the IANA timezone identifier for a given lat/lng using geo-tz library.
+ * Get the IANA timezone identifier for a given lat/lng using tz-lookup library.
  * Results are cached for performance.
+ * tz-lookup is browser-compatible (no fs dependency).
  */
 function getTimezoneForLocation(latitude: number, longitude: number): string {
   // Round to 2 decimal places for cache key (accurate enough for timezone lookup)
@@ -28,10 +29,8 @@ function getTimezoneForLocation(latitude: number, longitude: number): string {
   const cached = timezoneCache.get(cacheKey);
   if (cached) return cached;
   
-  // geo-tz returns an array of timezones (some locations have multiple)
-  // We use the first one which is typically the most relevant
-  const timezones = findTimezone(latitude, longitude);
-  const timezone = timezones[0] || "UTC";
+  // tz-lookup returns a single timezone string for the given coordinates
+  const timezone = tzlookup(latitude, longitude) || "UTC";
   
   timezoneCache.set(cacheKey, timezone);
   return timezone;
@@ -39,7 +38,7 @@ function getTimezoneForLocation(latitude: number, longitude: number): string {
 
 /**
  * Get the local hour and minute as decimal hours (e.g., 9:30 = 9.5)
- * Uses geo-tz for accurate timezone lookup based on resort coordinates.
+ * Uses tz-lookup for accurate timezone lookup based on resort coordinates.
  */
 function getLocalDecimalHour(utcTime: Date, latitude: number, longitude: number): number {
   const timezone = getTimezoneForLocation(latitude, longitude);
