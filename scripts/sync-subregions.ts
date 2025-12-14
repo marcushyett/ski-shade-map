@@ -77,10 +77,14 @@ function boundsWithinDistance(
 }
 
 async function fetchSubRegionsFromOverpass(bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }): Promise<OverpassElement[]> {
+  // Query for both ski area sites AND administrative boundaries (communes) that likely contain ski resorts
   const query = `
     [out:json][timeout:120];
     (
+      // Ski area site relations
       relation["type"="site"]["site"="piste"](${bounds.minLat},${bounds.minLng},${bounds.maxLat},${bounds.maxLng});
+      // French communes (admin_level 8) - these contain villages like Méribel (Les Allues), Courchevel, etc.
+      relation["boundary"="administrative"]["admin_level"="8"](${bounds.minLat},${bounds.minLng},${bounds.maxLat},${bounds.maxLng});
     );
     out body geom;
   `;
@@ -173,18 +177,19 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
 
   const bounds = skiArea.bounds as { minLat: number; maxLat: number; minLng: number; maxLng: number };
   
-  // Expand bounds slightly to catch nearby sub-regions
+  // Expand bounds by ~500m to catch nearby sub-regions
+  // At alpine latitudes: 0.005° ≈ 500m
   const expandedBounds = {
-    minLat: bounds.minLat - 0.1,
-    maxLat: bounds.maxLat + 0.1,
-    minLng: bounds.minLng - 0.1,
-    maxLng: bounds.maxLng + 0.1,
+    minLat: bounds.minLat - 0.005,
+    maxLat: bounds.maxLat + 0.005,
+    minLng: bounds.minLng - 0.005,
+    maxLng: bounds.maxLng + 0.005,
   };
 
   console.log(`\nSyncing sub-regions for: ${skiArea.name} (${skiAreaId})`);
   
   const elements = await fetchSubRegionsFromOverpass(expandedBounds);
-  console.log(`Found ${elements.length} site=piste relations in area`);
+  console.log(`Found ${elements.length} potential sub-regions (ski sites + communes) in area`);
 
   // Filter out the parent ski area itself
   const subRegions = elements.filter(el => {
