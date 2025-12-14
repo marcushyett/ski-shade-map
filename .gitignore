@@ -23,7 +23,11 @@
 # misc
 .DS_Store
 *.pem
+
+# core dump files
 core
+core.*
+vgcore.*
 
 # debug
 npm-debug.log*
