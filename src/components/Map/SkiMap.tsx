@@ -1709,6 +1709,50 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       // Call the onRunClick callback with map coordinates
       onRunClickRef.current?.(runId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
     });
+    
+    // Handle polygon run clicks (sunny and shaded fill layers)
+    // When clicking on a polygon fill, show the popup for the associated run
+    const handlePolygonClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
+      if (!e.features?.length || !map.current) return;
+      if (isEditingHomeRef.current) return;
+      
+      const feature = e.features[0];
+      const props = feature.properties;
+      const runId = props.id;
+      
+      // Track run click
+      trackEvent('run_clicked', {
+        run_id: runId,
+        run_name: props.name || undefined,
+        run_difficulty: props.difficulty || undefined,
+        ski_area_id: currentSkiAreaId.current || undefined,
+        latitude: e.lngLat.lat,
+        longitude: e.lngLat.lng,
+      });
+      
+      // Call the onRunClick callback with map coordinates
+      onRunClickRef.current?.(runId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
+    };
+    
+    if (map.current.getLayer('ski-runs-polygon-fill-sunny')) {
+      map.current.on('click', 'ski-runs-polygon-fill-sunny', handlePolygonClick);
+      map.current.on('mouseenter', 'ski-runs-polygon-fill-sunny', () => {
+        if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+      });
+      map.current.on('mouseleave', 'ski-runs-polygon-fill-sunny', () => {
+        if (map.current) map.current.getCanvas().style.cursor = '';
+      });
+    }
+    
+    if (map.current.getLayer('ski-runs-polygon-fill-shaded')) {
+      map.current.on('click', 'ski-runs-polygon-fill-shaded', handlePolygonClick);
+      map.current.on('mouseenter', 'ski-runs-polygon-fill-shaded', () => {
+        if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+      });
+      map.current.on('mouseleave', 'ski-runs-polygon-fill-shaded', () => {
+        if (map.current) map.current.getCanvas().style.cursor = '';
+      });
+    }
 
     map.current.on('click', 'ski-lifts', (e) => {
       if (!e.features?.length || !map.current) return;

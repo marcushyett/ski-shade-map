@@ -6,10 +6,115 @@
  * - Current conditions (temperature, sun exposure, wind)
  * - Slope characteristics (aspect, steepness, altitude)
  * - Time of day (conditions deteriorate through the day)
+ * - Uses resort local time (based on tz-lookup timezone lookup) for all calculations
  */
 
 import type { HourlyWeather, DailyWeatherDay } from "./weather-types";
 import type { RunData } from "./types";
+import tzlookup from "tz-lookup";
+import { toZonedTime } from "date-fns-tz";
+
+// Cache for timezone lookups to avoid repeated calls
+const timezoneCache = new Map<string, string>();
+
+/**
+ * Get the IANA timezone identifier for a given lat/lng using tz-lookup library.
+ * Results are cached for performance.
+ * tz-lookup is browser-compatible (no fs dependency).
+ */
+function getTimezoneForLocation(latitude: number, longitude: number): string {
+  // Round to 2 decimal places for cache key (accurate enough for timezone lookup)
+  const cacheKey = `${latitude.toFixed(2)},${longitude.toFixed(2)}`;
+  
+  const cached = timezoneCache.get(cacheKey);
+  if (cached) return cached;
+  
+  // tz-lookup returns a single timezone string for the given coordinates
+  const timezone = tzlookup(latitude, longitude) || "UTC";
+  
+  timezoneCache.set(cacheKey, timezone);
+  return timezone;
+}
+
+/**
+ * Get the local hour and minute as decimal hours (e.g., 9:30 = 9.5)
+ * Uses tz-lookup for accurate timezone lookup based on resort coordinates.
+ */
+function getLocalDecimalHour(utcTime: Date, latitude: number, longitude: number): number {
+  const timezone = getTimezoneForLocation(latitude, longitude);
+  const localTime = toZonedTime(utcTime, timezone);
+  return localTime.getHours() + localTime.getMinutes() / 60;
+}
+
+/**
+ * Get the local hour (0-23) for a given UTC time at a resort location.
+ */
+function getLocalHour(utcTime: Date, latitude: number, longitude: number): number {
+  const timezone = getTimezoneForLocation(latitude, longitude);
+  const localTime = toZonedTime(utcTime, timezone);
+  return localTime.getHours();
+}
+
+/**
+ * Calculate groomed probability using logarithmic decay.
+ * - Before 09:30: 100% groomed
+ * - Between 09:30 and 10:15 (45 min window): logarithmic decay from 100% to 0%
+ * - After 10:15: 0% groomed
+ * 
+ * Uses logarithmic decay: probability = 1 - log(1 + t) / log(1 + duration)
+ * where t is minutes since 09:30
+ */
+function calculateGroomedProbability(localDecimalHour: number): number {
+  const START_DECAY = 9.5;   // 09:30
+  const END_DECAY = 10.25;   // 10:15
+  const DECAY_DURATION = END_DECAY - START_DECAY; // 0.75 hours = 45 minutes
+  
+  if (localDecimalHour < START_DECAY) {
+    return 1.0; // 100% groomed before 09:30
+  }
+  
+  if (localDecimalHour >= END_DECAY) {
+    return 0.0; // 0% groomed after 10:15
+  }
+  
+  // Logarithmic decay between 09:30 and 10:15
+  const elapsed = localDecimalHour - START_DECAY;
+  const progress = elapsed / DECAY_DURATION; // 0 to 1
+  
+  // Logarithmic decay: faster drop initially, slower at the end
+  // Using log base for smooth decay: 1 - log(1 + progress * base) / log(1 + base)
+  const base = 9; // Controls the steepness of the logarithmic curve
+  const probability = 1 - Math.log(1 + progress * base) / Math.log(1 + base);
+  
+  return Math.max(0, Math.min(1, probability));
+}
+
+/**
+ * Check if a run is marked as ungroomed in its properties.
+ * OSM uses `piste:grooming` tag with values like "mogul", "backcountry", etc.
+ * If grooming is explicitly "no", "mogul", "backcountry", or similar, it's ungroomed.
+ */
+function isRunMarkedAsUngroomed(run: RunData): boolean {
+  const props = run.properties as Record<string, unknown> | null;
+  if (!props) return false;
+  
+  // Check common OSM grooming-related tags
+  const groomingValue = props['piste:grooming'] || props['grooming'] || props['piste_grooming'];
+  
+  if (typeof groomingValue === 'string') {
+    const ungroomedValues = ['no', 'mogul', 'backcountry', 'unknown', 'never', 'none', 'off-piste'];
+    return ungroomedValues.includes(groomingValue.toLowerCase());
+  }
+  
+  // Also check if the piste type indicates it's off-piste
+  const pisteType = props['piste:type'] || props['piste_type'];
+  if (typeof pisteType === 'string') {
+    const offPisteTypes = ['backcountry', 'skitour', 'freeride', 'off-piste'];
+    return offPisteTypes.includes(pisteType.toLowerCase());
+  }
+  
+  return false;
+}
 
 // Snow condition types in order of general desirability for most skiers
 export type SnowCondition =
@@ -276,7 +381,9 @@ export function calculateSnowQuality(
   hourlyWeather: HourlyWeather[],
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
-  sunAltitude: number
+  sunAltitude: number,
+  resortLatitude: number = 0, // Used for timezone lookup
+  resortLongitude: number = 0 // Used for timezone lookup
 ): PisteSnowAnalysis {
   const factors: SnowFactor[] = [];
   let score = 50; // Start at neutral (0-100 scale)
@@ -285,8 +392,15 @@ export function calculateSnowQuality(
   const altitude = calculateAltitude(run.geometry);
   const steepness = calculateSteepness(run.geometry);
   const avgAltitude = altitude ? (altitude.min + altitude.max) / 2 : 2000;
+  
+  // Check if this run is explicitly marked as ungroomed
+  const isUngroomed = isRunMarkedAsUngroomed(run);
 
-  // Get current hour's weather
+  // Calculate resort local time using geo-tz timezone lookup
+  const localDecimalHour = getLocalDecimalHour(currentTime, resortLatitude, resortLongitude);
+  const localHour = getLocalHour(currentTime, resortLatitude, resortLongitude);
+
+  // Get current hour's weather (using UTC time for weather matching)
   const currentHour = currentTime.getHours();
   const todayStr = currentTime.toISOString().split("T")[0];
   const currentWeather = hourlyWeather.find((h) => {
@@ -325,10 +439,14 @@ export function calculateSnowQuality(
   const maxTemp = todayWeather?.maxTemperature ?? 0;
   const minTemp = todayWeather?.minTemperature ?? -5;
 
-  // Time of day factor (conditions generally worse in afternoon)
-  const hourOfDay = currentTime.getHours();
-  const isAfternoon = hourOfDay >= 13;
-  const isLateAfternoon = hourOfDay >= 15;
+  // Time of day factor using RESORT LOCAL TIME (conditions generally worse in afternoon)
+  // localHour and localDecimalHour are calculated above from resort longitude
+  const isAfternoon = localHour >= 13;
+  const isLateAfternoon = localHour >= 15;
+  
+  // Calculate groomed probability using logarithmic decay (09:30 to 10:15 local time)
+  // If run is marked as ungroomed, probability is always 0
+  const groomedProbability = isUngroomed ? 0 : calculateGroomedProbability(localDecimalHour);
 
   // Sun exposure
   const sunFacing = isSunFacing(aspect, sunAzimuth);
@@ -458,7 +576,8 @@ export function calculateSnowQuality(
     isAfternoon,
     sunFacing,
     sunUp,
-    currentWeather?.windSpeed ?? 0
+    currentWeather?.windSpeed ?? 0,
+    groomedProbability
   );
 
   const conditionInfo = CONDITION_INFO[condition];
@@ -494,15 +613,18 @@ function determineCondition(
   isAfternoon: boolean,
   sunFacing: boolean,
   sunUp: boolean,
-  windSpeed: number
+  windSpeed: number,
+  groomedProbability: number = 0 // 0-1 probability that grooming is still intact
 ): SnowCondition {
   // Fresh powder
   if (daysSinceSnow < 1 && recentSnowfall > 15 && currentTemp < 0) {
     return "powder";
   }
 
-  // Recent grooming (morning, good conditions)
-  if (!isAfternoon && daysSinceSnow < 3 && currentTemp < 2) {
+  // Recent grooming - uses logarithmic decay probability based on resort local time
+  // groomedProbability is 1.0 before 09:30, decays logarithmically to 0 by 10:15
+  // Only return groomed if probability > 0.5 (majority of grooming still intact)
+  if (groomedProbability > 0.5 && daysSinceSnow < 3 && currentTemp < 2) {
     return "fresh-groomed";
   }
 
@@ -546,8 +668,9 @@ function determineCondition(
     return "hard-pack";
   }
 
-  // Fresh groomed (morning, decent conditions, even without recent snow)
-  if (!isAfternoon && score >= 35) {
+  // Fresh groomed - uses logarithmic decay probability
+  // Only return groomed if probability > 0.5 and other conditions are met
+  if (groomedProbability > 0.5 && score >= 35) {
     return "fresh-groomed";
   }
 
@@ -719,7 +842,9 @@ export function analyzeResortSnowQuality(
   hourlyWeather: HourlyWeather[],
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
-  sunAltitude: number
+  sunAltitude: number,
+  resortLatitude: number = 0, // Used for timezone lookup
+  resortLongitude: number = 0 // Used for timezone lookup
 ): { analyses: PisteSnowAnalysis[]; summary: ResortSnowSummary } {
   // For performance: if there are many runs, sample for the summary
   // but still return empty analyses array (individual analysis done on-demand)
@@ -739,7 +864,9 @@ export function analyzeResortSnowQuality(
       hourlyWeather,
       dailyWeather,
       sunAzimuth,
-      sunAltitude
+      sunAltitude,
+      resortLatitude,
+      resortLongitude
     )
   );
 
@@ -755,13 +882,18 @@ export function calculateSnowQualityByAltitude(
   hourlyWeather: HourlyWeather[],
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
-  sunAltitude: number
+  sunAltitude: number,
+  resortLatitude: number = 0, // Used for timezone lookup
+  resortLongitude: number = 0 // Used for timezone lookup
 ): SnowQualityAtPoint[] {
   if (run.geometry.type !== "LineString") return [];
 
   const coords = run.geometry.coordinates;
   const aspect = calculateAspect(run.geometry);
   const steepness = calculateSteepness(run.geometry);
+  
+  // Check if this run is explicitly marked as ungroomed
+  const isUngroomed = isRunMarkedAsUngroomed(run);
 
   // Get weather data
   const currentHour = currentTime.getHours();
@@ -796,9 +928,16 @@ export function calculateSnowQualityByAltitude(
   const currentTemp = currentWeather?.temperature ?? 0;
   const maxTemp = todayWeather?.maxTemperature ?? 0;
   const minTemp = todayWeather?.minTemperature ?? -5;
-  const hourOfDay = currentTime.getHours();
-  const isAfternoon = hourOfDay >= 13;
-  const isLateAfternoon = hourOfDay >= 15;
+  
+  // Calculate resort local time using geo-tz timezone lookup
+  const localDecimalHour = getLocalDecimalHour(currentTime, resortLatitude, resortLongitude);
+  const localHour = getLocalHour(currentTime, resortLatitude, resortLongitude);
+  const isAfternoon = localHour >= 13;
+  const isLateAfternoon = localHour >= 15;
+  
+  // Calculate groomed probability using logarithmic decay
+  const groomedProbability = isUngroomed ? 0 : calculateGroomedProbability(localDecimalHour);
+  
   const sunFacing = isSunFacing(aspect, sunAzimuth);
   const sunUp = sunAltitude > 0;
 
@@ -846,7 +985,8 @@ export function calculateSnowQualityByAltitude(
       isAfternoon,
       sunFacing,
       sunUp,
-      currentWeather?.windSpeed ?? 0
+      currentWeather?.windSpeed ?? 0,
+      groomedProbability
     );
 
     points.push({ altitude, score, condition });

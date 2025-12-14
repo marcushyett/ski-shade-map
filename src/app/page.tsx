@@ -930,7 +930,9 @@ export default function Home() {
       weather.hourly,
       weather.daily,
       sunPos.azimuth,
-      sunPos.altitudeDegrees
+      sunPos.altitudeDegrees,
+      skiAreaDetails.latitude, // For timezone lookup via geo-tz
+      skiAreaDetails.longitude
     );
     
     return {
@@ -968,7 +970,9 @@ export default function Home() {
           weather.hourly,
           weather.daily,
           sunPos.azimuth,
-          sunPos.altitudeDegrees
+          sunPos.altitudeDegrees,
+          skiAreaDetails.latitude, // For timezone lookup via geo-tz
+          skiAreaDetails.longitude
         );
       }
     });
@@ -983,7 +987,9 @@ export default function Home() {
           weather.hourly,
           weather.daily,
           sunPos.azimuth,
-          sunPos.altitudeDegrees
+          sunPos.altitudeDegrees,
+          skiAreaDetails.latitude, // For timezone lookup via geo-tz
+          skiAreaDetails.longitude
         );
       }
     }
