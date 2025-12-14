@@ -826,6 +826,46 @@ export default function Home() {
     setIsWeatherCardCollapsed(false); // Uncollapse weather card when ending navigation
   }, []);
 
+  // Track user progress along the navigation route
+  useEffect(() => {
+    if (!navigationState?.isNavigating || !navigationRoute || !effectiveUserLocation) return;
+    
+    const userLat = effectiveUserLocation.latitude;
+    const userLng = effectiveUserLocation.longitude;
+    
+    // Find the closest segment to user's current position
+    let closestSegmentIndex = 0;
+    let closestDistance = Infinity;
+    
+    navigationRoute.segments.forEach((segment, segmentIdx) => {
+      if (!segment.coordinates || segment.coordinates.length === 0) return;
+      
+      // Check distance to each coordinate in the segment
+      segment.coordinates.forEach((coord) => {
+        const [lng, lat] = coord;
+        // Simple distance calculation (good enough for nearby points)
+        const dLat = userLat - lat;
+        const dLng = userLng - lng;
+        const dist = Math.sqrt(dLat * dLat + dLng * dLng) * 111000; // Rough meters conversion
+        
+        if (dist < closestDistance) {
+          closestDistance = dist;
+          closestSegmentIndex = segmentIdx;
+        }
+      });
+    });
+    
+    // Only update if user is reasonably close to route (within 200m)
+    // and segment has changed
+    if (closestDistance < 200 && closestSegmentIndex !== currentNavSegment) {
+      // Only allow moving forward in the route (or staying on same segment)
+      // This prevents jumping back when user is between segments
+      if (closestSegmentIndex >= currentNavSegment) {
+        setCurrentNavSegment(closestSegmentIndex);
+      }
+    }
+  }, [navigationState?.isNavigating, navigationRoute, effectiveUserLocation, currentNavSegment]);
+
   const handleNavMapClickRequest = useCallback((field: 'origin' | 'destination') => {
     // Toggle: if same field is already active, turn it off
     setNavMapClickMode(prev => prev === field ? null : field);
