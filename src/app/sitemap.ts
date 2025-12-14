@@ -9,8 +9,8 @@ interface SkiAreaForSitemap {
   updatedAt: Date;
 }
 
-// Use dynamic rendering for sitemap - generated at request time
-export const dynamic = 'force-dynamic';
+// Use ISR for sitemap - cached after first request, revalidates hourly
+export const revalidate = 3600; // 1 hour
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = BASE_URL;

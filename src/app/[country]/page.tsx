@@ -10,10 +10,10 @@ import {
 } from '@/lib/seo-utils';
 import { notFound } from 'next/navigation';
 
-// Use dynamic rendering - pages are rendered at request time
-// This ensures the build doesn't fail if the database is unavailable
-// Pages are still SEO-friendly as they're rendered server-side
-export const dynamic = 'force-dynamic';
+// Use ISR (Incremental Static Regeneration) - pages are cached after first request
+// Revalidates every hour for fresh data while keeping pages fast and SEO-friendly
+// No database required at build time, but pages are cached like static pages
+export const revalidate = 3600; // 1 hour
 
 interface PageProps {
   params: Promise<{ country: string }>;

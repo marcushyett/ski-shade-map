@@ -3,10 +3,10 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { countryToSlug, getCountryDisplayName, BASE_URL } from '@/lib/seo-utils';
 
-// Use dynamic rendering - page is rendered at request time
-// This ensures the build doesn't fail if the database is unavailable
-// Page is still SEO-friendly as it's rendered server-side
-export const dynamic = 'force-dynamic';
+// Use ISR (Incremental Static Regeneration) - page is cached after first request
+// Revalidates every hour for fresh data while keeping pages fast and SEO-friendly
+// No database required at build time, but pages are cached like static pages
+export const revalidate = 3600; // 1 hour
 
 export const metadata: Metadata = {
   title: 'All Ski Resorts | Live 3D Maps & Snow Conditions',
