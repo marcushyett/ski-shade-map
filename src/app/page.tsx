@@ -931,7 +931,8 @@ export default function Home() {
       weather.daily,
       sunPos.azimuth,
       sunPos.altitudeDegrees,
-      skiAreaDetails.longitude // Use resort longitude for local time calculations
+      skiAreaDetails.latitude, // For timezone lookup via geo-tz
+      skiAreaDetails.longitude
     );
     
     return {
@@ -970,7 +971,8 @@ export default function Home() {
           weather.daily,
           sunPos.azimuth,
           sunPos.altitudeDegrees,
-          skiAreaDetails.longitude // Use resort longitude for local time calculations
+          skiAreaDetails.latitude, // For timezone lookup via geo-tz
+          skiAreaDetails.longitude
         );
       }
     });
@@ -986,7 +988,8 @@ export default function Home() {
           weather.daily,
           sunPos.azimuth,
           sunPos.altitudeDegrees,
-          skiAreaDetails.longitude // Use resort longitude for local time calculations
+          skiAreaDetails.latitude, // For timezone lookup via geo-tz
+          skiAreaDetails.longitude
         );
       }
     }

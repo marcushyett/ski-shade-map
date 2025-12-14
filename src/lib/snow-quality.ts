@@ -6,36 +6,54 @@
  * - Current conditions (temperature, sun exposure, wind)
  * - Slope characteristics (aspect, steepness, altitude)
  * - Time of day (conditions deteriorate through the day)
- * - Uses resort local time (based on longitude) for all calculations
+ * - Uses resort local time (based on geo-tz timezone lookup) for all calculations
  */
 
 import type { HourlyWeather, DailyWeatherDay } from "./weather-types";
 import type { RunData } from "./types";
+import { find as findTimezone } from "geo-tz";
+import { toZonedTime } from "date-fns-tz";
+
+// Cache for timezone lookups to avoid repeated geo-tz calls
+const timezoneCache = new Map<string, string>();
 
 /**
- * Calculate timezone offset in hours from longitude.
- * This is an approximation: 15 degrees of longitude = 1 hour.
- * For ski resorts, this is typically accurate enough.
+ * Get the IANA timezone identifier for a given lat/lng using geo-tz library.
+ * Results are cached for performance.
  */
-function getTimezoneOffsetFromLongitude(longitude: number): number {
-  return Math.round(longitude / 15);
-}
-
-/**
- * Convert a UTC time to resort local time based on longitude.
- */
-function getResortLocalTime(utcTime: Date, resortLongitude: number): Date {
-  const offsetHours = getTimezoneOffsetFromLongitude(resortLongitude);
-  const localTime = new Date(utcTime.getTime() + offsetHours * 60 * 60 * 1000);
-  return localTime;
+function getTimezoneForLocation(latitude: number, longitude: number): string {
+  // Round to 2 decimal places for cache key (accurate enough for timezone lookup)
+  const cacheKey = `${latitude.toFixed(2)},${longitude.toFixed(2)}`;
+  
+  const cached = timezoneCache.get(cacheKey);
+  if (cached) return cached;
+  
+  // geo-tz returns an array of timezones (some locations have multiple)
+  // We use the first one which is typically the most relevant
+  const timezones = findTimezone(latitude, longitude);
+  const timezone = timezones[0] || "UTC";
+  
+  timezoneCache.set(cacheKey, timezone);
+  return timezone;
 }
 
 /**
  * Get the local hour and minute as decimal hours (e.g., 9:30 = 9.5)
+ * Uses geo-tz for accurate timezone lookup based on resort coordinates.
  */
-function getLocalDecimalHour(utcTime: Date, resortLongitude: number): number {
-  const localTime = getResortLocalTime(utcTime, resortLongitude);
-  return localTime.getUTCHours() + localTime.getUTCMinutes() / 60;
+function getLocalDecimalHour(utcTime: Date, latitude: number, longitude: number): number {
+  const timezone = getTimezoneForLocation(latitude, longitude);
+  const localTime = toZonedTime(utcTime, timezone);
+  return localTime.getHours() + localTime.getMinutes() / 60;
+}
+
+/**
+ * Get the local hour (0-23) for a given UTC time at a resort location.
+ */
+function getLocalHour(utcTime: Date, latitude: number, longitude: number): number {
+  const timezone = getTimezoneForLocation(latitude, longitude);
+  const localTime = toZonedTime(utcTime, timezone);
+  return localTime.getHours();
 }
 
 /**
@@ -365,7 +383,8 @@ export function calculateSnowQuality(
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
   sunAltitude: number,
-  resortLongitude: number = 0 // Used to calculate resort local time
+  resortLatitude: number = 0, // Used for timezone lookup
+  resortLongitude: number = 0 // Used for timezone lookup
 ): PisteSnowAnalysis {
   const factors: SnowFactor[] = [];
   let score = 50; // Start at neutral (0-100 scale)
@@ -378,9 +397,9 @@ export function calculateSnowQuality(
   // Check if this run is explicitly marked as ungroomed
   const isUngroomed = isRunMarkedAsUngroomed(run);
 
-  // Calculate resort local time from longitude
-  const localDecimalHour = getLocalDecimalHour(currentTime, resortLongitude);
-  const localHour = Math.floor(localDecimalHour);
+  // Calculate resort local time using geo-tz timezone lookup
+  const localDecimalHour = getLocalDecimalHour(currentTime, resortLatitude, resortLongitude);
+  const localHour = getLocalHour(currentTime, resortLatitude, resortLongitude);
 
   // Get current hour's weather (using UTC time for weather matching)
   const currentHour = currentTime.getHours();
@@ -825,7 +844,8 @@ export function analyzeResortSnowQuality(
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
   sunAltitude: number,
-  resortLongitude: number = 0 // Used to calculate resort local time
+  resortLatitude: number = 0, // Used for timezone lookup
+  resortLongitude: number = 0 // Used for timezone lookup
 ): { analyses: PisteSnowAnalysis[]; summary: ResortSnowSummary } {
   // For performance: if there are many runs, sample for the summary
   // but still return empty analyses array (individual analysis done on-demand)
@@ -846,6 +866,7 @@ export function analyzeResortSnowQuality(
       dailyWeather,
       sunAzimuth,
       sunAltitude,
+      resortLatitude,
       resortLongitude
     )
   );
@@ -863,7 +884,8 @@ export function calculateSnowQualityByAltitude(
   dailyWeather: DailyWeatherDay[],
   sunAzimuth: number,
   sunAltitude: number,
-  resortLongitude: number = 0 // Used to calculate resort local time
+  resortLatitude: number = 0, // Used for timezone lookup
+  resortLongitude: number = 0 // Used for timezone lookup
 ): SnowQualityAtPoint[] {
   if (run.geometry.type !== "LineString") return [];
 
@@ -908,9 +930,9 @@ export function calculateSnowQualityByAltitude(
   const maxTemp = todayWeather?.maxTemperature ?? 0;
   const minTemp = todayWeather?.minTemperature ?? -5;
   
-  // Calculate resort local time from longitude
-  const localDecimalHour = getLocalDecimalHour(currentTime, resortLongitude);
-  const localHour = Math.floor(localDecimalHour);
+  // Calculate resort local time using geo-tz timezone lookup
+  const localDecimalHour = getLocalDecimalHour(currentTime, resortLatitude, resortLongitude);
+  const localHour = getLocalHour(currentTime, resortLatitude, resortLongitude);
   const isAfternoon = localHour >= 13;
   const isLateAfternoon = localHour >= 15;
   
