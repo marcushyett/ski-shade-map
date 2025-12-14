@@ -3,6 +3,11 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { countryToSlug, getCountryDisplayName, BASE_URL } from '@/lib/seo-utils';
 
+// Use dynamic rendering - page is rendered at request time
+// This ensures the build doesn't fail if the database is unavailable
+// Page is still SEO-friendly as it's rendered server-side
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'All Ski Resorts | Live 3D Maps & Snow Conditions',
   description: 'Browse all ski resorts worldwide with real-time 3D piste maps, live snow conditions, sun & shade tracking, and smart route planning. Find your perfect ski destination.',
@@ -27,14 +32,9 @@ export const metadata: Metadata = {
   },
 };
 
-interface CountryGroup {
-  country: string | null;
-  _count: { country: number };
-}
-
 export default async function ResortsPage() {
   // Get all countries with their resort counts
-  const countries: CountryGroup[] = await prisma.skiArea.groupBy({
+  const countries = await prisma.skiArea.groupBy({
     by: ['country'],
     _count: { country: true },
     where: { country: { not: null } },
@@ -59,7 +59,7 @@ export default async function ResortsPage() {
     name: 'All Ski Resorts',
     description: 'Complete list of ski resorts worldwide with live conditions and 3D maps',
     numberOfItems: totalResorts,
-    itemListElement: countries.map((c: CountryGroup, index: number) => ({
+    itemListElement: countries.map((c, index) => ({
       '@type': 'ListItem',
       position: index + 1,
       item: {
@@ -121,8 +121,8 @@ export default async function ResortsPage() {
           <h2 className="mb-4 text-xl font-semibold">Browse by Country</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {countries
-              .filter((c: CountryGroup) => c.country)
-              .map((c: CountryGroup) => {
+              .filter((c) => c.country)
+              .map((c) => {
                 const countryName = getCountryDisplayName(c.country!);
                 return (
                   <Link

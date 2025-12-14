@@ -315,10 +315,10 @@ async function main() {
   const skiAreas = await prisma.skiArea.findMany({
     select: { id: true, osmId: true },
   });
-  const osmIdToDbId = new Map(
+  const osmIdToDbId = new Map<string, string>(
     skiAreas
-      .filter((a): a is { id: string; osmId: string } => a.osmId !== null)
-      .map(a => [a.osmId, a.id])
+      .filter((a: { id: string; osmId: string | null }): a is { id: string; osmId: string } => a.osmId !== null)
+      .map((a: { id: string; osmId: string }) => [a.osmId, a.id])
   );
   console.log(`   Have ${osmIdToDbId.size} ski areas in database`);
   console.log('');

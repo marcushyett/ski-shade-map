@@ -3,13 +3,17 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { 
   slugToCountry, 
-  countryToSlug, 
   toSlug, 
   getCountryDisplayName, 
   getCountryKeywords,
   BASE_URL 
 } from '@/lib/seo-utils';
 import { notFound } from 'next/navigation';
+
+// Use dynamic rendering - pages are rendered at request time
+// This ensures the build doesn't fail if the database is unavailable
+// Pages are still SEO-friendly as they're rendered server-side
+export const dynamic = 'force-dynamic';
 
 interface PageProps {
   params: Promise<{ country: string }>;
@@ -25,20 +29,6 @@ interface SkiAreaWithCount {
     runs: number;
     lifts: number;
   };
-}
-
-// Generate static params for all countries at build time
-export async function generateStaticParams() {
-  const countries = await prisma.skiArea.groupBy({
-    by: ['country'],
-    where: { country: { not: null } },
-  });
-
-  return countries
-    .filter((c: { country: string | null }) => c.country)
-    .map((c: { country: string | null }) => ({
-      country: countryToSlug(c.country!),
-    }));
 }
 
 // Generate metadata for SEO

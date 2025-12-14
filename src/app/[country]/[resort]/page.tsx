@@ -3,7 +3,6 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { 
   slugToCountry, 
-  countryToSlug, 
   toSlug, 
   getCountryDisplayName, 
   getResortKeywords,
@@ -11,13 +10,13 @@ import {
 } from '@/lib/seo-utils';
 import { notFound } from 'next/navigation';
 
+// Use dynamic rendering - pages are rendered at request time
+// This ensures the build doesn't fail if the database is unavailable
+// Pages are still SEO-friendly as they're rendered server-side
+export const dynamic = 'force-dynamic';
+
 interface PageProps {
   params: Promise<{ country: string; resort: string }>;
-}
-
-interface SkiAreaBasic {
-  name: string;
-  country: string | null;
 }
 
 interface SkiAreaWithCount {
@@ -31,22 +30,6 @@ interface SkiAreaWithCount {
     runs: number;
     lifts: number;
   };
-}
-
-// Generate static params for all resorts at build time
-export async function generateStaticParams() {
-  const skiAreas: SkiAreaBasic[] = await prisma.skiArea.findMany({
-    where: { country: { not: null } },
-    select: {
-      name: true,
-      country: true,
-    },
-  });
-
-  return skiAreas.map((area: SkiAreaBasic) => ({
-    country: countryToSlug(area.country!),
-    resort: toSlug(area.name),
-  }));
 }
 
 // Helper to find ski area by slug
