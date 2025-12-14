@@ -758,12 +758,21 @@ function NavigationPanelInner({
   }, [hasAutoSetOrigin, isUserLocationValid, userLocation, origin]);
 
   // Handle external origin changes (from map clicks)
+  // After setting origin, automatically switch to destination selection if no destination set
   useEffect(() => {
     if (externalOrigin) {
       setOrigin(externalOrigin);
       onClearExternalOrigin?.();
+      
+      // Auto-switch to destination selection if no destination is set yet
+      if (!destination && onRequestMapClick) {
+        // Small delay to let the UI update first
+        setTimeout(() => {
+          onRequestMapClick('destination');
+        }, 100);
+      }
     }
-  }, [externalOrigin, onClearExternalOrigin]);
+  }, [externalOrigin, onClearExternalOrigin, destination, onRequestMapClick]);
 
   // Handle external destination changes (from map clicks)
   useEffect(() => {
