@@ -327,6 +327,7 @@ export function calculateSnowQuality(
 
   // Time of day factor (conditions generally worse in afternoon)
   const hourOfDay = currentTime.getHours();
+  const isEarlyMorning = hourOfDay < 10; // Groomed conditions only last until ~10am
   const isAfternoon = hourOfDay >= 13;
   const isLateAfternoon = hourOfDay >= 15;
 
@@ -458,7 +459,8 @@ export function calculateSnowQuality(
     isAfternoon,
     sunFacing,
     sunUp,
-    currentWeather?.windSpeed ?? 0
+    currentWeather?.windSpeed ?? 0,
+    isEarlyMorning
   );
 
   const conditionInfo = CONDITION_INFO[condition];
@@ -494,15 +496,17 @@ function determineCondition(
   isAfternoon: boolean,
   sunFacing: boolean,
   sunUp: boolean,
-  windSpeed: number
+  windSpeed: number,
+  isEarlyMorning: boolean = false
 ): SnowCondition {
   // Fresh powder
   if (daysSinceSnow < 1 && recentSnowfall > 15 && currentTemp < 0) {
     return "powder";
   }
 
-  // Recent grooming (morning, good conditions)
-  if (!isAfternoon && daysSinceSnow < 3 && currentTemp < 2) {
+  // Recent grooming (only in early morning before ~10am when slopes are first groomed)
+  // Groomed conditions typically only last for the first 1-2 hours after opening
+  if (isEarlyMorning && daysSinceSnow < 3 && currentTemp < 2) {
     return "fresh-groomed";
   }
 
@@ -546,8 +550,9 @@ function determineCondition(
     return "hard-pack";
   }
 
-  // Fresh groomed (morning, decent conditions, even without recent snow)
-  if (!isAfternoon && score >= 35) {
+  // Fresh groomed (only early morning before ~10am, decent conditions)
+  // After 10am, groomed runs have been skied enough to lose their fresh corduroy
+  if (isEarlyMorning && score >= 35) {
     return "fresh-groomed";
   }
 
@@ -797,6 +802,7 @@ export function calculateSnowQualityByAltitude(
   const maxTemp = todayWeather?.maxTemperature ?? 0;
   const minTemp = todayWeather?.minTemperature ?? -5;
   const hourOfDay = currentTime.getHours();
+  const isEarlyMorning = hourOfDay < 10; // Groomed conditions only last until ~10am
   const isAfternoon = hourOfDay >= 13;
   const isLateAfternoon = hourOfDay >= 15;
   const sunFacing = isSunFacing(aspect, sunAzimuth);
@@ -846,7 +852,8 @@ export function calculateSnowQualityByAltitude(
       isAfternoon,
       sunFacing,
       sunUp,
-      currentWeather?.windSpeed ?? 0
+      currentWeather?.windSpeed ?? 0,
+      isEarlyMorning
     );
 
     points.push({ altitude, score, condition });
