@@ -8,6 +8,7 @@ import {
   LoadingOutlined,
   CloudDownloadOutlined
 } from '@ant-design/icons';
+import { trackEvent } from '@/lib/posthog';
 
 interface CacheButtonProps {
   skiAreaId: string | null;
@@ -59,6 +60,11 @@ function CacheButtonInner({ skiAreaId, skiAreaName, latitude, longitude }: Cache
     if (!skiAreaId || isLoading) return;
 
     setIsLoading(true);
+    
+    trackEvent('cache_download_started', {
+      ski_area_id: skiAreaId,
+      ski_area_name: skiAreaName || undefined,
+    });
 
     try {
       // Fetch and cache ski area details
@@ -77,6 +83,11 @@ function CacheButtonInner({ skiAreaId, skiAreaName, latitude, longitude }: Cache
         name: skiAreaName || 'Unknown',
       };
       localStorage.setItem(CACHE_STATUS_KEY, JSON.stringify(status));
+
+      trackEvent('cache_download_completed', {
+        ski_area_id: skiAreaId,
+        ski_area_name: skiAreaName || undefined,
+      });
 
       setIsCached(true);
       setCacheDate(new Date().toISOString());

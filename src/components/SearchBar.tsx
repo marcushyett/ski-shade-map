@@ -14,6 +14,7 @@ import {
   BankOutlined,
   CarOutlined,
 } from '@ant-design/icons';
+import { trackEvent } from '@/lib/posthog';
 import type { RunData, LiftData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import debounce from 'lodash.debounce';
@@ -215,11 +216,25 @@ function SearchBarInner({
     return results;
   }, [filteredRuns, filteredLifts, placeResults]);
 
-  // Reset selected index when results change
+  // Track search when results change
   const allResultsLength = allResults.length;
   useEffect(() => {
-    // Reset index when search results change (works as a side effect of search text changing)
-  }, [allResultsLength]);
+    if (searchText.length >= 2) {
+      trackSearchRef.current(searchText, allResultsLength);
+    }
+  }, [allResultsLength, searchText]);
+
+  // Track search (debounced)
+  const trackSearchRef = useRef(
+    debounce((query: string, resultCount: number) => {
+      if (query.length >= 2) {
+        trackEvent('search_performed', {
+          search_query: query,
+          result_count: resultCount,
+        });
+      }
+    }, 500)
+  );
 
   // Reset selected index when search text changes 
   const handleSearchChange = useCallback((value: string) => {
@@ -229,13 +244,35 @@ function SearchBarInner({
 
   const handleSelect = useCallback(
     (result: SearchResult) => {
+      // Track the selection
       if (result.type === 'run') {
+        trackEvent('search_result_selected', {
+          result_type: 'run',
+          run_id: result.id,
+          run_name: result.name,
+          run_difficulty: result.difficulty || undefined,
+          search_query: searchText,
+        });
         const run = runs.find((r) => r.id === result.id);
         if (run) onSelectRun?.(run);
       } else if (result.type === 'lift') {
+        trackEvent('search_result_selected', {
+          result_type: 'lift',
+          lift_id: result.id,
+          lift_name: result.name,
+          search_query: searchText,
+        });
         const lift = lifts.find((l) => l.id === result.id);
         if (lift) onSelectLift?.(lift);
       } else if (result.type === 'place' && result.coordinates) {
+        trackEvent('place_search_result_selected', {
+          result_type: 'place',
+          place_name: result.name,
+          place_type: result.placeType || undefined,
+          latitude: result.coordinates[1],
+          longitude: result.coordinates[0],
+          search_query: searchText,
+        });
         onSelectPlace?.(result.coordinates, result.name, result.placeType);
       }
       
@@ -246,7 +283,7 @@ function SearchBarInner({
         document.activeElement.blur();
       }
     },
-    [runs, lifts, onSelectRun, onSelectLift, onSelectPlace]
+    [runs, lifts, onSelectRun, onSelectLift, onSelectPlace, searchText]
   );
 
   const handleKeyDown = useCallback(

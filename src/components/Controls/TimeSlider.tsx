@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, ReactNode } from 'react';
+import { useState, useEffect, useMemo, ReactNode, useRef, useCallback } from 'react';
 import { Slider, Typography, Button, Tooltip, DatePicker } from 'antd';
 import { 
   PlayCircleOutlined, 
@@ -20,6 +20,7 @@ import {
 import { format, setHours, setMinutes, startOfDay, addDays, isSameDay } from 'date-fns';
 import dayjs from 'dayjs';
 import { getSunTimes, getSunPosition } from '@/lib/suncalc';
+import { trackEvent } from '@/lib/posthog';
 import WeatherTimeline from './WeatherTimeline';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import type { HourlyWeather, UnitPreferences, DailyWeatherDay } from '@/lib/weather-types';
@@ -175,11 +176,29 @@ export default function TimeSlider({
   const currentValue = timeToSlider(selectedTime);
   const isSunUp = sunPosition.altitudeDegrees > 0;
 
+  // Track time changes (debounced to avoid too many events)
+  const lastTrackedTimeRef = useRef<number | null>(null);
+  const trackTimeChange = useCallback((time: Date) => {
+    const minutes = time.getHours() * 60 + time.getMinutes();
+    // Only track if time changed significantly (at least 10 min difference)
+    if (lastTrackedTimeRef.current === null || Math.abs(minutes - lastTrackedTimeRef.current) >= 10) {
+      lastTrackedTimeRef.current = minutes;
+      trackEvent('time_changed', {
+        selected_time: format(time, 'HH:mm'),
+        selected_date: format(time, 'yyyy-MM-dd'),
+      });
+    }
+  }, []);
+
   // Navigate to previous day
   const goToPreviousDay = () => {
     const newDate = addDays(selectedTime, -1);
     // Keep the same time of day
     newDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+    trackEvent('date_changed', {
+      selected_date: format(newDate, 'yyyy-MM-dd'),
+      direction: 'previous',
+    });
     onTimeChange(newDate);
   };
 
@@ -188,6 +207,10 @@ export default function TimeSlider({
     const newDate = addDays(selectedTime, 1);
     // Keep the same time of day
     newDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+    trackEvent('date_changed', {
+      selected_date: format(newDate, 'yyyy-MM-dd'),
+      direction: 'next',
+    });
     onTimeChange(newDate);
   };
 
@@ -196,6 +219,10 @@ export default function TimeSlider({
     if (date) {
       const newDate = date.toDate();
       newDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+      trackEvent('date_changed', {
+        selected_date: format(newDate, 'yyyy-MM-dd'),
+        direction: 'picker',
+      });
       onTimeChange(newDate);
       setShowDatePicker(false);
     }
@@ -401,7 +428,11 @@ export default function TimeSlider({
         max={24 * 60 - 1}
         marks={marks}
         onChange={(value) => onTimeChange(sliderToTime(value))}
-        onChangeComplete={(value) => onTimeChangeComplete?.(sliderToTime(value))}
+        onChangeComplete={(value) => {
+          const time = sliderToTime(value);
+          trackTimeChange(time);
+          onTimeChangeComplete?.(time);
+        }}
         tooltip={{
           formatter: (value) => value !== undefined ? format(sliderToTime(value), 'HH:mm') : '',
         }}

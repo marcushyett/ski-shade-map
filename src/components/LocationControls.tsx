@@ -10,6 +10,7 @@ import {
   EditOutlined,
   CloseOutlined,
 } from '@ant-design/icons';
+import { trackEvent } from '@/lib/posthog';
 
 export interface MountainHome {
   latitude: number;
@@ -88,6 +89,11 @@ function LocationControlsInner({
   const handleCurrentLocation = useCallback(() => {
     if (isTrackingLocation && userLocation) {
       // If already tracking, just go to the location
+      trackEvent('fly_to_location', {
+        location_type: 'user',
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+      });
       onGoToLocation?.(userLocation.latitude, userLocation.longitude, 16);
       return;
     }
@@ -98,6 +104,7 @@ function LocationControlsInner({
     }
 
     setIsGettingLocation(true);
+    trackEvent('user_location_requested');
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -107,6 +114,11 @@ function LocationControlsInner({
           accuracy: position.coords.accuracy,
           timestamp: position.timestamp,
         };
+        trackEvent('user_location_granted', {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracy: location.accuracy,
+        });
         onUserLocationChange?.(location);
         onGoToLocation?.(location.latitude, location.longitude, 16);
         onToggleTracking(true);
@@ -114,6 +126,10 @@ function LocationControlsInner({
       },
       (error) => {
         setIsGettingLocation(false);
+        trackEvent('user_location_denied', {
+          error_code: error.code,
+          error_message: error.message,
+        });
         switch (error.code) {
           case error.PERMISSION_DENIED:
             message.error('Location permission denied');
@@ -172,9 +188,19 @@ function LocationControlsInner({
       url: shareUrl,
     };
 
+    trackEvent('share_initiated', {
+      has_location: true,
+      ski_area_id: skiAreaId || undefined,
+      ski_area_name: skiAreaName || undefined,
+    });
+
     if (navigator.share && navigator.canShare?.(shareData)) {
       try {
         await navigator.share(shareData);
+        trackEvent('share_completed', {
+          share_method: 'native',
+          has_location: true,
+        });
         return;
       } catch (error) {
         if ((error as Error).name === 'AbortError') return;
@@ -184,6 +210,9 @@ function LocationControlsInner({
     // Fallback to clipboard
     try {
       await navigator.clipboard.writeText(shareUrl);
+      trackEvent('share_link_copied', {
+        has_location: true,
+      });
       message.success('Location link copied to clipboard!');
     } catch {
       message.info('Copy this link: ' + shareUrl);
@@ -217,11 +246,18 @@ function LocationControlsInner({
       // Ignore storage errors
     }
 
+    trackEvent('mountain_home_set', {
+      latitude: home.latitude,
+      longitude: home.longitude,
+      home_name: home.name,
+      ski_area_id: skiAreaId || undefined,
+    });
+
     onMountainHomeChange?.(home);
     setShowHomeModal(false);
     setPendingHomeCoords(null);
     message.success('Mountain Home set!');
-  }, [pendingHomeCoords, homeName, onMountainHomeChange, message]);
+  }, [pendingHomeCoords, homeName, onMountainHomeChange, message, skiAreaId]);
 
   // Clear Mountain Home
   const handleClearHome = useCallback(() => {
@@ -230,6 +266,7 @@ function LocationControlsInner({
     } catch {
       // Ignore
     }
+    trackEvent('mountain_home_removed');
     onMountainHomeChange?.(null);
     message.info('Mountain Home cleared');
   }, [onMountainHomeChange, message]);
@@ -237,6 +274,11 @@ function LocationControlsInner({
   // Go to Mountain Home
   const handleGoToHome = useCallback(() => {
     if (mountainHome) {
+      trackEvent('fly_to_location', {
+        location_type: 'mountain_home',
+        latitude: mountainHome.latitude,
+        longitude: mountainHome.longitude,
+      });
       onGoToLocation?.(mountainHome.latitude, mountainHome.longitude, 16);
     }
   }, [mountainHome, onGoToLocation]);

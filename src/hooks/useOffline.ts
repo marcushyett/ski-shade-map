@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { trackEvent } from '@/lib/posthog';
 
 interface OfflineState {
   isOffline: boolean;
@@ -14,11 +15,22 @@ export function useOffline() {
     wasOffline: false,
     lastOnline: null,
   });
+  const prevOfflineRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     // Check initial state
     const updateOnlineStatus = () => {
       const isOffline = !navigator.onLine;
+      
+      // Track offline/online transitions (not initial state)
+      if (prevOfflineRef.current !== null && prevOfflineRef.current !== isOffline) {
+        if (isOffline) {
+          trackEvent('offline_mode_entered');
+        } else {
+          trackEvent('offline_mode_exited');
+        }
+      }
+      prevOfflineRef.current = isOffline;
       
       setState((prev) => ({
         isOffline,

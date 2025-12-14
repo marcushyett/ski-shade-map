@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { ConfigProvider, theme, App } from 'antd';
+import PostHogProvider from '@/components/PostHogProvider';
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -57,42 +58,44 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="SKISHADE" />
       </head>
       <body>
-        <AntdRegistry>
-          <ConfigProvider
-            theme={{
-              algorithm: theme.darkAlgorithm,
-              token: {
-                colorPrimary: '#ffffff',
-                colorBgBase: '#0a0a0a',
-                colorBgContainer: '#141414',
-                colorBorder: '#262626',
-                colorText: '#e5e5e5',
-                colorTextSecondary: '#a3a3a3',
-                borderRadius: 2,
-                borderRadiusLG: 2,
-                borderRadiusSM: 2,
-                borderRadiusXS: 1,
-                paddingXS: 4,
-                paddingSM: 6,
-                padding: 8,
-                paddingLG: 12,
-                marginXS: 4,
-                marginSM: 6,
-                margin: 8,
-                marginLG: 12,
-                controlHeight: 28,
-                controlHeightSM: 22,
-                controlHeightLG: 32,
-                fontSize: 12,
-                fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              },
-            }}
-          >
-            <App>
-              {children}
-            </App>
-          </ConfigProvider>
-        </AntdRegistry>
+        <PostHogProvider>
+          <AntdRegistry>
+            <ConfigProvider
+              theme={{
+                algorithm: theme.darkAlgorithm,
+                token: {
+                  colorPrimary: '#ffffff',
+                  colorBgBase: '#0a0a0a',
+                  colorBgContainer: '#141414',
+                  colorBorder: '#262626',
+                  colorText: '#e5e5e5',
+                  colorTextSecondary: '#a3a3a3',
+                  borderRadius: 2,
+                  borderRadiusLG: 2,
+                  borderRadiusSM: 2,
+                  borderRadiusXS: 1,
+                  paddingXS: 4,
+                  paddingSM: 6,
+                  padding: 8,
+                  paddingLG: 12,
+                  marginXS: 4,
+                  marginSM: 6,
+                  margin: 8,
+                  marginLG: 12,
+                  controlHeight: 28,
+                  controlHeightSM: 22,
+                  controlHeightLG: 32,
+                  fontSize: 12,
+                  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                },
+              }}
+            >
+              <App>
+                {children}
+              </App>
+            </ConfigProvider>
+          </AntdRegistry>
+        </PostHogProvider>
       </body>
     </html>
   );

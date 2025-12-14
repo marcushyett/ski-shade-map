@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
+import { trackEvent } from '@/lib/posthog';
 import type { RunData } from '@/lib/types';
 
 const FAVOURITES_STORAGE_KEY = 'ski-shade-favourites';
@@ -60,6 +61,15 @@ export function useFavourites(skiAreaId: string | null, skiAreaName: string | nu
     if (!skiAreaId || !skiAreaName) return;
 
     const isCurrentlyFavourite = isFavourite(run.id);
+    
+    // Track the favourite action
+    trackEvent(isCurrentlyFavourite ? 'favourite_removed' : 'favourite_added', {
+      run_id: run.id,
+      run_name: run.name || undefined,
+      run_difficulty: run.difficulty || undefined,
+      ski_area_id: skiAreaId,
+      ski_area_name: skiAreaName,
+    });
     
     let newAreaFavourites: FavouriteRun[];
     

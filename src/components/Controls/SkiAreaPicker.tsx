@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Select, Space, Tag } from 'antd';
 import { SearchOutlined, EnvironmentOutlined } from '@ant-design/icons';
+import { trackEvent } from '@/lib/posthog';
 import type { SkiAreaSummary } from '@/lib/types';
 import debounce from 'lodash.debounce';
 
@@ -76,6 +77,32 @@ export default function SkiAreaPicker({ onSelect, selectedArea, disabled }: SkiA
   const handleSearch = (value: string) => {
     setSearchText(value);
     debouncedSearch(value);
+    if (value.length >= 2) {
+      trackEvent('resort_search', {
+        search_query: value,
+        country: selectedCountry || undefined,
+      });
+    }
+  };
+
+  const handleCountryChange = (country: string | null) => {
+    setSelectedCountry(country);
+    if (country) {
+      trackEvent('country_selected', { country });
+    }
+  };
+
+  const handleAreaSelect = (id: string) => {
+    const option = options.find(o => o.value === id);
+    if (option) {
+      trackEvent('resort_selected', {
+        ski_area_id: option.area.id,
+        ski_area_name: option.area.name,
+        country: option.area.country || undefined,
+        region: option.area.region || undefined,
+      });
+      onSelect(option.area);
+    }
   };
 
   // Build options with the selected area included if not in list
@@ -100,7 +127,7 @@ export default function SkiAreaPicker({ onSelect, selectedArea, disabled }: SkiA
         <Select
           placeholder="Select Country"
           value={selectedCountry}
-          onChange={setSelectedCountry}
+          onChange={handleCountryChange}
           className="w-full"
           showSearch
           optionFilterProp="children"
@@ -117,10 +144,7 @@ export default function SkiAreaPicker({ onSelect, selectedArea, disabled }: SkiA
         <Select
           placeholder={disabled ? "Offline - using cached area" : "Search ski areas..."}
           value={selectedArea?.id}
-          onChange={(id) => {
-            const option = options.find(o => o.value === id);
-            if (option) onSelect(option.area);
-          }}
+          onChange={handleAreaSelect}
           className="w-full"
           showSearch
           loading={loading}

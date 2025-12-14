@@ -37,6 +37,7 @@ import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/ty
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 import { analyzeResortSnowQuality, type ResortSnowSummary, type PisteSnowAnalysis, type SnowQualityAtPoint, getConditionInfo, calculateSnowQualityByAltitude } from '@/lib/snow-quality';
 import { getSunPosition } from '@/lib/suncalc';
+import { trackEvent } from '@/lib/posthog';
 import SnowConditionsPanel from '@/components/Controls/SnowConditionsPanel';
 
 const { Text } = Typography;
@@ -330,6 +331,13 @@ export default function Home() {
           id: `shared-${Date.now()}`,
         };
         
+        // Track shared location received
+        trackEvent('shared_location_received', {
+          latitude: urlState.sharedLat,
+          longitude: urlState.sharedLng,
+          shared_name: urlState.sharedName || undefined,
+        });
+        
         // Load existing shared locations and add new one
         try {
           const stored = localStorage.getItem(SHARED_LOCATIONS_STORAGE_KEY);
@@ -467,18 +475,29 @@ export default function Home() {
   }, []);
 
   const handleSelectRun = useCallback((run: RunData) => {
+    trackEvent('run_selected', {
+      run_id: run.id,
+      run_name: run.name || undefined,
+      run_difficulty: run.difficulty || undefined,
+      ski_area_id: selectedArea?.id,
+      ski_area_name: selectedArea?.name,
+    });
     setHighlightedFeatureId(run.id);
     setHighlightedFeatureType('run');
     setTimeout(() => {
       setHighlightedFeatureId(null);
       setHighlightedFeatureType(null);
     }, 3000);
-  }, []);
+  }, [selectedArea]);
 
   // Handle run click on map - show detail overlay
   const handleRunClick = useCallback((runId: string, lngLat: { lng: number; lat: number }) => {
+    trackEvent('run_detail_viewed', {
+      run_id: runId,
+      ski_area_id: selectedArea?.id,
+    });
     setSelectedRunDetail({ runId, lngLat });
-  }, []);
+  }, [selectedArea]);
 
   const handleCloseRunDetail = useCallback(() => {
     setSelectedRunDetail(null);
@@ -551,6 +570,7 @@ export default function Home() {
 
   // Handler to remove a shared location
   const handleRemoveSharedLocation = useCallback((id: string) => {
+    trackEvent('shared_location_dismissed', { location_id: id });
     setSharedLocations(prev => {
       const updated = prev.filter(loc => loc.id !== id);
       try {
