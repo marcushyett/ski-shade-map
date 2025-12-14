@@ -1137,6 +1137,63 @@ h5.ant-typography {
   color: var(--foreground);
 }
 
+.nav-header-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-minimize-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius);
+  border: none;
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.nav-minimize-btn:hover {
+  background: var(--background-tertiary);
+  color: var(--foreground);
+}
+
+.nav-panel-minimized {
+  padding: 0;
+}
+
+.nav-panel-minimized .nav-panel-header {
+  padding: 8px 12px;
+  border-bottom: none;
+}
+
+.nav-panel-minimized .nav-panel-title {
+  font-size: 11px;
+}
+
+.nav-action-btn {
+  background: var(--background-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s;
+}
+
+.nav-action-btn:hover {
+  background: var(--background-secondary);
+  color: var(--foreground);
+  border-color: var(--foreground-muted);
+}
+
 .nav-panel-content {
   padding: 12px;
   display: flex;

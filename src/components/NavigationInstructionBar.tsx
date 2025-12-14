@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useMemo, useState } from 'react';
-import { CloseOutlined, SwapOutlined, EnvironmentOutlined, UpOutlined, DownOutlined, CompassOutlined } from '@ant-design/icons';
+import { CloseOutlined, SwapOutlined, EnvironmentOutlined, UpOutlined, DownOutlined, CompassOutlined, FullscreenOutlined, EditOutlined } from '@ant-design/icons';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import { formatDuration } from '@/lib/navigation';
 import type { NavigationRoute } from '@/lib/navigation';
@@ -14,6 +14,8 @@ interface NavigationInstructionBarProps {
   onToggleWeather?: () => void;
   userLocation?: { lat: number; lng: number } | null;
   onReturnPointChange?: (point: { lat: number; lng: number } | null) => void;
+  onPreviewRoute?: () => void;
+  onEditRoute?: () => void;
 }
 
 // Calculate distance in meters between two points
@@ -64,6 +66,8 @@ function NavigationInstructionBarInner({
   onToggleWeather,
   userLocation,
   onReturnPointChange,
+  onPreviewRoute,
+  onEditRoute,
 }: NavigationInstructionBarProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   
@@ -260,6 +264,26 @@ function NavigationInstructionBarInner({
         </div>
         
         <div className="nav-footer-buttons">
+          {onPreviewRoute && (
+            <button 
+              className="nav-action-btn"
+              onClick={onPreviewRoute}
+              title="Preview full route"
+            >
+              <FullscreenOutlined style={{ fontSize: 10, marginRight: 3 }} />
+              Overview
+            </button>
+          )}
+          {onEditRoute && (
+            <button 
+              className="nav-action-btn"
+              onClick={onEditRoute}
+              title="Edit route"
+            >
+              <EditOutlined style={{ fontSize: 10, marginRight: 3 }} />
+              Edit
+            </button>
+          )}
           {onToggleWeather && (
             <button 
               className="nav-toggle-weather-btn"

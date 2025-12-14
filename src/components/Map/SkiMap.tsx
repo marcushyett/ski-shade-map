@@ -46,6 +46,7 @@ export interface SharedLocationMarker {
 
 export interface MapRef {
   flyTo: (lat: number, lng: number, zoom?: number) => void;
+  fitBounds: (bounds: [[number, number], [number, number]], options?: { padding?: number; duration?: number }) => void;
   getCenter: () => { lat: number; lng: number } | null;
   project: (lngLat: [number, number]) => { x: number; y: number } | null;
   on: (event: string, handler: () => void) => void;
@@ -176,6 +177,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
             center: [lng, lat],
             zoom: zoom ?? 15,
             duration: 1000,
+          });
+        },
+        fitBounds: (bounds: [[number, number], [number, number]], options?: { padding?: number; duration?: number }) => {
+          map.current?.fitBounds(bounds, {
+            padding: options?.padding ?? 50,
+            duration: options?.duration ?? 500,
           });
         },
         getCenter: () => {

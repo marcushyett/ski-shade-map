@@ -15,6 +15,7 @@ import {
   HomeOutlined,
   SettingOutlined,
   DownOutlined,
+  UpOutlined,
   RightOutlined,
   InfoCircleOutlined,
 } from '@ant-design/icons';
@@ -123,6 +124,9 @@ interface NavigationPanelProps {
   // Callback to cancel map click mode
   onCancelMapClick?: () => void;
   mapClickMode?: 'origin' | 'destination' | null;
+  // Minimize/collapse support
+  isMinimized?: boolean;
+  onToggleMinimize?: () => void;
 }
 
 // ============================================================================
@@ -690,6 +694,8 @@ function NavigationPanelInner({
   onRequestMapClick,
   onCancelMapClick,
   mapClickMode,
+  isMinimized = false,
+  onToggleMinimize,
 }: NavigationPanelProps) {
   const [origin, setOrigin] = useState<SelectedPoint | null>(null);
   const [destination, setDestination] = useState<SelectedPoint | null>(null);
@@ -947,6 +953,34 @@ function NavigationPanelInner({
     );
   }
 
+  // Minimized view - just shows a compact bar with route summary
+  if (isMinimized && route) {
+    return (
+      <div className="nav-panel nav-panel-minimized">
+        <div className="nav-panel-header">
+          <div className="nav-panel-title">
+            <CompassOutlined style={{ fontSize: 14, marginRight: 6 }} />
+            <span style={{ fontSize: 11 }}>
+              {formatDuration(route.totalTime)} · {formatDistance(route.totalDistance)}
+            </span>
+          </div>
+          <div className="nav-header-buttons">
+            <button 
+              className="nav-minimize-btn" 
+              onClick={onToggleMinimize}
+              title="Expand"
+            >
+              <DownOutlined style={{ fontSize: 10 }} />
+            </button>
+            <button className="nav-close-btn" onClick={onClose}>
+              <CloseOutlined style={{ fontSize: 12 }} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="nav-panel">
       <div className="nav-panel-header">
@@ -954,9 +988,20 @@ function NavigationPanelInner({
           <CompassOutlined style={{ fontSize: 14, marginRight: 6 }} />
           <span>Navigate</span>
         </div>
-        <button className="nav-close-btn" onClick={onClose}>
-          <CloseOutlined style={{ fontSize: 12 }} />
-        </button>
+        <div className="nav-header-buttons">
+          {route && onToggleMinimize && (
+            <button 
+              className="nav-minimize-btn" 
+              onClick={onToggleMinimize}
+              title="Minimize to preview route"
+            >
+              <UpOutlined style={{ fontSize: 10 }} />
+            </button>
+          )}
+          <button className="nav-close-btn" onClick={onClose}>
+            <CloseOutlined style={{ fontSize: 12 }} />
+          </button>
+        </div>
       </div>
 
       <div className="nav-panel-content">

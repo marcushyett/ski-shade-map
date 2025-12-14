@@ -337,6 +337,7 @@ export default function Home() {
   const [isFakeLocationDropMode, setIsFakeLocationDropMode] = useState(false);
   const [navReturnPoint, setNavReturnPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [isWeatherCardCollapsed, setIsWeatherCardCollapsed] = useState(false);
+  const [isNavPanelMinimized, setIsNavPanelMinimized] = useState(false);
   
   // Effective user location - uses fake location for debugging if set
   const effectiveUserLocation = useMemo<UserLocation | null>(() => {
@@ -806,6 +807,7 @@ export default function Home() {
     setNavMapClickMode(null);
     setExternalNavOrigin(null);
     setExternalNavDestination(null);
+    setIsNavPanelMinimized(false);
     setIsWeatherCardCollapsed(false); // Uncollapse weather card when closing route planner
     trackEvent('navigation_closed');
   }, []);
@@ -828,6 +830,37 @@ export default function Home() {
     setNavigationRoute(null);
     setCurrentNavSegment(0);
     setIsWeatherCardCollapsed(false); // Uncollapse weather card when ending navigation
+  }, []);
+
+  // Preview route - zoom out to show full route
+  const handlePreviewRoute = useCallback(() => {
+    if (!navigationRoute || !mapRef.current) return;
+    
+    // Calculate bounds of the route
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLng = Infinity, maxLng = -Infinity;
+    
+    navigationRoute.segments.forEach((segment) => {
+      segment.coordinates?.forEach(([lng, lat]) => {
+        minLat = Math.min(minLat, lat);
+        maxLat = Math.max(maxLat, lat);
+        minLng = Math.min(minLng, lng);
+        maxLng = Math.max(maxLng, lng);
+      });
+    });
+    
+    if (minLat !== Infinity) {
+      mapRef.current.fitBounds(
+        [[minLng, minLat], [maxLng, maxLat]],
+        { padding: 60, duration: 500 }
+      );
+    }
+  }, [navigationRoute]);
+
+  // Edit route - open navigation panel to edit while keeping route displayed
+  const handleEditRoute = useCallback(() => {
+    setIsNavigationOpen(true);
+    // Keep the navigation state so the route stays visible
   }, []);
 
   // Track user progress along the navigation route
@@ -1457,6 +1490,8 @@ export default function Home() {
                 onRequestMapClick={handleNavMapClickRequest}
                 onCancelMapClick={() => setNavMapClickMode(null)}
                 mapClickMode={navMapClickMode}
+                isMinimized={isNavPanelMinimized}
+                onToggleMinimize={() => setIsNavPanelMinimized(!isNavPanelMinimized)}
               />
             </div>
           )}
@@ -1471,6 +1506,8 @@ export default function Home() {
               onReturnPointChange={setNavReturnPoint}
               isWeatherCollapsed={isWeatherCardCollapsed}
               onToggleWeather={() => setIsWeatherCardCollapsed(!isWeatherCardCollapsed)}
+              onPreviewRoute={handlePreviewRoute}
+              onEditRoute={handleEditRoute}
             />
           )}
           
