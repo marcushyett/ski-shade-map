@@ -97,7 +97,10 @@ export type AnalyticsEvent =
   | 'navigation_route_calculated'
   | 'navigation_started'
   | 'navigation_stopped'
-  | 'navigation_destination_from_click';
+  | 'navigation_destination_from_click'
+  
+  // Donate
+  | 'donate_clicked';
 
 export interface AnalyticsProperties {
   // Common properties
