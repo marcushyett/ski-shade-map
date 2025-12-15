@@ -276,7 +276,15 @@ const ControlsContent = memo(function ControlsContent({
             >
               OpenSkiMap
             </a>
-            {' '}© OSM
+            {' '}© OSM | Weather by{' '}
+            <a 
+              href="https://open-meteo.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{ color: '#888' }}
+            >
+              Open-Meteo
+            </a>
           </span>
           <br />
           <span style={{ fontSize: 9, color: '#555' }}>

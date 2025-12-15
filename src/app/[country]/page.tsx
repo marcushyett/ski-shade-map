@@ -243,7 +243,7 @@ export default async function CountryPage({ params }: PageProps) {
         </main>
 
         <footer className="border-t border-white/10 px-4 py-6 text-center text-sm text-gray-400 md:px-8">
-          <p>&copy; {new Date().getFullYear()} SKISHADE &middot; Real-time ski maps powered by OpenSkiMap</p>
+          <p>&copy; {new Date().getFullYear()} SKISHADE &middot; Real-time ski maps powered by OpenSkiMap &middot; Weather by <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Open-Meteo</a></p>
         </footer>
       </div>
     </>
