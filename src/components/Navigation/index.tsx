@@ -85,6 +85,8 @@ interface NavigationPanelProps {
   pois?: POIData[];
   // Optional prebuilt graph to avoid rebuilding - performance optimization
   prebuiltGraph?: NavigationGraph | null;
+  // Callback to find nearest toilet from a given point (uses prebuilt graph)
+  findNearestToilet?: (fromLat: number, fromLng: number) => POIData | null;
 }
 
 function NavigationPanelInner({
@@ -107,6 +109,7 @@ function NavigationPanelInner({
   hourlyWeather,
   pois = [],
   prebuiltGraph,
+  findNearestToilet,
 }: NavigationPanelProps) {
   // State
   const [origin, setOrigin] = useState<SelectedPoint | null>(null);
@@ -252,79 +255,71 @@ function NavigationPanelInner({
       try {
         const graph = getGraph();
 
-        // Resolve closestToilet using route-based distance (optimized)
+        // Resolve closestToilet using the shared findNearestToilet callback
         let resolvedDestination = destination;
         if (destination.type === 'closestToilet' && origin.lat && origin.lng) {
-          const toilets = pois.filter((poi) => poi.type === 'toilet');
-          if (toilets.length === 0) {
-            setError('No toilets found in this area');
-            setIsCalculating(false);
-            return;
-          }
-          
-          // Find 10 geographically closest toilets
-          const toiletsWithDistance = toilets.map((t) => ({
-            toilet: t,
-            geoDistance: Math.sqrt(Math.pow(t.latitude - origin.lat!, 2) + Math.pow(t.longitude - origin.lng!, 2)),
-          }));
-          toiletsWithDistance.sort((a, b) => a.geoDistance - b.geoDistance);
-          const closeToilets = toiletsWithDistance.slice(0, Math.min(10, toilets.length));
-          
-          // Find start node for the origin
-          const startNode = findNearestNode(graph, origin.lat, origin.lng);
-          if (!startNode) {
-            console.warn('[Navigation] No start node found near origin:', origin.lat, origin.lng);
-            console.warn('[Navigation] Graph has', graph.nodes.size, 'nodes');
-            setError('Could not find your location in the navigation network. Try moving closer to a run or lift.');
-            setIsCalculating(false);
-            return;
-          }
-          
-          // Calculate routes to the 10 closest toilets and pick the shortest
-          // Use addPoiNodeToGraph to create proper walking connections to each toilet
-          let nearestToilet = closeToilets[0].toilet;
-          let shortestRouteTime = Infinity;
-          let foundAnyRoute = false;
-          let bestToiletNodeId: string | null = null;
-          
-          for (const { toilet } of closeToilets) {
-            // Add the toilet as a POI node with generous walking connections
+          // Use the shared findNearestToilet function if provided
+          if (findNearestToilet) {
+            const nearestToilet = findNearestToilet(origin.lat, origin.lng);
+            if (!nearestToilet) {
+              setError('No toilets found nearby. Try moving closer to a run or lift.');
+              setIsCalculating(false);
+              return;
+            }
+            
+            // Add the toilet as a POI node for routing
             const toiletNodeId = addPoiNodeToGraph(
-              graph, 
-              toilet.id, 
-              toilet.latitude, 
-              toilet.longitude, 
-              toilet.name || 'Toilet'
+              graph,
+              nearestToilet.id,
+              nearestToilet.latitude,
+              nearestToilet.longitude,
+              nearestToilet.name || 'Toilet'
             );
             
-            const route = findRoute(graph, startNode.id, toiletNodeId);
-            
-            if (route && route.totalTime < shortestRouteTime) {
-              shortestRouteTime = route.totalTime;
-              nearestToilet = toilet;
-              bestToiletNodeId = toiletNodeId;
-              foundAnyRoute = true;
+            resolvedDestination = {
+              type: 'mapPoint',
+              id: nearestToilet.id,
+              name: nearestToilet.name || 'Toilet',
+              lat: nearestToilet.latitude,
+              lng: nearestToilet.longitude,
+              nodeId: toiletNodeId,
+            };
+            setDestination(resolvedDestination);
+          } else {
+            // Fallback: inline toilet finding (for backwards compatibility)
+            const toilets = pois.filter((poi) => poi.type === 'toilet');
+            if (toilets.length === 0) {
+              setError('No toilets found in this area');
+              setIsCalculating(false);
+              return;
             }
+            
+            // Find geographically closest toilet as simple fallback
+            const toiletsWithDistance = toilets.map((t) => ({
+              toilet: t,
+              geoDistance: Math.sqrt(Math.pow(t.latitude - origin.lat!, 2) + Math.pow(t.longitude - origin.lng!, 2)),
+            }));
+            toiletsWithDistance.sort((a, b) => a.geoDistance - b.geoDistance);
+            const nearestToilet = toiletsWithDistance[0].toilet;
+            
+            const toiletNodeId = addPoiNodeToGraph(
+              graph,
+              nearestToilet.id,
+              nearestToilet.latitude,
+              nearestToilet.longitude,
+              nearestToilet.name || 'Toilet'
+            );
+            
+            resolvedDestination = {
+              type: 'mapPoint',
+              id: nearestToilet.id,
+              name: nearestToilet.name || 'Toilet',
+              lat: nearestToilet.latitude,
+              lng: nearestToilet.longitude,
+              nodeId: toiletNodeId,
+            };
+            setDestination(resolvedDestination);
           }
-          
-          // If no route was found to any toilet, show error
-          if (!foundAnyRoute || !bestToiletNodeId) {
-            console.warn('[Navigation] No route found to any of the', closeToilets.length, 'closest toilets');
-            setError('Could not find a route to any nearby toilet. Try moving closer to a run or lift.');
-            setIsCalculating(false);
-            return;
-          }
-          
-          // Use a special nodeId that references the POI node we created
-          resolvedDestination = {
-            type: 'mapPoint',
-            id: nearestToilet.id,
-            name: nearestToilet.name || 'Toilet',
-            lat: nearestToilet.latitude,
-            lng: nearestToilet.longitude,
-            nodeId: bestToiletNodeId, // Store the POI node ID for routing
-          };
-          setDestination(resolvedDestination);
         }
 
         const getNodeId = (point: SelectedPoint): string | null => {

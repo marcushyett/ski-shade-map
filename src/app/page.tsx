@@ -1834,6 +1834,7 @@ export default function Home() {
                 hourlyWeather={hourlyWeather}
                 pois={pois}
                 prebuiltGraph={navigationGraph}
+                findNearestToilet={findNearestToilet}
               />
             </div>
           )}
