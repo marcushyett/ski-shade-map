@@ -368,7 +368,7 @@ h5.ant-typography {
 .view-toggle-container {
   position: absolute;
   top: 6px;
-  right: 6px;
+  right: 56px; /* Position to the left of MapLibre controls (29px buttons + margin) */
   z-index: 10;
 }
 
@@ -452,17 +452,12 @@ h5.ant-typography {
 
   .view-toggle-container {
     top: 10px;
-    right: 10px;
+    right: 56px; /* Position to the left of MapLibre controls */
   }
 
   .cache-button-container {
     top: 10px;
     left: 10px;
-  }
-  
-  /* MapLibre controls get pushed down by view toggle on desktop */
-  .maplibregl-ctrl-top-right {
-    top: 50px;
   }
 }
 
@@ -943,7 +938,7 @@ h5.ant-typography {
 /* Location controls - positioned below zoom controls on right */
 .location-controls-container {
   position: absolute;
-  top: 148px; /* Below view toggle (40px) + MapLibre compass/zoom (3*29px + gaps) */
+  top: 105px; /* Below MapLibre compass/zoom (3*29px + gaps) */
   right: 10px;
   z-index: 10;
   pointer-events: none;
@@ -2194,9 +2189,9 @@ h5.ant-typography {
     height: 44px !important;
   }
   
-  /* Location controls - position below view toggle + MapLibre controls */
+  /* Location controls - position below MapLibre controls */
   .location-controls-container {
-    top: 206px !important; /* View toggle (50px) + MapLibre (3 * 44px + gaps) */
+    top: 150px !important; /* MapLibre (3 * 44px + gaps) */
     right: 10px !important;
   }
   
@@ -2224,10 +2219,10 @@ h5.ant-typography {
     height: 18px !important;
   }
   
-  /* View toggle - position at top right, MapLibre controls below */
+  /* View toggle - position to the left of MapLibre controls */
   .view-toggle-container {
     top: 6px !important;
-    right: 6px !important;
+    right: 60px !important; /* Leave room for MapLibre controls (44px + margin) */
   }
   
   .view-toggle-container .ant-segmented {
@@ -2237,11 +2232,6 @@ h5.ant-typography {
   .view-toggle-container .ant-segmented-item {
     min-height: 42px !important;
     padding: 0 12px !important;
-  }
-  
-  /* MapLibre controls pushed down by view toggle on mobile */
-  .maplibregl-ctrl-top-right {
-    top: 56px !important;
   }
   
   /* Ant Design buttons - general touch target size */
