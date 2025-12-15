@@ -194,12 +194,35 @@ function PointSearchInput({
   }, [autoFocus]);
 
   // Filter runs and lifts by search
+  // Deduplicate runs by name+subregion, keeping highest altitude
   const filteredRuns = useMemo(() => {
     if (!searchText) return [];
     const lower = searchText.toLowerCase();
-    return skiArea.runs
-      .filter((r) => r.name?.toLowerCase().includes(lower))
-      .slice(0, 5);
+    const matchingRuns = skiArea.runs.filter((r) => r.name?.toLowerCase().includes(lower));
+    
+    // Group by name + subregion, keep highest altitude
+    const grouped = new Map<string, typeof matchingRuns[0]>();
+    for (const run of matchingRuns) {
+      const key = `${run.name || 'Unnamed'}::${run.subRegionName || ''}`;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, run);
+      } else {
+        // Get elevation from geometry if available
+        const getMaxElevation = (r: typeof run) => {
+          if (r.geometry.type === 'LineString') {
+            const coords = r.geometry.coordinates;
+            return coords.length > 0 ? (coords[0][2] || coords[0][1]) : 0;
+          }
+          return 0;
+        };
+        if (getMaxElevation(run) > getMaxElevation(existing)) {
+          grouped.set(key, run);
+        }
+      }
+    }
+    
+    return Array.from(grouped.values()).slice(0, 8);
   }, [skiArea.runs, searchText]);
 
   const filteredLifts = useMemo(() => {
@@ -207,7 +230,7 @@ function PointSearchInput({
     const lower = searchText.toLowerCase();
     return skiArea.lifts
       .filter((l) => l.name?.toLowerCase().includes(lower))
-      .slice(0, 3);
+      .slice(0, 5);
   }, [skiArea.lifts, searchText]);
 
   // Combined results for keyboard navigation
@@ -292,123 +315,124 @@ function PointSearchInput({
 
   const showDropdown = isFocused && (allResults.length > 0 || searchText.length > 0);
 
+  // Quick action buttons component (reused in both states)
+  const QuickActionButtons = () => (
+    <div className="nav-quick-actions">
+      {/* Position toggle for runs and lifts */}
+      {value && (value.type === 'run' || value.type === 'lift') && (
+        <>
+          <button
+            className={`nav-position-btn-sm ${value.position === 'top' ? 'active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange({ ...value, position: 'top' });
+            }}
+          >
+            <ArrowUpOutlined style={{ fontSize: 8 }} />
+            Top
+          </button>
+          <button
+            className={`nav-position-btn-sm ${value.position === 'bottom' || !value.position ? 'active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange({ ...value, position: 'bottom' });
+            }}
+          >
+            <ArrowDownOutlined style={{ fontSize: 8 }} />
+            Bottom
+          </button>
+        </>
+      )}
+      {/* Pick on map button */}
+      {onRequestMapClick && (
+        <MobileAwareTooltip title={isMapClickActive ? 'Click anywhere on the map' : 'Pick location on map'} placement="top">
+          <button 
+            className={`nav-action-btn ${isMapClickActive ? 'active' : ''}`}
+            onClick={onRequestMapClick}
+          >
+            <EnvironmentOutlined style={{ fontSize: 11 }} />
+          </button>
+        </MobileAwareTooltip>
+      )}
+    </div>
+  );
+
   return (
     <div ref={containerRef} className="nav-search-container relative">
-      <div className="flex items-center justify-between mb-0.5">
+      <div className="nav-search-label-row">
         <label style={{ fontSize: 9, color: '#666' }}>
           {label}
         </label>
-        <div className="flex items-center gap-1">
-          {/* Current Location quick-select button */}
-          {showCurrentLocation && userLocation && isUserLocationValid && (
-            <MobileAwareTooltip title="Use current location" placement="top">
-              <button 
-                className="location-btn nav-location-btn"
-                onClick={() => {
-                  onChange({
-                    type: 'location',
-                    id: 'current-location',
-                    name: 'My Current Location',
-                    lat: userLocation.latitude,
-                    lng: userLocation.longitude,
-                  });
-                  onCancelMapClick?.();
-                }}
-                style={{ width: 22, height: 22 }}
-              >
-                <AimOutlined style={{ fontSize: 11, color: '#3b82f6' }} />
-              </button>
-            </MobileAwareTooltip>
-          )}
-          {/* Mountain Home quick-select button */}
-          {mountainHome && (
-            <MobileAwareTooltip title={`Go to ${mountainHome.name}`} placement="top">
-              <button 
-                className="location-btn nav-home-btn"
-                onClick={() => {
-                  onChange({
-                    type: 'home',
-                    id: 'mountain-home',
-                    name: mountainHome.name,
-                    lat: mountainHome.latitude,
-                    lng: mountainHome.longitude,
-                  });
-                  onCancelMapClick?.();
-                }}
-                style={{ width: 22, height: 22 }}
-              >
-                <HomeOutlined style={{ fontSize: 11, color: '#faad14' }} />
-              </button>
-            </MobileAwareTooltip>
-          )}
-          {/* Pick on map button */}
-          {onRequestMapClick && (
-            <MobileAwareTooltip title={isMapClickActive ? 'Click anywhere on the map' : 'Pick location on map'} placement="top">
-              <button 
-                className={`location-btn nav-map-pick-btn ${isMapClickActive ? 'active' : ''}`}
-                onClick={onRequestMapClick}
-                style={{ width: 22, height: 22 }}
-              >
-                <EnvironmentOutlined style={{ fontSize: 11 }} />
-              </button>
-            </MobileAwareTooltip>
-          )}
-        </div>
+        {/* Current Location quick-select button */}
+        {showCurrentLocation && userLocation && isUserLocationValid && (
+          <MobileAwareTooltip title="Use current location" placement="top">
+            <button 
+              className="nav-label-btn"
+              onClick={() => {
+                onChange({
+                  type: 'location',
+                  id: 'current-location',
+                  name: 'My Current Location',
+                  lat: userLocation.latitude,
+                  lng: userLocation.longitude,
+                });
+                onCancelMapClick?.();
+              }}
+            >
+              <AimOutlined style={{ fontSize: 9, color: '#3b82f6' }} />
+            </button>
+          </MobileAwareTooltip>
+        )}
+        {/* Mountain Home quick-select button */}
+        {mountainHome && (
+          <MobileAwareTooltip title={`Go to ${mountainHome.name}`} placement="top">
+            <button 
+              className="nav-label-btn"
+              onClick={() => {
+                onChange({
+                  type: 'home',
+                  id: 'mountain-home',
+                  name: mountainHome.name,
+                  lat: mountainHome.latitude,
+                  lng: mountainHome.longitude,
+                });
+                onCancelMapClick?.();
+              }}
+            >
+              <HomeOutlined style={{ fontSize: 9, color: '#faad14' }} />
+            </button>
+          </MobileAwareTooltip>
+        )}
       </div>
       {value ? (
-        <div className="nav-selected-point-wrapper">
-          <div className="nav-selected-row">
-            <div className="nav-selected-point" onClick={() => onChange(null)}>
-              {value.type === 'location' ? (
-                <AimOutlined style={{ fontSize: 12, color: '#3b82f6', marginRight: 6 }} />
-              ) : value.type === 'home' ? (
-                <HomeOutlined style={{ fontSize: 12, color: '#faad14', marginRight: 6 }} />
-              ) : value.type === 'mapPoint' ? (
-                <EnvironmentOutlined style={{ fontSize: 12, color: '#f59e0b', marginRight: 6 }} />
-              ) : value.type === 'run' ? (
-                <span 
-                  className="nav-dot" 
-                  style={{ backgroundColor: getDifficultyColor(value.difficulty) }} 
-                />
-              ) : value.type === 'lift' ? (
-                <SwapOutlined style={{ fontSize: 10, color: '#52c41a', marginRight: 6 }} />
-              ) : (
-                <EnvironmentOutlined style={{ fontSize: 12, color: '#888', marginRight: 6 }} />
-              )}
-              <span className="nav-selected-name">
-                {value.name}
-              </span>
-              <CloseOutlined style={{ fontSize: 10, color: '#666', marginLeft: 'auto' }} />
-            </div>
-            {/* Position toggle for runs and lifts - inline with search */}
-            {(value.type === 'run' || value.type === 'lift') && (
-              <div className="nav-position-toggle-inline">
-                <button
-                  className={`nav-position-btn-sm ${value.position === 'top' ? 'active' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChange({ ...value, position: 'top' });
-                  }}
-                >
-                  <ArrowUpOutlined style={{ fontSize: 8 }} />
-                  Top
-                </button>
-                <button
-                  className={`nav-position-btn-sm ${value.position === 'bottom' || !value.position ? 'active' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChange({ ...value, position: 'bottom' });
-                  }}
-                >
-                  <ArrowDownOutlined style={{ fontSize: 8 }} />
-                  Bottom
-                </button>
-              </div>
+        <div className="nav-selected-row-full">
+          <QuickActionButtons />
+          <div className="nav-selected-point-full" onClick={() => onChange(null)}>
+            {value.type === 'location' ? (
+              <AimOutlined style={{ fontSize: 12, color: '#3b82f6', marginRight: 6 }} />
+            ) : value.type === 'home' ? (
+              <HomeOutlined style={{ fontSize: 12, color: '#faad14', marginRight: 6 }} />
+            ) : value.type === 'mapPoint' ? (
+              <EnvironmentOutlined style={{ fontSize: 12, color: '#f59e0b', marginRight: 6 }} />
+            ) : value.type === 'run' ? (
+              <span 
+                className="nav-dot" 
+                style={{ backgroundColor: getDifficultyColor(value.difficulty) }} 
+              />
+            ) : value.type === 'lift' ? (
+              <SwapOutlined style={{ fontSize: 10, color: '#52c41a', marginRight: 6 }} />
+            ) : (
+              <EnvironmentOutlined style={{ fontSize: 12, color: '#888', marginRight: 6 }} />
             )}
+            <span className="nav-selected-name">
+              {value.name}
+            </span>
+            <CloseOutlined style={{ fontSize: 10, color: '#666', marginLeft: 'auto' }} />
           </div>
         </div>
       ) : (
-        <>
+        <div className="nav-input-row">
+          <QuickActionButtons />
           <Input
             ref={inputRef as any}
             placeholder={isMapClickActive ? 'Click on map or search...' : placeholder}
@@ -421,7 +445,7 @@ function PointSearchInput({
             onFocus={() => setIsFocused(true)}
             onKeyDown={handleKeyDown}
             size="small"
-            style={{ width: '100%' }}
+            className="nav-search-input"
           />
           
           {showDropdown && (
@@ -498,6 +522,9 @@ function PointSearchInput({
                           style={{ backgroundColor: getDifficultyColor(run.difficulty) }}
                         />
                         <span className="nav-search-item-name">{run.name || 'Unnamed'}</span>
+                        {run.subRegionName && (
+                          <span className="nav-search-item-subregion">{run.subRegionName}</span>
+                        )}
                         {run.difficulty && (
                           <span className="nav-search-item-meta" style={{ color: getDifficultyColor(run.difficulty) }}>
                             {run.difficulty}
@@ -549,7 +576,7 @@ function PointSearchInput({
               )}
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -1058,70 +1085,72 @@ function NavigationPanelInner({
           isMapClickActive={mapClickMode === 'destination'}
         />
 
-        {/* Advanced options - collapsible */}
-        <div className="nav-advanced-section">
-          <div 
-            className="nav-advanced-header"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-          >
-            {showAdvanced ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
-            <SettingOutlined style={{ fontSize: 10, marginLeft: 4 }} />
-            <span style={{ marginLeft: 4 }}>Route options</span>
-          </div>
-          
-          {showAdvanced && (
-            <div className="nav-advanced-content">
-              {/* Difficulty filters */}
-              <div className="nav-filter-group">
-                <div className="nav-filter-label">Slope difficulties:</div>
-                <div className="nav-filter-options">
-                  {Object.entries(filters.difficulties).map(([key, checked]) => (
-                    <div 
-                      key={key} 
-                      className="nav-filter-checkbox"
-                      onClick={() => setFilters(prev => ({
-                        ...prev,
-                        difficulties: { ...prev.difficulties, [key]: !prev.difficulties[key as keyof typeof prev.difficulties] }
-                      }))}
-                    >
-                      <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
-                      <span 
-                        className="nav-filter-dot"
-                        style={{ 
-                          backgroundColor: getDifficultyColor(key),
-                          border: key === 'advanced' ? '1px solid #666' : undefined,
-                        }}
-                      />
-                      <span className="nav-filter-name">{key.charAt(0).toUpperCase() + key.slice(1)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Lift type filters */}
-              <div className="nav-filter-group">
-                <div className="nav-filter-label">Lift types:</div>
-                <div className="nav-filter-options nav-filter-lifts">
-                  {Object.entries(filters.liftTypes).map(([key, checked]) => (
-                    <div 
-                      key={key} 
-                      className="nav-filter-checkbox"
-                      onClick={() => setFilters(prev => ({
-                        ...prev,
-                        liftTypes: { ...prev.liftTypes, [key]: !prev.liftTypes[key as keyof typeof prev.liftTypes] }
-                      }))}
-                    >
-                      <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
-                      <span className="nav-filter-name">
-                        {key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+        {/* Advanced options - only show when no route yet */}
+        {!route && (
+          <div className="nav-advanced-section">
+            <div 
+              className="nav-advanced-header"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              {showAdvanced ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
+              <SettingOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+              <span style={{ marginLeft: 4 }}>Route options</span>
             </div>
-          )}
-        </div>
+            
+            {showAdvanced && (
+              <div className="nav-advanced-content">
+                {/* Difficulty filters */}
+                <div className="nav-filter-group">
+                  <div className="nav-filter-label">Slope difficulties:</div>
+                  <div className="nav-filter-options">
+                    {Object.entries(filters.difficulties).map(([key, checked]) => (
+                      <div 
+                        key={key} 
+                        className="nav-filter-checkbox"
+                        onClick={() => setFilters(prev => ({
+                          ...prev,
+                          difficulties: { ...prev.difficulties, [key]: !prev.difficulties[key as keyof typeof prev.difficulties] }
+                        }))}
+                      >
+                        <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
+                        <span 
+                          className="nav-filter-dot"
+                          style={{ 
+                            backgroundColor: getDifficultyColor(key),
+                            border: key === 'advanced' ? '1px solid #666' : undefined,
+                          }}
+                        />
+                        <span className="nav-filter-name">{key.charAt(0).toUpperCase() + key.slice(1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Lift type filters */}
+                <div className="nav-filter-group">
+                  <div className="nav-filter-label">Lift types:</div>
+                  <div className="nav-filter-options nav-filter-lifts">
+                    {Object.entries(filters.liftTypes).map(([key, checked]) => (
+                      <div 
+                        key={key} 
+                        className="nav-filter-checkbox"
+                        onClick={() => setFilters(prev => ({
+                          ...prev,
+                          liftTypes: { ...prev.liftTypes, [key]: !prev.liftTypes[key as keyof typeof prev.liftTypes] }
+                        }))}
+                      >
+                        <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
+                        <span className="nav-filter-name">
+                          {key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Error message */}
         {error && (
@@ -1147,9 +1176,11 @@ function NavigationPanelInner({
         {route && !isCalculating && (
           <RouteSummary route={route} />
         )}
+      </div>
 
-        {/* Action buttons */}
-        <div className="nav-actions">
+      {/* Action buttons - fixed at bottom, outside scroll area */}
+      {(origin || destination || route) && (
+        <div className="nav-actions-fixed">
           {route && !isActivelyNavigating && (
             <button 
               className="location-btn nav-start-btn"
@@ -1170,15 +1201,14 @@ function NavigationPanelInner({
           )}
           {(origin || destination) && (
             <button 
-              className="location-btn"
+              className="location-btn nav-clear-btn"
               onClick={handleClear}
-              style={{ marginLeft: 8, width: 'auto', padding: '0 10px' }}
             >
               Clear
             </button>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

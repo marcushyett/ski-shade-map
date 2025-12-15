@@ -1246,17 +1246,123 @@ h5.ant-typography {
 
 .nav-panel-content {
   padding: 12px;
+  padding-bottom: 0; /* Actions are outside */
   display: flex;
   flex-direction: column;
   gap: 8px;
   /* Make the whole content scrollable with header always visible */
-  max-height: 60vh;
+  max-height: 50vh;
   overflow-y: auto;
+}
+
+/* Fixed action buttons at bottom of nav panel */
+.nav-actions-fixed {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--background-secondary);
+}
+
+.nav-clear-btn {
+  width: auto !important;
+  padding: 0 12px !important;
 }
 
 /* Navigation search inputs */
 .nav-search-container {
   position: relative;
+}
+
+/* Label row with FROM/TO and quick action buttons */
+.nav-search-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.nav-label-btn {
+  background: transparent;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.nav-label-btn:hover {
+  opacity: 1;
+}
+
+/* Input row with quick actions on left, input taking remaining space */
+.nav-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Quick action buttons container */
+.nav-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.nav-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--background-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.nav-action-btn:hover {
+  background: var(--background);
+  color: var(--foreground);
+  border-color: var(--foreground-muted);
+}
+
+.nav-action-btn.active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+/* Selected row - full width with actions on left */
+.nav-selected-row-full {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-selected-point-full {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--background-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nav-selected-point-full:hover {
+  border-color: var(--foreground-muted);
 }
 
 .nav-selected-point {
@@ -1305,6 +1411,14 @@ h5.ant-typography {
   overflow-y: auto;
   z-index: 1100;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Subregion display in search results */
+.nav-search-item-subregion {
+  font-size: 9px;
+  color: var(--foreground-muted);
+  margin-left: 4px;
+  opacity: 0.7;
 }
 
 /* Map pick button */
