@@ -2087,3 +2087,234 @@ h5.ant-typography {
     box-shadow: 0 4px 20px rgba(245, 158, 11, 0.7);
   }
 }
+
+/* ============================================================================
+   Mobile Touch Target Improvements
+   Increases touch surface without changing visual appearance
+   ============================================================================ */
+
+@media (max-width: 767px) {
+  /* Slider handle - larger touch target on mobile */
+  .ant-slider-handle {
+    /* Make the actual handle element larger for touch */
+    width: 28px !important;
+    height: 28px !important;
+    margin-top: -13px !important;
+    /* Center the visual dot within */
+  }
+  
+  .ant-slider-handle::after {
+    /* Keep visual appearance the same size */
+    width: 14px !important;
+    height: 14px !important;
+    /* Center within the larger touch target */
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    inset-inline-start: unset !important;
+    inset-block-start: unset !important;
+  }
+  
+  /* Location control buttons - larger touch target */
+  .location-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  
+  .location-btn .anticon {
+    font-size: 18px !important;
+  }
+  
+  /* Location controls container positioning adjustment */
+  .location-controls-container .location-btn {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  
+  /* MapLibre navigation controls - larger touch targets */
+  .maplibregl-ctrl-group button {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  
+  /* Ant Design buttons - larger touch targets */
+  .ant-btn {
+    min-height: 36px !important;
+    padding: 0 12px !important;
+  }
+  
+  .ant-btn-sm {
+    min-height: 32px !important;
+    padding: 0 10px !important;
+  }
+  
+  /* Segmented control - larger touch targets */
+  .ant-segmented-item-label {
+    min-height: 36px !important;
+    line-height: 36px !important;
+    padding: 0 14px !important;
+  }
+  
+  /* Navigation panel buttons */
+  .nav-trigger-btn {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  
+  .nav-close-btn,
+  .nav-minimize-btn {
+    width: 36px !important;
+    height: 36px !important;
+  }
+  
+  .nav-swap-btn {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  
+  /* Navigation action buttons */
+  .nav-start-btn,
+  .nav-stop-btn {
+    min-height: 44px !important;
+    padding: 0 20px !important;
+  }
+  
+  /* Nav position toggle buttons */
+  .nav-position-btn {
+    min-height: 36px !important;
+    padding: 8px 12px !important;
+  }
+  
+  /* Quick select buttons in nav search */
+  .nav-location-btn,
+  .nav-home-btn {
+    width: 36px !important;
+    height: 36px !important;
+  }
+  
+  /* Map pick button */
+  .nav-map-pick-btn {
+    width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+  }
+  
+  /* Filter checkboxes - larger touch targets */
+  .nav-filter-checkbox {
+    min-height: 36px !important;
+    padding: 8px 4px !important;
+  }
+  
+  .nav-filter-check {
+    width: 20px !important;
+    height: 20px !important;
+  }
+  
+  /* Time slider buttons */
+  .time-slider .ant-btn {
+    min-height: 36px !important;
+    padding: 0 14px !important;
+  }
+  
+  /* Time slider collapse button */
+  .time-slider-collapse-btn {
+    min-height: 36px !important;
+    padding: 8px 12px !important;
+  }
+  
+  /* Collapsed time slider - easier to tap to expand */
+  .time-slider.time-slider-collapsed {
+    min-height: 48px !important;
+    padding: 12px 16px !important;
+  }
+  
+  /* Date navigation buttons */
+  .time-slider .ant-btn[class*="LeftOutlined"],
+  .time-slider .ant-btn[class*="RightOutlined"] {
+    width: 44px !important;
+    height: 36px !important;
+  }
+  
+  /* Play/pause button */
+  .time-slider .ant-btn:has(.anticon-play-circle),
+  .time-slider .ant-btn:has(.anticon-pause-circle) {
+    width: 40px !important;
+    height: 32px !important;
+  }
+  
+  /* Run detail panel close button */
+  .run-detail-panel button:has(.anticon-close) {
+    width: 36px !important;
+    height: 36px !important;
+    padding: 8px !important;
+  }
+  
+  /* Navigation instruction buttons */
+  .nav-end-btn {
+    min-height: 40px !important;
+    padding: 8px 16px !important;
+  }
+  
+  .nav-end-btn-mini {
+    width: 36px !important;
+    height: 36px !important;
+  }
+  
+  .nav-collapse-btn {
+    width: 36px !important;
+    height: 36px !important;
+  }
+  
+  /* Edit home banner cancel button */
+  .edit-home-cancel {
+    min-height: 32px !important;
+    padding: 6px 12px !important;
+  }
+  
+  /* Search dropdown items - easier to tap */
+  .search-item,
+  .nav-search-item {
+    min-height: 44px !important;
+    padding: 10px 12px !important;
+  }
+  
+  /* Weather timeline - if it has interactive elements */
+  .weather-timeline-item {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Increase tap target for run/lift list items */
+  .run-item,
+  .lift-item {
+    min-height: 44px !important;
+    padding: 10px 8px !important;
+  }
+  
+  /* Expand/collapse toggles */
+  .ant-collapse-header {
+    min-height: 44px !important;
+    padding: 10px 12px !important;
+  }
+  
+  /* Selected point wrapper - easier to tap to clear */
+  .nav-selected-point {
+    min-height: 40px !important;
+    padding: 10px 12px !important;
+  }
+  
+  /* Advanced section header */
+  .nav-advanced-header {
+    min-height: 40px !important;
+    padding: 10px 12px !important;
+  }
+  
+  /* Toggle weather button */
+  .nav-toggle-weather-btn {
+    min-height: 36px !important;
+    padding: 8px 12px !important;
+  }
+}
