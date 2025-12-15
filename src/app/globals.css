@@ -2063,6 +2063,166 @@ h5.ant-typography {
   white-space: nowrap;
 }
 
+/* Sunny route section */
+.nav-sunny-route-section {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-sunny-options {
+  margin-top: 8px;
+  margin-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-sunny-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-sunny-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-sunny-slider {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+}
+
+.nav-sunny-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f59e0b;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.nav-sunny-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f59e0b;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.nav-sunny-value {
+  font-size: 10px;
+  color: #f59e0b;
+  font-weight: 500;
+  min-width: 40px;
+}
+
+.nav-sunny-time-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-sunny-time-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-sunny-time-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #f59e0b;
+}
+
+.nav-sunny-time-input {
+  width: 70px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 11px;
+  padding: 0 6px;
+  text-align: center;
+}
+
+.nav-sunny-time-input:focus {
+  outline: none;
+  border-color: #f59e0b;
+}
+
+/* Sun distribution chart */
+.nav-sun-distribution {
+  margin: 8px 0;
+  padding: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.nav-sun-distribution-header {
+  display: flex;
+  align-items: center;
+  font-size: 9px;
+  color: #888;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.nav-sun-distribution-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 30px;
+  padding: 0 2px;
+}
+
+.nav-sun-bar {
+  border-radius: 2px 2px 0 0;
+  min-height: 4px;
+  transition: height 0.2s ease;
+}
+
+.nav-sun-distribution-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8px;
+  color: #666;
+  margin-top: 4px;
+  padding: 0 2px;
+}
+
+/* Bad weather notice */
+.nav-sun-bad-weather {
+  display: flex;
+  align-items: center;
+  font-size: 9px;
+  color: #888;
+  padding: 6px 8px;
+  background: rgba(100, 100, 100, 0.15);
+  border-radius: 4px;
+  margin: 6px 0;
+}
+
 /* Action buttons */
 .nav-actions {
   display: flex;

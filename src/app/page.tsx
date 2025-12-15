@@ -1664,6 +1664,7 @@ export default function Home() {
                 mapClickMode={navMapClickMode}
                 isMinimized={isNavPanelMinimized}
                 onToggleMinimize={() => setIsNavPanelMinimized(!isNavPanelMinimized)}
+                hourlyWeather={hourlyWeather}
               />
             </div>
           )}

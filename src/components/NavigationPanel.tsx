@@ -19,6 +19,8 @@ import {
   RightOutlined,
   InfoCircleOutlined,
   BulbOutlined,
+  SunOutlined,
+  CloudOutlined,
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
 import LoadingSpinner from './LoadingSpinner';
@@ -44,6 +46,7 @@ import {
   findRouteWithDiagnostics,
   findNearestNode,
   findRouteBetweenFeatures,
+  findAlternativeRoutes,
   optimizeRoute,
   formatDuration,
   formatDistance,
@@ -52,6 +55,16 @@ import {
   type NavigationDestination,
   type RouteFailureDiagnostics,
 } from '@/lib/navigation';
+import {
+  analyzeRouteSunExposure,
+  findSunniestRoute,
+  getResortLocalTime,
+  roundToNearest5Minutes,
+  formatTimeHHMM,
+  type RouteSunAnalysis,
+  type SunnyRouteOptions,
+} from '@/lib/route-sun-calculator';
+import type { HourlyWeather } from '@/lib/weather-types';
 import type { UserLocation, MountainHome } from '@/components/LocationControls';
 
 // ============================================================================
@@ -146,6 +159,8 @@ interface NavigationPanelProps {
   // Minimize/collapse support
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
+  // Weather data for sun calculations
+  hourlyWeather?: HourlyWeather[];
 }
 
 // ============================================================================
@@ -702,7 +717,12 @@ interface DisplaySegment {
   coordinates: [number, number, number?][];
 }
 
-function RouteSummary({ route }: { route: NavigationRoute }) {
+interface RouteSummaryProps {
+  route: NavigationRoute;
+  sunAnalysis?: RouteSunAnalysis | null;
+}
+
+function RouteSummary({ route, sunAnalysis }: RouteSummaryProps) {
   // Helper to find the next named destination after unnamed segments
   // Traverses through chains of unnamed connections to find the actual destination
   const getConnectionDestination = (segmentIndex: number, segments: typeof route.segments) => {
@@ -798,7 +818,64 @@ function RouteSummary({ route }: { route: NavigationRoute }) {
           <strong><ArrowDownOutlined style={{ fontSize: 9 }} /> {Math.round(route.totalElevationLoss)}m</strong>
           <span className="nav-stat-label">DOWN</span>
         </span>
+        {/* Sun percentage */}
+        {sunAnalysis && sunAnalysis.isReliable && !sunAnalysis.isBadWeather && (
+          <>
+            <span className="nav-stat-divider">·</span>
+            <span className="nav-stat-item">
+              <strong style={{ color: sunAnalysis.sunPercentage >= 50 ? '#f59e0b' : '#888' }}>
+                <SunOutlined style={{ fontSize: 9 }} /> {Math.round(sunAnalysis.sunPercentage)}%
+              </strong>
+              <span className="nav-stat-label">SUN</span>
+            </span>
+          </>
+        )}
       </div>
+      
+      {/* Sun distribution chart */}
+      {sunAnalysis && sunAnalysis.isReliable && sunAnalysis.sunDistribution.length > 1 && !sunAnalysis.isBadWeather && (
+        <div className="nav-sun-distribution">
+          <div className="nav-sun-distribution-header">
+            <SunOutlined style={{ fontSize: 10, color: '#f59e0b', marginRight: 4 }} />
+            <span>Sun exposure during route</span>
+          </div>
+          <div className="nav-sun-distribution-chart">
+            {sunAnalysis.sunDistribution.map((segment, idx) => (
+              <div 
+                key={idx} 
+                className="nav-sun-bar"
+                style={{ 
+                  flex: 1,
+                  height: `${Math.max(4, segment.sunPercentage * 0.3)}px`,
+                  backgroundColor: segment.sunPercentage >= 50 
+                    ? `rgba(245, 158, 11, ${0.3 + segment.sunPercentage * 0.007})`
+                    : `rgba(100, 100, 100, ${0.2 + segment.sunPercentage * 0.005})`,
+                }}
+                title={`${segment.timeOfDay}: ${Math.round(segment.sunPercentage)}% sun`}
+              />
+            ))}
+          </div>
+          <div className="nav-sun-distribution-labels">
+            {sunAnalysis.sunDistribution.length > 0 && (
+              <>
+                <span>{sunAnalysis.sunDistribution[0].timeOfDay}</span>
+                {sunAnalysis.sunDistribution.length > 2 && (
+                  <span>{sunAnalysis.sunDistribution[Math.floor(sunAnalysis.sunDistribution.length / 2)].timeOfDay}</span>
+                )}
+                <span>{sunAnalysis.sunDistribution[sunAnalysis.sunDistribution.length - 1].timeOfDay}</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Bad weather notice */}
+      {sunAnalysis?.isBadWeather && (
+        <div className="nav-sun-bad-weather">
+          <CloudOutlined style={{ fontSize: 10, marginRight: 4 }} />
+          <span>Poor visibility - sun routing disabled</span>
+        </div>
+      )}
       
       {/* Route color legend */}
       <RouteColorLegend />
@@ -885,6 +962,7 @@ function NavigationPanelInner({
   mapClickMode,
   isMinimized = false,
   onToggleMinimize,
+  hourlyWeather,
 }: NavigationPanelProps) {
   const [origin, setOrigin] = useState<SelectedPoint | null>(null);
   const [destination, setDestination] = useState<SelectedPoint | null>(null);
@@ -896,6 +974,16 @@ function NavigationPanelInner({
   const [hasAutoStartedMapClick, setHasAutoStartedMapClick] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [filters, setFilters] = useState<RouteFilters>(DEFAULT_FILTERS);
+  
+  // Sunny route options
+  const [sunnyRouteEnabled, setSunnyRouteEnabled] = useState(false);
+  const [sunnyRouteTolerance, setSunnyRouteTolerance] = useState(10); // minutes
+  const [sunnyRouteStartTime, setSunnyRouteStartTime] = useState<Date>(() => 
+    roundToNearest5Minutes(getResortLocalTime(new Date(), skiArea.latitude, skiArea.longitude))
+  );
+  
+  // Sun analysis for the current route (always calculated for display)
+  const [sunAnalysis, setSunAnalysis] = useState<RouteSunAnalysis | null>(null);
   
   // Cache the graph - only build when needed for route calculation
   const graphRef = useRef<NavigationGraph | null>(null);
@@ -1018,6 +1106,7 @@ function NavigationPanelInner({
     if (!origin || !destination) {
       setRoute(null);
       setRouteDiagnostics(null);
+      setSunAnalysis(null);
       onRouteChange(null);
       return;
     }
@@ -1025,6 +1114,7 @@ function NavigationPanelInner({
     setIsCalculating(true);
     setError(null);
     setRouteDiagnostics(null);
+    setSunAnalysis(null);
 
     // Use setTimeout to allow UI to update and show loading state
     setTimeout(() => {
@@ -1064,9 +1154,46 @@ function NavigationPanelInner({
           
           if (result.route) {
             // Post-optimization: find midpoint shortcuts to make route more efficient
-            const optimizedRoute = optimizeRoute(result.route, skiArea);
+            let optimizedRoute = optimizeRoute(result.route, skiArea);
+            let analysis: RouteSunAnalysis | null = null;
+            
+            // If sunny routing is enabled, find alternative routes and pick sunniest
+            if (sunnyRouteEnabled) {
+              const alternatives = findAlternativeRoutes(
+                graph,
+                fromNodeId,
+                toNodeId,
+                5, // max alternatives
+                1 + (sunnyRouteTolerance / (optimizedRoute.totalTime / 60)) // tolerance multiplier
+              );
+              
+              // Optimize all alternative routes
+              const optimizedAlternatives = alternatives.map(alt => optimizeRoute(alt, skiArea));
+              
+              // Find sunniest route within tolerance
+              const sunResult = findSunniestRoute(
+                optimizedRoute,
+                optimizedAlternatives,
+                sunnyRouteTolerance,
+                sunnyRouteStartTime,
+                skiArea,
+                hourlyWeather
+              );
+              
+              optimizedRoute = sunResult.route;
+              analysis = sunResult.analysis;
+            } else {
+              // Always calculate sun analysis for display, even if not using sunny routing
+              analysis = analyzeRouteSunExposure(
+                optimizedRoute,
+                sunnyRouteStartTime,
+                skiArea,
+                hourlyWeather
+              );
+            }
             
             setRoute(optimizedRoute);
+            setSunAnalysis(analysis);
             setRouteDiagnostics(null);
             onRouteChange(optimizedRoute);
             trackEvent('navigation_route_calculated', {
@@ -1077,29 +1204,34 @@ function NavigationPanelInner({
               total_time: optimizedRoute.totalTime,
               total_distance: optimizedRoute.totalDistance,
               segment_count: optimizedRoute.segments.length,
+              sun_percentage: analysis?.sunPercentage ?? null,
+              sunny_routing_enabled: sunnyRouteEnabled,
             });
           } else {
             // Set diagnostics for detailed error display
             setRouteDiagnostics(result.diagnostics);
             setError('No route found. Try a different origin or destination.');
             setRoute(null);
+            setSunAnalysis(null);
             onRouteChange(null);
           }
         } else {
           setError('Could not find start or end point in navigation network.');
           setRoute(null);
+          setSunAnalysis(null);
           onRouteChange(null);
         }
       } catch (e) {
         console.error('Route calculation error:', e);
         setError('Error calculating route');
         setRoute(null);
+        setSunAnalysis(null);
         onRouteChange(null);
       }
 
       setIsCalculating(false);
     }, 50);
-  }, [origin, destination, getGraph, skiArea, onRouteChange]);
+  }, [origin, destination, getGraph, skiArea, onRouteChange, sunnyRouteEnabled, sunnyRouteTolerance, sunnyRouteStartTime, hourlyWeather]);
 
   // Track if we're actively navigating (turn-by-turn mode)
   const [isActivelyNavigating, setIsActivelyNavigating] = useState(false);
@@ -1326,7 +1458,7 @@ function NavigationPanelInner({
 
         {/* Route summary */}
         {route && !isCalculating && (
-          <RouteSummary route={route} />
+          <RouteSummary route={route} sunAnalysis={sunAnalysis} />
         )}
 
         {/* Advanced options - moved below route results to give search dropdowns more space */}
@@ -1342,6 +1474,77 @@ function NavigationPanelInner({
           
           {showAdvanced && (
             <div className="nav-advanced-content">
+              {/* Sunny route option */}
+              <div className="nav-sunny-route-section">
+                <div 
+                  className="nav-filter-checkbox"
+                  onClick={() => setSunnyRouteEnabled(!sunnyRouteEnabled)}
+                >
+                  <span className={`nav-filter-check ${sunnyRouteEnabled ? 'checked' : ''}`} />
+                  <SunOutlined style={{ fontSize: 12, color: sunnyRouteEnabled ? '#f59e0b' : '#888', marginRight: 4 }} />
+                  <span className="nav-filter-name">Take the sunny route</span>
+                </div>
+                
+                {sunnyRouteEnabled && (
+                  <div className="nav-sunny-options">
+                    {/* Tolerance slider */}
+                    <div className="nav-sunny-option">
+                      <label style={{ fontSize: 10, color: '#888' }}>Tolerance for longer route:</label>
+                      <div className="nav-sunny-slider-row">
+                        <input
+                          type="range"
+                          min="1"
+                          max="60"
+                          value={sunnyRouteTolerance}
+                          onChange={(e) => setSunnyRouteTolerance(parseInt(e.target.value))}
+                          className="nav-sunny-slider"
+                        />
+                        <span className="nav-sunny-value">{sunnyRouteTolerance}min</span>
+                      </div>
+                    </div>
+                    
+                    {/* Start time picker */}
+                    <div className="nav-sunny-option">
+                      <label style={{ fontSize: 10, color: '#888' }}>Start time:</label>
+                      <div className="nav-sunny-time-row">
+                        <button
+                          className="nav-sunny-time-btn"
+                          onClick={() => {
+                            const newTime = new Date(sunnyRouteStartTime);
+                            newTime.setMinutes(newTime.getMinutes() - 5);
+                            setSunnyRouteStartTime(newTime);
+                          }}
+                        >
+                          −
+                        </button>
+                        <input
+                          type="time"
+                          value={formatTimeHHMM(sunnyRouteStartTime)}
+                          onChange={(e) => {
+                            const [hours, mins] = e.target.value.split(':').map(Number);
+                            const newTime = new Date(sunnyRouteStartTime);
+                            newTime.setHours(hours, mins, 0, 0);
+                            setSunnyRouteStartTime(newTime);
+                          }}
+                          className="nav-sunny-time-input"
+                          step="300"
+                        />
+                        <button
+                          className="nav-sunny-time-btn"
+                          onClick={() => {
+                            const newTime = new Date(sunnyRouteStartTime);
+                            newTime.setMinutes(newTime.getMinutes() + 5);
+                            setSunnyRouteStartTime(newTime);
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
               {/* Difficulty filters */}
               <div className="nav-filter-group">
                 <div className="nav-filter-label">Slope difficulties:</div>

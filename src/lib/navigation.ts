@@ -1337,6 +1337,96 @@ function extractPolygonCenterline(ring: number[][]): number[][] {
 }
 
 /**
+ * Find multiple alternative routes using Yen's k-shortest paths algorithm (simplified)
+ * This is useful for sunny routing where we want to compare different routes.
+ * 
+ * @param maxAlternatives - Maximum number of alternative routes to find
+ * @param toleranceMultiplier - Only consider routes up to this multiplier of shortest path time
+ */
+export function findAlternativeRoutes(
+  graph: NavigationGraph,
+  startNodeId: string,
+  endNodeId: string,
+  maxAlternatives: number = 5,
+  toleranceMultiplier: number = 1.5
+): NavigationRoute[] {
+  const alternatives: NavigationRoute[] = [];
+  
+  // First, find the shortest path
+  const shortestRoute = findRoute(graph, startNodeId, endNodeId);
+  if (!shortestRoute) return alternatives;
+  
+  const maxTime = shortestRoute.totalTime * toleranceMultiplier;
+  
+  // Use a modified Dijkstra that finds k-shortest paths
+  // We do this by finding paths that avoid different combinations of edges from the shortest path
+  
+  // Get the edges used in the shortest path
+  const usedEdgeIds = new Set(shortestRoute.edges.map(e => e.id));
+  
+  // Try finding alternative paths by temporarily "blocking" segments of the original path
+  for (let blockPoint = 0; blockPoint < shortestRoute.segments.length; blockPoint++) {
+    const segment = shortestRoute.segments[blockPoint];
+    
+    // Skip short segments (not meaningful to route around)
+    if (segment.distance < 200) continue;
+    
+    // Create a filtered graph that excludes this segment's edge
+    const filteredAdjacency = new Map<string, string[]>();
+    
+    for (const [nodeId, edgeIds] of graph.adjacency) {
+      const filteredEdgeIds = edgeIds.filter(edgeId => {
+        const edge = graph.edges.get(edgeId);
+        if (!edge) return false;
+        // Block the edge that corresponds to this segment
+        if (edge.featureId === segment.name || 
+            (segment.type === 'run' && edgeId.includes(segment.name || ''))) {
+          return false;
+        }
+        return true;
+      });
+      filteredAdjacency.set(nodeId, filteredEdgeIds);
+    }
+    
+    const filteredGraph: NavigationGraph = {
+      nodes: graph.nodes,
+      edges: graph.edges,
+      adjacency: filteredAdjacency,
+    };
+    
+    // Find a route in the filtered graph
+    const altRoute = findRoute(filteredGraph, startNodeId, endNodeId);
+    
+    if (altRoute && altRoute.totalTime <= maxTime) {
+      // Check it's actually different from routes we already have
+      const altEdgeSet = new Set(altRoute.edges.map(e => e.id));
+      let isDifferent = true;
+      
+      // Must have at least 20% different edges to be considered an alternative
+      for (const existing of alternatives) {
+        const existingEdgeSet = new Set(existing.edges.map(e => e.id));
+        let overlap = 0;
+        for (const edgeId of altEdgeSet) {
+          if (existingEdgeSet.has(edgeId)) overlap++;
+        }
+        const overlapRatio = overlap / altEdgeSet.size;
+        if (overlapRatio > 0.8) {
+          isDifferent = false;
+          break;
+        }
+      }
+      
+      if (isDifferent) {
+        alternatives.push(altRoute);
+        if (alternatives.length >= maxAlternatives) break;
+      }
+    }
+  }
+  
+  return alternatives;
+}
+
+/**
  * Format time duration for display
  */
 export function formatDuration(seconds: number): string {
