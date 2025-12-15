@@ -247,7 +247,7 @@ function NavigationPanelInner({
       try {
         const graph = getGraph();
 
-        // Resolve closestToilet
+        // Resolve closestToilet using route-based distance (optimized)
         let resolvedDestination = destination;
         if (destination.type === 'closestToilet' && origin.lat && origin.lng) {
           const toilets = pois.filter((poi) => poi.type === 'toilet');
@@ -256,23 +256,61 @@ function NavigationPanelInner({
             setIsCalculating(false);
             return;
           }
+          
+          // Find 10 geographically closest toilets
           const toiletsWithDistance = toilets.map((t) => ({
             toilet: t,
             geoDistance: Math.sqrt(Math.pow(t.latitude - origin.lat!, 2) + Math.pow(t.longitude - origin.lng!, 2)),
           }));
           toiletsWithDistance.sort((a, b) => a.geoDistance - b.geoDistance);
-          const nearest = toiletsWithDistance[0].toilet;
-          resolvedDestination = {
-            type: 'mapPoint',
-            id: nearest.id,
-            name: nearest.name || 'Toilet',
-            lat: nearest.latitude,
-            lng: nearest.longitude,
-          };
+          const closeToilets = toiletsWithDistance.slice(0, Math.min(10, toilets.length));
+          
+          // Find start node
+          const startNode = findNearestNode(graph, origin.lat, origin.lng);
+          if (!startNode) {
+            // Fallback to geographically closest
+            const nearest = closeToilets[0].toilet;
+            resolvedDestination = {
+              type: 'mapPoint',
+              id: nearest.id,
+              name: nearest.name || 'Toilet',
+              lat: nearest.latitude,
+              lng: nearest.longitude,
+            };
+          } else {
+            // Calculate routes to the 10 closest toilets and pick the shortest
+            let nearestToilet = closeToilets[0].toilet;
+            let shortestRouteDistance = Infinity;
+            
+            for (const { toilet } of closeToilets) {
+              const toiletNode = findNearestNode(graph, toilet.latitude, toilet.longitude);
+              if (!toiletNode) continue;
+              
+              const route = findRoute(graph, startNode.id, toiletNode.id);
+              
+              if (route && route.totalDistance < shortestRouteDistance) {
+                shortestRouteDistance = route.totalDistance;
+                nearestToilet = toilet;
+              }
+            }
+            
+            resolvedDestination = {
+              type: 'mapPoint',
+              id: nearestToilet.id,
+              name: nearestToilet.name || 'Toilet',
+              lat: nearestToilet.latitude,
+              lng: nearestToilet.longitude,
+            };
+          }
           setDestination(resolvedDestination);
         }
 
         const getNodeId = (point: SelectedPoint): string | null => {
+          // closestToilet should have been resolved by now
+          if (point.type === 'closestToilet') {
+            return null;
+          }
+          
           if (point.type === 'location' || point.type === 'mapPoint' || point.type === 'home') {
             if (point.lat && point.lng) {
               const nearest = findNearestNode(graph, point.lat, point.lng);

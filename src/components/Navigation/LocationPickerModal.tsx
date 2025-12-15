@@ -117,6 +117,15 @@ export function LocationPickerModal({
       });
     }
     
+    // Add "Closest Toilet" as a searchable special destination
+    if (!searchText || 'toilet wc bathroom restroom closest'.includes(searchText.toLowerCase())) {
+      results.push({
+        type: 'closestToilet',
+        id: 'closest-toilet',
+        name: 'Closest Toilet',
+      });
+    }
+    
     filteredRuns.forEach((run) => {
       results.push({
         type: 'run',
@@ -246,6 +255,22 @@ export function LocationPickerModal({
               <AimOutlined style={{ fontSize: 12, marginRight: 6 }} />
               Location is too far from ski area
             </div>
+          )}
+          
+          {/* Closest Toilet option */}
+          {(!searchText || 'toilet wc bathroom restroom closest'.includes(searchText.toLowerCase())) && (
+            <button
+              className={`location-picker-item ${selectedIndex === (showCurrentLocation && userLocation && isUserLocationValid ? 1 : 0) ? 'selected' : ''}`}
+              onClick={() => handleSelect({
+                type: 'closestToilet',
+                id: 'closest-toilet',
+                name: 'Closest Toilet',
+              })}
+            >
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#3b82f6', marginRight: 8 }}>WC</span>
+              <span className="location-picker-item-name">Closest Toilet</span>
+              <span className="location-picker-item-meta">Route to nearest</span>
+            </button>
           )}
           
           {/* Runs */}

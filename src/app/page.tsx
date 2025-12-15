@@ -1709,7 +1709,7 @@ export default function Home() {
               {/* WC button - quick toilet navigation */}
               <WCButton
                 onClick={handleWCNavigation}
-                disabled={pois.filter(p => p.type === 'toilet').length === 0}
+                disabled={false}
               />
             </div>
           )}
