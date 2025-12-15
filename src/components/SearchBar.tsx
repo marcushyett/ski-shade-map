@@ -172,12 +172,35 @@ function SearchBarInner({
   }, [searchText, debouncedPlaceSearch]);
 
   // Filter runs and lifts by search
+  // Deduplicate runs by name+subregion, keeping highest altitude
   const filteredRuns = useMemo(() => {
     if (!searchText) return [];
     const lower = searchText.toLowerCase();
-    return runs
-      .filter((r) => r.name?.toLowerCase().includes(lower))
-      .slice(0, 8);
+    const matchingRuns = runs.filter((r) => r.name?.toLowerCase().includes(lower));
+    
+    // Group by name + subregion, keep highest altitude
+    const grouped = new Map<string, typeof matchingRuns[0]>();
+    for (const run of matchingRuns) {
+      const key = `${run.name || 'Unnamed'}::${run.subRegionName || ''}`;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, run);
+      } else {
+        // Get elevation from geometry if available
+        const getMaxElevation = (r: typeof run) => {
+          if (r.geometry.type === 'LineString') {
+            const coords = r.geometry.coordinates;
+            return coords.length > 0 ? (coords[0][2] || coords[0][1]) : 0;
+          }
+          return 0;
+        };
+        if (getMaxElevation(run) > getMaxElevation(existing)) {
+          grouped.set(key, run);
+        }
+      }
+    }
+    
+    return Array.from(grouped.values()).slice(0, 8);
   }, [runs, searchText]);
 
   const filteredLifts = useMemo(() => {
