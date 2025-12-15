@@ -27,7 +27,7 @@ const OVERPASS_ENDPOINTS = [
 // Track last request time per endpoint for rate limiting
 const endpointLastRequest = new Map<string, number>();
 const MIN_DELAY_PER_ENDPOINT = 5000; // 5 seconds between requests to same endpoint
-const CONCURRENCY = 4; // Process 4 ski areas in parallel
+const CONCURRENCY = 10; // Process 10 ski areas in parallel
 
 // Round-robin endpoint selection
 let currentEndpointIndex = 0;
@@ -314,20 +314,47 @@ function isPointInBounds(
   return lat >= bounds.minLat && lat <= bounds.maxLat && lng >= bounds.minLng && lng <= bounds.maxLng;
 }
 
-async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = false) {
+interface SyncResult {
+  skiAreaName: string;
+  skiAreaId: string;
+  logs: string[];
+  subRegionsFound: number;
+  subRegionsProcessed: number;
+  success: boolean;
+  error?: string;
+}
+
+async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = false): Promise<SyncResult> {
+  const logs: string[] = [];
+  const log = (msg: string) => logs.push(msg);
+  
   const skiArea = await prisma.skiArea.findUnique({
     where: { id: skiAreaId },
     include: { subRegions: true },
   });
 
   if (!skiArea) {
-    console.error(`Ski area not found: ${skiAreaId}`);
-    return;
+    return {
+      skiAreaName: 'Unknown',
+      skiAreaId,
+      logs: [`Error: Ski area not found: ${skiAreaId}`],
+      subRegionsFound: 0,
+      subRegionsProcessed: 0,
+      success: false,
+      error: 'Ski area not found',
+    };
   }
 
   if (!skiArea.bounds) {
-    console.error(`Ski area has no bounds: ${skiArea.name}`);
-    return;
+    return {
+      skiAreaName: skiArea.name,
+      skiAreaId,
+      logs: [`Error: Ski area has no bounds: ${skiArea.name}`],
+      subRegionsFound: 0,
+      subRegionsProcessed: 0,
+      success: false,
+      error: 'No bounds',
+    };
   }
 
   const bounds = skiArea.bounds as { minLat: number; maxLat: number; minLng: number; maxLng: number };
@@ -341,10 +368,10 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
     maxLng: bounds.maxLng + 0.005,
   };
 
-  console.log(`\nSyncing sub-regions for: ${skiArea.name} (${skiAreaId})`);
+  log(`Syncing sub-regions for: ${skiArea.name} (${skiAreaId})`);
   
   const elements = await fetchSubRegionsFromOverpass(expandedBounds);
-  console.log(`Found ${elements.length} potential sub-regions (ski sites + communes) in area`);
+  log(`Found ${elements.length} potential sub-regions (ski sites + communes) in area`);
 
   // Filter out the parent ski area itself
   const subRegions = elements.filter(el => {
@@ -356,7 +383,7 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
     return true;
   });
 
-  console.log(`Processing ${subRegions.length} potential sub-regions`);
+  log(`Processing ${subRegions.length} potential sub-regions`);
 
   for (const element of subRegions) {
     const osmId = `relation/${element.id}`;
@@ -382,10 +409,10 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
       }
     }
 
-    console.log(`  - ${name} (${osmId})`);
+    log(`  - ${name} (${osmId})`);
 
     if (dryRun) {
-      console.log(`    [DRY RUN] Would create/update sub-region`);
+      log(`    [DRY RUN] Would create/update sub-region`);
       continue;
     }
 
@@ -411,7 +438,7 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
 
   // Handle manual connected ski areas overrides
   if (skiArea.osmId && MANUAL_CONNECTED_SKI_AREAS[skiArea.osmId]) {
-    console.log(`\nProcessing manual connected ski areas for ${skiArea.name}...`);
+    log(`Processing manual connected ski areas for ${skiArea.name}...`);
     
     for (const connectedOsmId of MANUAL_CONNECTED_SKI_AREAS[skiArea.osmId]) {
       const connectedArea = await prisma.skiArea.findFirst({
@@ -419,7 +446,7 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
       });
 
       if (connectedArea) {
-        console.log(`  [Manual] Connecting: ${skiArea.name} <-> ${connectedArea.name}`);
+        log(`  [Manual] Connecting: ${skiArea.name} <-> ${connectedArea.name}`);
         
         if (!dryRun) {
           // Create bidirectional connection
@@ -438,10 +465,19 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
           });
         }
       } else {
-        console.log(`  [WARN] Connected area not found in DB: ${connectedOsmId}`);
+        log(`  [WARN] Connected area not found in DB: ${connectedOsmId}`);
       }
     }
   }
+  
+  return {
+    skiAreaName: skiArea.name,
+    skiAreaId,
+    logs,
+    subRegionsFound: elements.length,
+    subRegionsProcessed: subRegions.length,
+    success: true,
+  };
 }
 
 // Automatically detect connected ski areas based on actual run/lift geometry proximity
@@ -581,8 +617,14 @@ async function detectConnectedSkiAreas(dryRun: boolean = false) {
   console.log(`  Connections found (<${CONNECTION_THRESHOLD_METERS}m): ${connectionsFound}`);
 }
 
-async function assignRunsToSubRegions(skiAreaId: string, dryRun: boolean = false) {
-  console.log(`\nAssigning runs to sub-regions for ski area: ${skiAreaId}`);
+interface AssignResult {
+  logs: string[];
+  assignedCount: number;
+}
+
+async function assignRunsToSubRegions(skiAreaId: string, dryRun: boolean = false): Promise<AssignResult> {
+  const logs: string[] = [];
+  const log = (msg: string) => logs.push(msg);
 
   const skiArea = await prisma.skiArea.findUnique({
     where: { id: skiAreaId },
@@ -593,32 +635,31 @@ async function assignRunsToSubRegions(skiAreaId: string, dryRun: boolean = false
   });
 
   if (!skiArea) {
-    console.error(`Ski area not found: ${skiAreaId}`);
-    return;
+    return { logs: [`Error: Ski area not found: ${skiAreaId}`], assignedCount: 0 };
   }
 
   if (skiArea.subRegions.length === 0) {
-    console.log(`No sub-regions found for ${skiArea.name}`);
-    return;
+    return { logs: [`No sub-regions found for ${skiArea.name}`], assignedCount: 0 };
   }
 
-  console.log(`Found ${skiArea.subRegions.length} sub-regions and ${skiArea.runs.length} runs`);
+  log(`Assigning runs: ${skiArea.subRegions.length} sub-regions, ${skiArea.runs.length} runs`);
 
   let assignedCount = 0;
   
   for (const run of skiArea.runs) {
-    const geometry = run.geometry as any;
+    const geometry = run.geometry as unknown;
     if (!geometry) continue;
 
     // Get centroid of run
     let runCentroid: { lat: number; lng: number } | null = null;
     
-    if (geometry.type === 'LineString' && geometry.coordinates?.length > 0) {
-      const coords = geometry.coordinates;
+    const geo = geometry as { type?: string; coordinates?: number[][] | number[][][] };
+    if (geo.type === 'LineString' && geo.coordinates && geo.coordinates.length > 0) {
+      const coords = geo.coordinates as number[][];
       const midIndex = Math.floor(coords.length / 2);
       runCentroid = { lng: coords[midIndex][0], lat: coords[midIndex][1] };
-    } else if (geometry.type === 'Polygon' && geometry.coordinates?.[0]?.length > 0) {
-      const coords = geometry.coordinates[0];
+    } else if (geo.type === 'Polygon' && geo.coordinates && (geo.coordinates as number[][][])[0]?.length > 0) {
+      const coords = (geo.coordinates as number[][][])[0];
       const lats = coords.map((c: number[]) => c[1]);
       const lngs = coords.map((c: number[]) => c[0]);
       runCentroid = {
@@ -667,7 +708,8 @@ async function assignRunsToSubRegions(skiAreaId: string, dryRun: boolean = false
     }
   }
 
-  console.log(`Assigned ${assignedCount} runs to sub-regions`);
+  log(`  → Assigned ${assignedCount} runs to sub-regions`);
+  return { logs, assignedCount };
 }
 
 async function main() {
@@ -728,9 +770,12 @@ async function main() {
       // Only detect ski area connections
       await detectConnectedSkiAreas(dryRun);
     } else if (skiAreaId) {
-      // Sync specific ski area
-      await syncSubRegionsForSkiArea(skiAreaId, dryRun);
-      await assignRunsToSubRegions(skiAreaId, dryRun);
+      // Sync specific ski area - print logs immediately for debugging
+      const syncResult = await syncSubRegionsForSkiArea(skiAreaId, dryRun);
+      console.log('\n' + syncResult.logs.join('\n'));
+      
+      const assignResult = await assignRunsToSubRegions(skiAreaId, dryRun);
+      console.log(assignResult.logs.join('\n'));
     } else {
       // Sync all ski areas with bounds
       const allSkiAreas = await prisma.skiArea.findMany({
@@ -761,46 +806,72 @@ async function main() {
 
       let processed = 0;
       let errors = 0;
+      let totalSubRegions = 0;
       
-      // Process ski areas with concurrency
-      const processSkiArea = async (skiArea: typeof skiAreas[0]) => {
+      // Process ski areas with concurrency - collect logs and print at end of each batch
+      interface BatchResult {
+        success: boolean;
+        name: string;
+        syncResult?: SyncResult;
+        assignResult?: AssignResult;
+        error?: unknown;
+      }
+      
+      const processSkiArea = async (skiArea: typeof skiAreas[0]): Promise<BatchResult> => {
         try {
-          await syncSubRegionsForSkiArea(skiArea.id, dryRun);
-          await assignRunsToSubRegions(skiArea.id, dryRun);
-          return { success: true, name: skiArea.name };
+          const syncResult = await syncSubRegionsForSkiArea(skiArea.id, dryRun);
+          const assignResult = await assignRunsToSubRegions(skiArea.id, dryRun);
+          return { success: syncResult.success, name: skiArea.name, syncResult, assignResult };
         } catch (error) {
           return { success: false, name: skiArea.name, error };
         }
       };
 
       // Concurrent processing with worker pool
-      const results: Array<{ success: boolean; name: string; error?: unknown }> = [];
+      const results: BatchResult[] = [];
       
       for (let i = 0; i < skiAreas.length; i += CONCURRENCY) {
         const batch = skiAreas.slice(i, i + CONCURRENCY);
         const batchNum = Math.floor(i / CONCURRENCY) + 1;
         const totalBatches = Math.ceil(skiAreas.length / CONCURRENCY);
         
-        process.stdout.write(`\rBatch ${batchNum}/${totalBatches} (${Math.round((i / skiAreas.length) * 100)}%) - Processing: ${batch.map(a => a.name.substring(0, 15)).join(', ')}...`);
+        // Show progress header
+        console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        console.log(`  Batch ${batchNum}/${totalBatches} (${Math.round((i / skiAreas.length) * 100)}%)`);
+        console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
         
         const batchResults = await Promise.all(batch.map(processSkiArea));
         results.push(...batchResults);
         
-        processed += batch.length;
-        errors += batchResults.filter(r => !r.success).length;
-        
-        // Log errors
+        // Print all logs from this batch at the end (grouped by ski area)
         for (const result of batchResults) {
-          if (!result.success) {
-            console.error(`\n❌ Error processing ${result.name}:`, result.error);
+          if (result.success && result.syncResult) {
+            console.log(`\n📍 ${result.name}`);
+            for (const line of result.syncResult.logs) {
+              console.log(`   ${line}`);
+            }
+            if (result.assignResult) {
+              for (const line of result.assignResult.logs) {
+                console.log(`   ${line}`);
+              }
+            }
+            totalSubRegions += result.syncResult.subRegionsProcessed;
+          } else if (!result.success) {
+            console.error(`\n❌ ${result.name}: ${result.error || result.syncResult?.error}`);
           }
         }
+        
+        processed += batch.length;
+        errors += batchResults.filter(r => !r.success).length;
       }
       
       console.log('');
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       console.log(`  ✅ Processed ${processed - errors}/${processed} ski areas`);
+      console.log(`  📦 Total sub-regions found: ${totalSubRegions}`);
       if (skipped > 0) console.log(`  ⏭️  Skipped ${skipped} already processed`);
       if (errors > 0) console.log(`  ⚠️  ${errors} ski areas had errors`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
       // After processing all ski areas, detect connections between them
       if (!skipConnections) {

@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { SearchOutlined, EnvironmentOutlined, GlobalOutlined, CompassOutlined } from '@ant-design/icons';
-import { Spin } from 'antd';
+import { SearchOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import debounce from 'lodash.debounce';
 import { trackEvent } from '@/lib/posthog';
+import LoadingSpinner from './LoadingSpinner';
 import type { LocationSearchResult } from '@/app/api/locations/search/route';
 
 export interface LocationSelection {
@@ -74,7 +74,7 @@ export default function LocationSearch({
       } finally {
         setLoading(false);
       }
-    }, 250),
+    }, 150), // Reduced from 250ms for snappier feel
     []
   );
 
@@ -195,7 +195,7 @@ export default function LocationSearch({
           className="location-search-input"
           autoFocus={isSearching}
         />
-        {loading && <Spin size="small" className="location-search-spinner" />}
+        {loading && <div className="location-search-spinner"><LoadingSpinner size={18} /></div>}
       </div>
 
       {/* Dropdown results */}

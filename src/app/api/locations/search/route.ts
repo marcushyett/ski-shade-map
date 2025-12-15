@@ -16,6 +16,123 @@ export interface LocationSearchResult {
   liftCount?: number;
 }
 
+// Normalize text by removing accents/diacritics for accent-insensitive search
+// This allows "Les Menu" to match "Les Ménuires"
+function normalizeText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+// Check if normalized query matches normalized text
+function matchesNormalized(text: string, query: string): boolean {
+  return normalizeText(text).includes(normalizeText(query));
+}
+
+// In-memory cache for ski areas (refreshed every 5 minutes)
+interface CachedSkiArea {
+  id: string;
+  name: string;
+  nameNormalized: string;
+  country: string | null;
+  countryNormalized: string;
+  region: string | null;
+  regionNormalized: string;
+  latitude: number | null;
+  longitude: number | null;
+  runCount: number;
+  liftCount: number;
+}
+
+interface CachedSubRegion {
+  id: string;
+  name: string;
+  nameNormalized: string;
+  centroid: { lat: number; lng: number } | null;
+  skiAreaId: string;
+  skiAreaName: string;
+  country: string | null;
+}
+
+let skiAreasCache: CachedSkiArea[] | null = null;
+let subRegionsCache: CachedSubRegion[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getSkiAreasFromCache(): Promise<CachedSkiArea[]> {
+  const now = Date.now();
+  if (skiAreasCache && now - cacheTimestamp < CACHE_TTL) {
+    return skiAreasCache;
+  }
+
+  const skiAreas = await prisma.skiArea.findMany({
+    select: {
+      id: true,
+      name: true,
+      country: true,
+      region: true,
+      latitude: true,
+      longitude: true,
+      _count: {
+        select: { runs: true, lifts: true },
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  skiAreasCache = skiAreas.map(area => ({
+    id: area.id,
+    name: area.name,
+    nameNormalized: normalizeText(area.name),
+    country: area.country,
+    countryNormalized: area.country ? normalizeText(area.country) : '',
+    region: area.region,
+    regionNormalized: area.region ? normalizeText(area.region) : '',
+    latitude: area.latitude,
+    longitude: area.longitude,
+    runCount: area._count.runs,
+    liftCount: area._count.lifts,
+  }));
+
+  cacheTimestamp = now;
+  return skiAreasCache;
+}
+
+async function getSubRegionsFromCache(): Promise<CachedSubRegion[]> {
+  const now = Date.now();
+  if (subRegionsCache && now - cacheTimestamp < CACHE_TTL) {
+    return subRegionsCache;
+  }
+
+  const subRegions = await prisma.subRegion.findMany({
+    select: {
+      id: true,
+      name: true,
+      centroid: true,
+      skiArea: {
+        select: {
+          id: true,
+          name: true,
+          country: true,
+        },
+      },
+    },
+  });
+
+  subRegionsCache = subRegions.map(sr => ({
+    id: sr.id,
+    name: sr.name,
+    nameNormalized: normalizeText(sr.name),
+    centroid: sr.centroid as { lat: number; lng: number } | null,
+    skiAreaId: sr.skiArea.id,
+    skiAreaName: sr.skiArea.name,
+    country: sr.skiArea.country,
+  }));
+
+  return subRegionsCache;
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const query = searchParams.get('q')?.trim() || '';
@@ -27,36 +144,23 @@ export async function GET(request: NextRequest) {
 
   try {
     const results: LocationSearchResult[] = [];
+    const normalizedQuery = normalizeText(query);
 
-    // 1. Search ski areas (regions)
-    const skiAreas = await prisma.skiArea.findMany({
-      where: {
-        OR: [
-          { name: { contains: query, mode: 'insensitive' } },
-          { country: { contains: query, mode: 'insensitive' } },
-          { region: { contains: query, mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        country: true,
-        region: true,
-        latitude: true,
-        longitude: true,
-        _count: {
-          select: { runs: true, lifts: true },
-        },
-      },
-      orderBy: [
-        // Prioritize exact name matches
-        { name: 'asc' },
-      ],
-      take: limit,
-    });
+    // Fetch from cache (fast after first load)
+    const [skiAreas, subRegions] = await Promise.all([
+      getSkiAreasFromCache(),
+      getSubRegionsFromCache(),
+    ]);
+
+    // Filter ski areas with pre-normalized strings (faster)
+    const matchedSkiAreas = skiAreas.filter(area => 
+      area.nameNormalized.includes(normalizedQuery) ||
+      area.countryNormalized.includes(normalizedQuery) ||
+      area.regionNormalized.includes(normalizedQuery)
+    );
 
     // Add ski areas as "region" results
-    for (const area of skiAreas) {
+    for (const area of matchedSkiAreas.slice(0, limit)) {
       results.push({
         id: area.id,
         type: 'region',
@@ -65,77 +169,68 @@ export async function GET(request: NextRequest) {
         skiAreaId: area.id,
         latitude: area.latitude || undefined,
         longitude: area.longitude || undefined,
-        runCount: area._count.runs,
-        liftCount: area._count.lifts,
+        runCount: area.runCount,
+        liftCount: area.liftCount,
       });
     }
 
-    // 2. Search sub-regions
-    const subRegions = await prisma.subRegion.findMany({
-      where: {
-        name: { contains: query, mode: 'insensitive' },
-      },
-      select: {
-        id: true,
-        name: true,
-        centroid: true,
-        skiArea: {
-          select: {
-            id: true,
-            name: true,
-            country: true,
-          },
-        },
-      },
-      take: limit,
-    });
+    // Filter sub-regions with pre-normalized strings
+    const matchedSubRegions = subRegions.filter(sr => 
+      sr.nameNormalized.includes(normalizedQuery)
+    );
 
     // Add sub-regions
-    for (const subRegion of subRegions) {
-      const centroid = subRegion.centroid as { lat: number; lng: number } | null;
+    for (const subRegion of matchedSubRegions.slice(0, limit)) {
       results.push({
         id: subRegion.id,
         type: 'subregion',
         name: subRegion.name,
-        country: subRegion.skiArea.country || undefined,
-        region: subRegion.skiArea.name,
-        skiAreaId: subRegion.skiArea.id,
-        latitude: centroid?.lat,
-        longitude: centroid?.lng,
+        country: subRegion.country || undefined,
+        region: subRegion.skiAreaName,
+        skiAreaId: subRegion.skiAreaId,
+        latitude: subRegion.centroid?.lat,
+        longitude: subRegion.centroid?.lng,
       });
     }
 
     // 3. Search by country name - return top ski areas from that country
-    const countryMatches = await prisma.skiArea.groupBy({
-      by: ['country'],
-      where: {
-        country: { contains: query, mode: 'insensitive' },
-      },
-      _count: { id: true },
-    });
+    const matchedCountries = skiAreas
+      .filter(area => area.country && area.countryNormalized.includes(normalizedQuery))
+      .map(area => area.country)
+      .filter((v, i, a) => v && a.indexOf(v) === i); // Unique countries
 
-    for (const match of countryMatches) {
-      if (match.country) {
+    for (const country of matchedCountries) {
+      if (country) {
         // Don't add if we already have results from this country
-        const hasCountryResults = results.some(r => r.country === match.country);
+        const hasCountryResults = results.some(r => r.country === country);
         if (!hasCountryResults) {
+          const countryCount = skiAreas.filter(a => a.country === country).length;
           results.push({
-            id: `country-${match.country}`,
+            id: `country-${country}`,
             type: 'country',
-            name: match.country,
-            country: match.country,
-            runCount: match._count.id, // Actually ski area count
+            name: country,
+            country: country,
+            runCount: countryCount, // Actually ski area count
           });
         }
       }
     }
 
-    // Sort: exact matches first, then by type (subregion > region > country)
+    // Sort: exact matches first (normalized), then by type (subregion > region > country)
     results.sort((a, b) => {
-      const aExact = a.name.toLowerCase() === query.toLowerCase();
-      const bExact = b.name.toLowerCase() === query.toLowerCase();
+      const aNorm = normalizeText(a.name);
+      const bNorm = normalizeText(b.name);
+      
+      const aExact = aNorm === normalizedQuery;
+      const bExact = bNorm === normalizedQuery;
       if (aExact && !bExact) return -1;
       if (!aExact && bExact) return 1;
+
+      // Prefer matches that start with the query
+      const aStarts = aNorm.startsWith(normalizedQuery);
+      const bStarts = bNorm.startsWith(normalizedQuery);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
 
       // Prefer sub-regions and regions over countries
       const typeOrder = { subregion: 0, region: 1, country: 2 };
