@@ -681,20 +681,23 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       });
     }
 
-    // Runs source and layer (all runs for click detection)
+    // Runs source and layer (LineString runs only - for click detection)
+    // Polygon runs are handled separately with their own fill layers
     const runsGeoJSON = {
       type: 'FeatureCollection' as const,
-      features: area.runs.map(run => ({
-        type: 'Feature' as const,
-        properties: {
-          id: run.id,
-          name: run.name,
-          difficulty: run.difficulty,
-          status: run.status,
-          color: getDifficultyColor(run.difficulty),
-        },
-        geometry: run.geometry,
-      })),
+      features: area.runs
+        .filter(run => run.geometry.type === 'LineString') // Exclude polygons - they have their own source
+        .map(run => ({
+          type: 'Feature' as const,
+          properties: {
+            id: run.id,
+            name: run.name,
+            difficulty: run.difficulty,
+            status: run.status,
+            color: getDifficultyColor(run.difficulty),
+          },
+          geometry: run.geometry,
+        })),
     };
 
     map.current.addSource('ski-runs', {
