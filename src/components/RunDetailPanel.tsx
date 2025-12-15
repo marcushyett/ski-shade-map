@@ -574,6 +574,12 @@ export const RunDetailPanel = memo(function RunDetailPanel({
       </div>
       
       {/* Sun distribution chart */}
+      {(() => {
+        console.log('[DEBUG] RunDetailPanel - analysis:', analysis);
+        console.log('[DEBUG] RunDetailPanel - hourlyPercentages:', analysis?.hourlyPercentages);
+        console.log('[DEBUG] RunDetailPanel - hourlyPercentages length:', analysis?.hourlyPercentages?.length);
+        return null;
+      })()}
       {analysis && analysis.hourlyPercentages && analysis.hourlyPercentages.length > 0 && (
         <div className="mb-3">
           <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Sun exposure by hour</div>
