@@ -339,7 +339,7 @@ export default function TimeSlider({
           <Tooltip title="Expand time controls">
             <div className="flex items-center gap-1" style={{ color: '#666', fontSize: 10 }}>
               <span>Expand</span>
-              <DownOutlined style={{ fontSize: 8 }} />
+              <UpOutlined style={{ fontSize: 8 }} />
             </div>
           </Tooltip>
         </div>
@@ -370,7 +370,7 @@ export default function TimeSlider({
               }}
             >
               <span>Collapse</span>
-              <UpOutlined style={{ fontSize: 8 }} />
+              <DownOutlined style={{ fontSize: 8 }} />
             </button>
           </Tooltip>
         </div>

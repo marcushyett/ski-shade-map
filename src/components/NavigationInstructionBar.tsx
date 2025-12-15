@@ -176,7 +176,7 @@ function NavigationInstructionBarInner({
             )}
           </span>
           <span className="nav-mini-eta">ETA {eta}</span>
-          <DownOutlined style={{ fontSize: 10, marginLeft: 8, color: '#666' }} />
+          <UpOutlined style={{ fontSize: 10, marginLeft: 8, color: '#666' }} />
         </div>
         <button className="nav-end-btn-mini" onClick={onEndNavigation}>
           <CloseOutlined style={{ fontSize: 10 }} />
@@ -225,7 +225,7 @@ function NavigationInstructionBarInner({
           onClick={() => setIsExpanded(false)}
           title="Collapse"
         >
-          <UpOutlined style={{ fontSize: 10 }} />
+          <DownOutlined style={{ fontSize: 10 }} />
         </button>
       </div>
       
