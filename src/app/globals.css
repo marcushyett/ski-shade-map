@@ -1437,6 +1437,14 @@ h5.ant-typography {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
+/* Fixed positioning variant that breaks out of parent overflow */
+.nav-search-dropdown-fixed {
+  position: fixed !important;
+  /* Width, top, left set via inline styles for precise positioning */
+  left: auto !important;
+  right: auto !important;
+}
+
 /* Subregion display in search results */
 .nav-search-item-subregion {
   font-size: 9px;
@@ -2052,6 +2060,11 @@ h5.ant-typography {
     width: calc(100% + 24px);
     max-height: 50vh; /* Use more viewport height on mobile */
     z-index: 9999; /* Ensure high z-index on mobile too */
+  }
+  
+  /* Fixed dropdown on mobile */
+  .nav-search-dropdown-fixed {
+    max-height: 50vh !important;
   }
 }
 

@@ -185,6 +185,7 @@ function PointSearchInput({
   const [searchText, setSearchText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -194,6 +195,31 @@ function PointSearchInput({
       inputRef.current.focus();
     }
   }, [autoFocus]);
+
+  // Calculate dropdown position when focused
+  useEffect(() => {
+    const updateDropdownPosition = () => {
+      if (containerRef.current && isFocused) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setDropdownPosition({
+          top: rect.bottom + 4,
+          left: rect.left,
+          width: rect.width,
+        });
+      }
+    };
+
+    updateDropdownPosition();
+    
+    // Update position on scroll or resize
+    window.addEventListener('scroll', updateDropdownPosition, true);
+    window.addEventListener('resize', updateDropdownPosition);
+    
+    return () => {
+      window.removeEventListener('scroll', updateDropdownPosition, true);
+      window.removeEventListener('resize', updateDropdownPosition);
+    };
+  }, [isFocused]);
 
   // Filter runs and lifts by search
   // Deduplicate runs by name+subregion, keeping highest altitude
@@ -480,8 +506,16 @@ function PointSearchInput({
           />
           <QuickActionButtons />
           
-          {showDropdown && (
-            <div className="nav-search-dropdown">
+          {showDropdown && dropdownPosition && (
+            <div 
+              className="nav-search-dropdown nav-search-dropdown-fixed"
+              style={{
+                position: 'fixed',
+                top: `${dropdownPosition.top}px`,
+                left: `${dropdownPosition.left}px`,
+                width: `${dropdownPosition.width}px`,
+              }}
+            >
               {/* Current location option - only if valid */}
               {showCurrentLocation && userLocation && isUserLocationValid && (!searchText || 'current location my location'.includes(searchText.toLowerCase())) && (
                 <div
