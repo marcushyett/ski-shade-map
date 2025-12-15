@@ -525,6 +525,233 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
     }
   }
 
+  // Third pass: Add mid-point intersection nodes where runs cross or come close to each other
+  // This allows transitioning between runs at intermediate points, not just start/end
+  const MIN_INTERSECTION_DISTANCE = 30; // meters - how close for intersection
+  const runEdgesList = Array.from(edges.values()).filter(e => e.type === 'run');
+  const liftEndNodes = Array.from(nodes.values()).filter(n => n.type === 'lift_end');
+  
+  for (const runEdge of runEdgesList) {
+    const coords = runEdge.coordinates;
+    if (coords.length < 3) continue; // Need at least 3 points to have a midpoint
+    
+    // Check each coordinate (except first and last which are already nodes)
+    for (let i = 1; i < coords.length - 1; i++) {
+      const coord = coords[i];
+      const lng = coord[0];
+      const lat = coord[1];
+      const elev = (coord[2] as number) || 0;
+      
+      // Check if this point is close to any lift end (common transition point)
+      for (const liftEnd of liftEndNodes) {
+        const dist = haversineDistance(lat, lng, liftEnd.lat, liftEnd.lng);
+        if (dist < MIN_INTERSECTION_DISTANCE) {
+          const elevDiff = Math.abs(elev - liftEnd.elevation);
+          if (elevDiff < 30) {
+            // Create a mid-point node on this run
+            const midNodeId = `run-${runEdge.featureId}-mid-${i}`;
+            
+            if (!nodes.has(midNodeId)) {
+              const midNode: NavigationNode = {
+                id: midNodeId,
+                lng,
+                lat,
+                elevation: elev,
+                type: 'connection',
+                featureId: runEdge.featureId,
+                featureName: runEdge.featureName,
+              };
+              addNode(midNode);
+              
+              // Create walk connection from lift end to this mid-point
+              const walkToMid: NavigationEdge = {
+                id: `walk-${liftEnd.id}-to-${midNodeId}`,
+                fromNodeId: liftEnd.id,
+                toNodeId: midNodeId,
+                type: 'walk',
+                featureId: 'connection',
+                featureName: null,
+                distance: dist,
+                elevationChange: elev - liftEnd.elevation,
+                travelTime: dist / SPEEDS.walk.flat,
+                speed: SPEEDS.walk.flat,
+                coordinates: [
+                  [liftEnd.lng, liftEnd.lat, liftEnd.elevation],
+                  [lng, lat, elev],
+                ],
+              };
+              addEdge(walkToMid);
+              
+              // Create edge from mid-point to run end (continuing down the run)
+              const remainingCoords = coords.slice(i);
+              const remainingDist = calculatePathDistance(remainingCoords);
+              const endElev = (coords[coords.length - 1][2] as number) || 0;
+              
+              const midToEnd: NavigationEdge = {
+                id: `run-${runEdge.featureId}-mid${i}-to-end`,
+                fromNodeId: midNodeId,
+                toNodeId: `run-${runEdge.featureId}-end`,
+                type: 'run',
+                featureId: runEdge.featureId,
+                featureName: runEdge.featureName,
+                difficulty: runEdge.difficulty,
+                distance: remainingDist,
+                elevationChange: endElev - elev,
+                travelTime: remainingDist / runEdge.speed,
+                speed: runEdge.speed,
+                coordinates: remainingCoords as [number, number, number?][],
+              };
+              addEdge(midToEnd);
+            }
+            break; // Only need one intersection per coordinate
+          }
+        }
+      }
+    }
+  }
+  
+  // Fourth pass: Add run-to-run intersection points
+  // This allows transitioning between runs where they cross
+  for (let r1 = 0; r1 < runEdgesList.length; r1++) {
+    const run1 = runEdgesList[r1];
+    const coords1 = run1.coordinates;
+    
+    for (let r2 = r1 + 1; r2 < runEdgesList.length; r2++) {
+      const run2 = runEdgesList[r2];
+      const coords2 = run2.coordinates;
+      
+      // Check if any coordinates of run1 are close to any coordinates of run2
+      for (let i = 1; i < coords1.length - 1; i++) {
+        const c1 = coords1[i];
+        
+        for (let j = 1; j < coords2.length - 1; j++) {
+          const c2 = coords2[j];
+          
+          const dist = haversineDistance(c1[1], c1[0], c2[1], c2[0]);
+          if (dist < MIN_INTERSECTION_DISTANCE) {
+            const elev1 = (c1[2] as number) || 0;
+            const elev2 = (c2[2] as number) || 0;
+            const elevDiff = Math.abs(elev1 - elev2);
+            
+            if (elevDiff < 30) {
+              // Create intersection node for run1
+              const mid1NodeId = `run-${run1.featureId}-mid-${i}`;
+              const mid2NodeId = `run-${run2.featureId}-mid-${j}`;
+              
+              // Add mid-node on run1 if not exists
+              if (!nodes.has(mid1NodeId)) {
+                const midNode1: NavigationNode = {
+                  id: mid1NodeId,
+                  lng: c1[0],
+                  lat: c1[1],
+                  elevation: elev1,
+                  type: 'connection',
+                  featureId: run1.featureId,
+                  featureName: run1.featureName,
+                };
+                addNode(midNode1);
+                
+                // Create edge from mid-point to run1 end
+                const remainingCoords1 = coords1.slice(i);
+                const remainingDist1 = calculatePathDistance(remainingCoords1);
+                const endElev1 = (coords1[coords1.length - 1][2] as number) || 0;
+                
+                const mid1ToEnd: NavigationEdge = {
+                  id: `run-${run1.featureId}-mid${i}-to-end`,
+                  fromNodeId: mid1NodeId,
+                  toNodeId: `run-${run1.featureId}-end`,
+                  type: 'run',
+                  featureId: run1.featureId,
+                  featureName: run1.featureName,
+                  difficulty: run1.difficulty,
+                  distance: remainingDist1,
+                  elevationChange: endElev1 - elev1,
+                  travelTime: remainingDist1 / run1.speed,
+                  speed: run1.speed,
+                  coordinates: remainingCoords1 as [number, number, number?][],
+                };
+                addEdge(mid1ToEnd);
+              }
+              
+              // Add mid-node on run2 if not exists
+              if (!nodes.has(mid2NodeId)) {
+                const midNode2: NavigationNode = {
+                  id: mid2NodeId,
+                  lng: c2[0],
+                  lat: c2[1],
+                  elevation: elev2,
+                  type: 'connection',
+                  featureId: run2.featureId,
+                  featureName: run2.featureName,
+                };
+                addNode(midNode2);
+                
+                // Create edge from mid-point to run2 end
+                const remainingCoords2 = coords2.slice(j);
+                const remainingDist2 = calculatePathDistance(remainingCoords2);
+                const endElev2 = (coords2[coords2.length - 1][2] as number) || 0;
+                
+                const mid2ToEnd: NavigationEdge = {
+                  id: `run-${run2.featureId}-mid${j}-to-end`,
+                  fromNodeId: mid2NodeId,
+                  toNodeId: `run-${run2.featureId}-end`,
+                  type: 'run',
+                  featureId: run2.featureId,
+                  featureName: run2.featureName,
+                  difficulty: run2.difficulty,
+                  distance: remainingDist2,
+                  elevationChange: endElev2 - elev2,
+                  travelTime: remainingDist2 / run2.speed,
+                  speed: run2.speed,
+                  coordinates: remainingCoords2 as [number, number, number?][],
+                };
+                addEdge(mid2ToEnd);
+              }
+              
+              // Create bidirectional walk connections between the two mid-points
+              const walkBetween1: NavigationEdge = {
+                id: `walk-${mid1NodeId}-to-${mid2NodeId}`,
+                fromNodeId: mid1NodeId,
+                toNodeId: mid2NodeId,
+                type: 'walk',
+                featureId: 'intersection',
+                featureName: null,
+                distance: dist,
+                elevationChange: elev2 - elev1,
+                travelTime: dist / SPEEDS.walk.flat,
+                speed: SPEEDS.walk.flat,
+                coordinates: [
+                  [c1[0], c1[1], elev1],
+                  [c2[0], c2[1], elev2],
+                ],
+              };
+              
+              const walkBetween2: NavigationEdge = {
+                id: `walk-${mid2NodeId}-to-${mid1NodeId}`,
+                fromNodeId: mid2NodeId,
+                toNodeId: mid1NodeId,
+                type: 'walk',
+                featureId: 'intersection',
+                featureName: null,
+                distance: dist,
+                elevationChange: elev1 - elev2,
+                travelTime: dist / SPEEDS.walk.flat,
+                speed: SPEEDS.walk.flat,
+                coordinates: [
+                  [c2[0], c2[1], elev2],
+                  [c1[0], c1[1], elev1],
+                ],
+              };
+              
+              addEdge(walkBetween1);
+              addEdge(walkBetween2);
+            }
+          }
+        }
+      }
+    }
+  }
+
   return { nodes, edges, adjacency };
 }
 

@@ -697,16 +697,27 @@ function RouteColorLegend() {
   );
 }
 
+// Display segment after merging consecutive segments with same name
+interface DisplaySegment {
+  displayName: string;
+  type: 'lift' | 'run' | 'walk';
+  difficulty?: string | null;
+  distance: number;
+  time: number;
+  elevationChange: number;
+  coordinates: [number, number, number?][];
+}
+
 function RouteSummary({ route }: { route: NavigationRoute }) {
   // Helper to find the next named destination after unnamed segments
   // Traverses through chains of unnamed connections to find the actual destination
-  const getConnectionDestination = (segmentIndex: number) => {
+  const getConnectionDestination = (segmentIndex: number, segments: typeof route.segments) => {
     // Look ahead through ALL unnamed segments (runs and walks) to find the next named feature
-    for (let i = segmentIndex + 1; i < route.segments.length; i++) {
-      const nextSeg = route.segments[i];
+    for (let i = segmentIndex + 1; i < segments.length; i++) {
+      const nextSeg = segments[i];
       
       // Skip unnamed runs and "Connection" walks - keep looking
-      if (!nextSeg.name || nextSeg.name === 'Connection') {
+      if (!nextSeg.name || nextSeg.name === 'Connection' || nextSeg.name === 'Extended Walk') {
         continue;
       }
       
@@ -717,14 +728,14 @@ function RouteSummary({ route }: { route: NavigationRoute }) {
   };
   
   // Get display name for a segment
-  const getSegmentName = (segment: typeof route.segments[0], idx: number) => {
+  const getSegmentName = (segment: typeof route.segments[0], idx: number, segments: typeof route.segments) => {
     if (segment.type === 'walk') {
       return 'Walk/Skate';
     }
     
     // For unnamed runs, show "Connection to X"
     if (segment.type === 'run' && !segment.name) {
-      const destination = getConnectionDestination(idx);
+      const destination = getConnectionDestination(idx, segments);
       if (destination) {
         return `Connection to ${destination}`;
       }
@@ -732,6 +743,43 @@ function RouteSummary({ route }: { route: NavigationRoute }) {
     
     return segment.name || 'Unnamed';
   };
+  
+  // Merge consecutive segments with the same display name
+  const displaySegments = useMemo(() => {
+    const merged: DisplaySegment[] = [];
+    
+    for (let i = 0; i < route.segments.length; i++) {
+      const segment = route.segments[i];
+      const displayName = getSegmentName(segment, i, route.segments);
+      
+      // Check if we can merge with the previous segment
+      if (merged.length > 0) {
+        const lastMerged = merged[merged.length - 1];
+        
+        // Merge if same display name and same type
+        if (lastMerged.displayName === displayName && lastMerged.type === segment.type) {
+          lastMerged.distance += segment.distance;
+          lastMerged.time += segment.time;
+          lastMerged.elevationChange += segment.elevationChange;
+          lastMerged.coordinates = [...lastMerged.coordinates, ...segment.coordinates];
+          continue;
+        }
+      }
+      
+      // Add as new segment
+      merged.push({
+        displayName,
+        type: segment.type,
+        difficulty: segment.difficulty,
+        distance: segment.distance,
+        time: segment.time,
+        elevationChange: segment.elevationChange,
+        coordinates: segment.coordinates,
+      });
+    }
+    
+    return merged;
+  }, [route.segments]);
   
   return (
     <div className="nav-route-summary">
@@ -762,7 +810,7 @@ function RouteSummary({ route }: { route: NavigationRoute }) {
       <RouteColorLegend />
       
       <div className="nav-route-segments">
-        {route.segments.map((segment, idx) => (
+        {displaySegments.map((segment, idx) => (
           <div key={idx} className="nav-route-segment">
             <div className="nav-segment-icon">
               {segment.type === 'lift' ? (
@@ -789,7 +837,7 @@ function RouteSummary({ route }: { route: NavigationRoute }) {
             </div>
             <div className="nav-segment-info">
               <span className="nav-segment-name">
-                {getSegmentName(segment, idx)}
+                {segment.displayName}
               </span>
               <span className="nav-segment-meta">
                 {formatDistance(segment.distance)} · {formatDuration(segment.time)}
