@@ -13,7 +13,8 @@ import {
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
-import SkiAreaPicker from '@/components/Controls/SkiAreaPicker';
+import LocationSearch, { type LocationSelection } from '@/components/LocationSearch';
+import LocationNavbar from '@/components/LocationNavbar';
 import TimeSlider from '@/components/Controls/TimeSlider';
 import ViewToggle from '@/components/Controls/ViewToggle';
 import Legend from '@/components/Controls/Legend';
@@ -89,9 +90,11 @@ const ControlsContent = memo(function ControlsContent({
   snowQualityByRun,
   fakeLocation,
   isFakeLocationDropMode,
-  onAreaSelect,
+  onLocationSelect,
+  currentSubRegion,
   onSelectRun,
   onSelectLift,
+  onSelectSubRegion,
   onErrorClose,
   onWeatherLoad,
   onRemoveFavourite,
@@ -109,9 +112,11 @@ const ControlsContent = memo(function ControlsContent({
   snowQualityByRun: Record<string, SnowQualityAtPoint[]>;
   fakeLocation: { lat: number; lng: number } | null;
   isFakeLocationDropMode: boolean;
-  onAreaSelect: (area: SkiAreaSummary) => void;
+  onLocationSelect: (location: LocationSelection) => void;
+  currentSubRegion: { id: string; name: string } | null;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
+  onSelectSubRegion: (subRegion: { id: string; name: string; centroid?: { lat: number; lng: number } | null }) => void;
   onErrorClose: () => void;
   onWeatherLoad: (weather: WeatherData) => void;
   onRemoveFavourite: (runId: string) => void;
@@ -135,12 +140,17 @@ const ControlsContent = memo(function ControlsContent({
 
       <div className="shrink-0">
         <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
-          SELECT AREA {isOffline && <span style={{ color: '#ff4d4f' }}>(offline)</span>}
+          LOCATION {isOffline && <span style={{ color: '#ff4d4f' }}>(offline)</span>}
         </Text>
-        <SkiAreaPicker 
-          onSelect={onAreaSelect}
-          selectedArea={selectedArea}
+        <LocationSearch 
+          onSelect={onLocationSelect}
+          currentLocation={{
+            country: selectedArea?.country || undefined,
+            region: selectedArea?.name || undefined,
+            subRegion: currentSubRegion?.name,
+          }}
           disabled={isOffline}
+          placeholder="Search ski areas, villages..."
         />
       </div>
 
@@ -171,6 +181,7 @@ const ControlsContent = memo(function ControlsContent({
               subRegions={skiAreaDetails.subRegions}
               onSelectRun={onSelectRun}
               onSelectLift={onSelectLift}
+              onSelectSubRegion={onSelectSubRegion}
             />
           </div>
         </>
@@ -351,6 +362,11 @@ export default function Home() {
   const [navReturnPoint, setNavReturnPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [isWeatherCardCollapsed, setIsWeatherCardCollapsed] = useState(false);
   const [isNavPanelMinimized, setIsNavPanelMinimized] = useState(false);
+  
+  // Location/sub-region tracking
+  const [currentSubRegion, setCurrentSubRegion] = useState<{ id: string; name: string } | null>(null);
+  const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
+  const [zoomToSubRegion, setZoomToSubRegion] = useState<{ id: string; name: string; lat: number; lng: number } | null>(null);
   
   // Effective user location - uses fake location for debugging if set
   const effectiveUserLocation = useMemo<UserLocation | null>(() => {
@@ -630,6 +646,74 @@ export default function Home() {
     setSelectedArea(area);
     setWeather(null); // Clear weather when changing areas
     setMobileMenuOpen(false);
+  }, []);
+
+  // Handle location selection from unified search
+  const handleLocationSelect = useCallback((location: LocationSelection) => {
+    // Set the selected area (this will trigger data loading)
+    setSelectedArea({
+      id: location.skiAreaId,
+      name: location.skiAreaName,
+      country: location.country || null,
+      region: null,
+      latitude: location.latitude || 0,
+      longitude: location.longitude || 0,
+    });
+    setWeather(null);
+    setMobileMenuOpen(false);
+    setIsLocationSearchOpen(false);
+    
+    // If a sub-region was selected, zoom to it after data loads
+    if (location.zoomToSubRegion && location.subRegionId && location.latitude && location.longitude) {
+      setZoomToSubRegion({
+        id: location.subRegionId,
+        name: location.subRegionName || '',
+        lat: location.latitude,
+        lng: location.longitude,
+      });
+      setCurrentSubRegion({
+        id: location.subRegionId,
+        name: location.subRegionName || '',
+      });
+    } else {
+      setZoomToSubRegion(null);
+      setCurrentSubRegion(null);
+    }
+    
+    trackEvent('location_selected', {
+      ski_area_id: location.skiAreaId,
+      ski_area_name: location.skiAreaName,
+      sub_region_id: location.subRegionId,
+      sub_region_name: location.subRegionName,
+      country: location.country,
+    });
+  }, []);
+
+  // Handle zoom to sub-region after ski area data is loaded
+  useEffect(() => {
+    if (zoomToSubRegion && skiAreaDetails) {
+      // Zoom to the sub-region with a slight delay to ensure map is ready
+      setTimeout(() => {
+        mapRef.current?.flyTo(zoomToSubRegion.lat, zoomToSubRegion.lng, 14);
+        setZoomToSubRegion(null);
+      }, 500);
+    }
+  }, [zoomToSubRegion, skiAreaDetails]);
+
+  // Navigate to region (zoom out to see whole area)
+  const handleNavigateToRegion = useCallback(() => {
+    if (skiAreaDetails) {
+      mapRef.current?.flyTo(skiAreaDetails.latitude, skiAreaDetails.longitude, 12);
+      setCurrentSubRegion(null);
+    }
+  }, [skiAreaDetails]);
+
+  // Navigate to a specific sub-region
+  const handleNavigateToSubRegion = useCallback((subRegion: { id: string; name: string; centroid?: { lat: number; lng: number } | null }) => {
+    if (subRegion.centroid) {
+      mapRef.current?.flyTo(subRegion.centroid.lat, subRegion.centroid.lng, 14);
+      setCurrentSubRegion({ id: subRegion.id, name: subRegion.name });
+    }
   }, []);
 
   const handleSelectRun = useCallback((run: RunData) => {
@@ -1046,6 +1130,41 @@ export default function Home() {
     [skiAreaDetails]
   );
 
+  // Detect which sub-region the map center is in
+  const detectSubRegion = useCallback((lat: number, lng: number) => {
+    if (!skiAreaDetails?.subRegions?.length) return null;
+    
+    // Find the sub-region whose centroid is closest to the map center
+    let closestSubRegion: { id: string; name: string } | null = null;
+    let closestDistance = Infinity;
+    
+    for (const subRegion of skiAreaDetails.subRegions) {
+      const centroid = subRegion.centroid as { lat: number; lng: number } | null;
+      if (!centroid) continue;
+      
+      // Simple distance calculation
+      const distance = Math.sqrt(
+        Math.pow(lat - centroid.lat, 2) + Math.pow(lng - centroid.lng, 2)
+      );
+      
+      // Only consider if within reasonable distance (~5km = ~0.05 degrees)
+      if (distance < 0.05 && distance < closestDistance) {
+        closestDistance = distance;
+        closestSubRegion = { id: subRegion.id, name: subRegion.name };
+      }
+    }
+    
+    return closestSubRegion;
+  }, [skiAreaDetails?.subRegions]);
+
+  // Update current sub-region when map view changes
+  useEffect(() => {
+    if (mapView) {
+      const detectedSubRegion = detectSubRegion(mapView.lat, mapView.lng);
+      setCurrentSubRegion(detectedSubRegion);
+    }
+  }, [mapView, detectSubRegion]);
+
   // Get hourly weather for time slider
   const hourlyWeather = useMemo(() => weather?.hourly || [], [weather]);
 
@@ -1284,9 +1403,11 @@ export default function Home() {
           snowQualityByRun={snowQualityByRun}
           fakeLocation={fakeLocation}
           isFakeLocationDropMode={isFakeLocationDropMode}
-          onAreaSelect={handleAreaSelect}
+          onLocationSelect={handleLocationSelect}
+          currentSubRegion={currentSubRegion}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
+          onSelectSubRegion={handleNavigateToSubRegion}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
           onRemoveFavourite={removeFavourite}
@@ -1309,9 +1430,11 @@ export default function Home() {
           snowQualityByRun={snowQualityByRun}
           fakeLocation={fakeLocation}
           isFakeLocationDropMode={isFakeLocationDropMode}
-          onAreaSelect={handleAreaSelect}
+          onLocationSelect={handleLocationSelect}
+          currentSubRegion={currentSubRegion}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
+          onSelectSubRegion={handleNavigateToSubRegion}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
           onRemoveFavourite={removeFavourite}
@@ -1322,6 +1445,27 @@ export default function Home() {
 
       {/* Map area */}
       <div className="map-container">
+        {/* Location navbar - shows breadcrumb and allows changing location */}
+        <div className="location-navbar-container">
+          <LocationNavbar
+            country={selectedArea?.country || undefined}
+            region={selectedArea?.name || undefined}
+            subRegion={currentSubRegion?.name}
+            onChangeLocation={() => setIsLocationSearchOpen(true)}
+            onNavigateToRegion={handleNavigateToRegion}
+            onNavigateToSubRegion={currentSubRegion ? () => {
+              const subRegion = skiAreaDetails?.subRegions?.find(s => s.id === currentSubRegion.id);
+              if (subRegion) {
+                handleNavigateToSubRegion({
+                  id: subRegion.id,
+                  name: subRegion.name,
+                  centroid: subRegion.centroid as { lat: number; lng: number } | null,
+                });
+              }
+            } : undefined}
+          />
+        </div>
+
         {loading && (
           <div className="loading-overlay">
             <LoadingSpinner size={48} />
@@ -1539,6 +1683,33 @@ export default function Home() {
           />
         </div>
       </div>
+
+      {/* Location search overlay - shown when changing location from navbar */}
+      {isLocationSearchOpen && (
+        <div className="location-search-overlay" onClick={() => setIsLocationSearchOpen(false)}>
+          <div 
+            className="location-search-overlay-content" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="location-search-overlay-header">
+              <span className="location-search-overlay-title">Search for a ski area</span>
+              <button 
+                className="location-search-overlay-close"
+                onClick={() => setIsLocationSearchOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <LocationSearch
+              onSelect={(location) => {
+                handleLocationSelect(location);
+                setIsLocationSearchOpen(false);
+              }}
+              placeholder="Search ski areas, villages, countries..."
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

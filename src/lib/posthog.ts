@@ -40,6 +40,7 @@ export type AnalyticsEvent =
   | 'resort_selected'
   | 'resort_search'
   | 'country_selected'
+  | 'location_selected'
   
   // Run/Trail interactions
   | 'run_selected'

@@ -2318,3 +2318,347 @@ h5.ant-typography {
     padding: 8px 12px !important;
   }
 }
+
+/* ============================================
+   LOCATION SEARCH COMPONENT
+   ============================================ */
+
+.location-search {
+  position: relative;
+  width: 100%;
+}
+
+.location-search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.location-search-icon {
+  position: absolute;
+  left: 10px;
+  color: #666;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.location-search-input {
+  width: 100%;
+  padding: 10px 12px 10px 32px;
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.location-search-input:focus {
+  border-color: var(--accent);
+}
+
+.location-search-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.location-search-input::placeholder {
+  color: #555;
+}
+
+.location-search-spinner {
+  position: absolute;
+  right: 10px;
+}
+
+.location-current {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  margin-top: 6px;
+  background: var(--background-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.location-current:hover {
+  background: var(--background-secondary);
+  border-color: #333;
+}
+
+.location-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-breadcrumb-item {
+  color: #888;
+}
+
+.location-breadcrumb-region {
+  color: #3b82f6;
+}
+
+.location-breadcrumb-subregion {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.location-breadcrumb-sep {
+  margin: 0 6px;
+  color: #444;
+}
+
+.location-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+}
+
+.location-search-empty {
+  padding: 16px;
+  text-align: center;
+  color: #666;
+  font-size: 11px;
+}
+
+.location-search-result {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.location-search-result:last-child {
+  border-bottom: none;
+}
+
+.location-search-result:hover,
+.location-search-result.selected {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.location-result-icon {
+  flex-shrink: 0;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.location-result-content {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+}
+
+.location-result-name {
+  font-weight: 500;
+  color: #e5e5e5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.location-result-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #666;
+}
+
+.location-result-parent {
+  color: #888;
+}
+
+.location-result-count {
+  color: #555;
+}
+
+.location-result-type {
+  flex-shrink: 0;
+  margin-left: 12px;
+  padding: 2px 6px;
+  background: var(--background-tertiary);
+  border-radius: 2px;
+  font-size: 9px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================
+   LOCATION NAVBAR BREADCRUMB
+   ============================================ */
+
+.location-navbar {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.location-navbar-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.location-navbar-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #888;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.location-navbar-item:hover {
+  color: #ccc;
+}
+
+.location-navbar-item.active {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.location-navbar-sep {
+  margin: 0 8px;
+  color: #333;
+}
+
+.location-navbar-change {
+  margin-left: auto;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid #333;
+  border-radius: var(--radius);
+  color: #666;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.location-navbar-change:hover {
+  background: var(--background-tertiary);
+  border-color: #444;
+  color: #888;
+}
+
+/* Sub-region navigate button in runs list */
+.subregion-nav-btn {
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid #333;
+  border-radius: 2px;
+  color: #666;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.subregion-nav-btn:hover {
+  background: var(--background-secondary);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Location navbar container on map */
+.location-navbar-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+/* Adjust map overlays when navbar is present */
+.map-container .location-navbar-container ~ .map-search-container {
+  top: 50px;
+}
+
+/* Location search overlay for mobile */
+.location-search-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 2000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 60px 16px 16px;
+}
+
+.location-search-overlay-content {
+  width: 100%;
+  max-width: 500px;
+  background: var(--background-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.location-search-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.location-search-overlay-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: #e5e5e5;
+}
+
+.location-search-overlay-close {
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.location-search-overlay-close:hover {
+  color: #999;
+}
