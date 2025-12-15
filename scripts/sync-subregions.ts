@@ -109,6 +109,9 @@ interface OverpassElement {
   members?: Array<{ type: string; ref: number; role?: string }>;
   geometry?: Array<{ lat: number; lon: number }>;
   bounds?: { minlat: number; minlon: number; maxlat: number; maxlon: number };
+  // For nodes, lat/lon are direct properties
+  lat?: number;
+  lon?: number;
 }
 
 interface OverpassResponse {
@@ -232,20 +235,21 @@ function sampleArray<T>(arr: T[], n: number): T[] {
 }
 
 async function fetchSubRegionsFromOverpass(bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }): Promise<OverpassElement[]> {
-  // Query for both ski area sites AND administrative boundaries (communes) that likely contain ski resorts
+  // Query for ski area sites, administrative boundaries, AND place nodes (villages, hamlets)
+  // This allows us to get resort names like "Méribel" even when they're not official administrative units
   const query = `
     [out:json][timeout:120];
     (
       // Ski area site relations
       relation["type"="site"]["site"="piste"](${bounds.minLat},${bounds.minLng},${bounds.maxLat},${bounds.maxLng});
-      // French communes (admin_level 8) - these contain villages like Méribel (Les Allues), Courchevel, etc.
+      // French communes (admin_level 8) - these contain villages like Les Allues, etc.
       relation["boundary"="administrative"]["admin_level"="8"](${bounds.minLat},${bounds.minLng},${bounds.maxLat},${bounds.maxLng});
+      // Place nodes - villages, hamlets, suburbs (e.g., Méribel, Méribel-Mottaret, Méribel Village)
+      node["place"~"village|hamlet|suburb|neighbourhood"](${bounds.minLat},${bounds.minLng},${bounds.maxLat},${bounds.maxLng});
     );
     out body geom;
   `;
 
-  console.log(`Fetching sub-regions in bounds: ${JSON.stringify(bounds)}`);
-  
   const response = await fetchWithRetry(
     query,
     3,  // maxRetries
@@ -371,11 +375,15 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
   log(`Syncing sub-regions for: ${skiArea.name} (${skiAreaId})`);
   
   const elements = await fetchSubRegionsFromOverpass(expandedBounds);
-  log(`Found ${elements.length} potential sub-regions (ski sites + communes) in area`);
+  
+  // Count by type
+  const nodeCount = elements.filter(e => e.type === 'node').length;
+  const relationCount = elements.filter(e => e.type === 'relation').length;
+  log(`Found ${elements.length} potential sub-regions (${relationCount} relations, ${nodeCount} place nodes)`);
 
-  // Filter out the parent ski area itself
+  // Filter out the parent ski area itself and elements without names
   const subRegions = elements.filter(el => {
-    const osmId = `relation/${el.id}`;
+    const osmId = `${el.type}/${el.id}`;
     // Skip if this is the parent ski area
     if (skiArea.osmId === osmId) return false;
     // Skip if no name
@@ -386,30 +394,43 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
   log(`Processing ${subRegions.length} potential sub-regions`);
 
   for (const element of subRegions) {
-    const osmId = `relation/${element.id}`;
+    const osmId = `${element.type}/${element.id}`;
     const name = element.tags?.name || 'Unknown';
+    const placeType = element.tags?.place || element.tags?.site || element.tags?.boundary || 'unknown';
     
     // Calculate geometry and centroid
     let geometry = null;
     let centroid = null;
     let subBounds = null;
     
-    if (element.geometry && element.geometry.length > 0) {
-      geometry = geometryToGeoJSON(element.geometry);
-      centroid = calculateCentroid(element.geometry);
+    // Handle nodes (have direct lat/lon)
+    if (element.type === 'node' && element.lat !== undefined && element.lon !== undefined) {
+      centroid = { lat: element.lat, lng: element.lon };
+      // Create a small point geometry for nodes
+      geometry = {
+        type: 'Point',
+        coordinates: [element.lon, element.lat],
+      };
     }
-    
-    if (element.bounds) {
-      subBounds = boundsToJson(element.bounds);
-      if (!centroid) {
-        centroid = {
-          lat: (element.bounds.minlat + element.bounds.maxlat) / 2,
-          lng: (element.bounds.minlon + element.bounds.maxlon) / 2,
-        };
+    // Handle relations (have geometry array and/or bounds)
+    else {
+      if (element.geometry && element.geometry.length > 0) {
+        geometry = geometryToGeoJSON(element.geometry);
+        centroid = calculateCentroid(element.geometry);
+      }
+      
+      if (element.bounds) {
+        subBounds = boundsToJson(element.bounds);
+        if (!centroid) {
+          centroid = {
+            lat: (element.bounds.minlat + element.bounds.maxlat) / 2,
+            lng: (element.bounds.minlon + element.bounds.maxlon) / 2,
+          };
+        }
       }
     }
 
-    log(`  - ${name} (${osmId})`);
+    log(`  - ${name} (${osmId}) [${placeType}]`);
 
     if (dryRun) {
       log(`    [DRY RUN] Would create/update sub-region`);
