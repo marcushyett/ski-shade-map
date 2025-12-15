@@ -222,21 +222,8 @@ export function findSunniestTimeWindow(
   const mostCommonWeatherCode = Object.entries(weatherCodeCounts)
     .sort((a, b) => b[1] - a[1])[0]?.[0];
   
-  if (isBadWeather) {
-    return {
-      runId: run.id,
-      runName: run.name,
-      difficulty: run.difficulty,
-      sunniestWindow: null,
-      sunLevel: 'none',
-      averageSunnyPercentage: 0,
-      hourlyPercentages: [], // Empty for bad weather
-      isBadWeather: true,
-      weatherCode: mostCommonWeatherCode ? parseInt(mostCommonWeatherCode) : null,
-    };
-  }
-  
   // Calculate sunny percentage at finer intervals during daylight
+  // We always calculate this for the chart, even in bad weather
   const intervals: { time: Date; percentage: number }[] = [];
   
   const startTime = new Date(sunTimes.sunrise);
@@ -252,15 +239,33 @@ export function findSunniestTimeWindow(
       sunLevel: 'none',
       averageSunnyPercentage: 0,
       hourlyPercentages: [],
-      isBadWeather: false,
-      weatherCode: null,
+      isBadWeather: isBadWeather,
+      weatherCode: mostCommonWeatherCode ? parseInt(mostCommonWeatherCode) : null,
     };
   }
   
+  // Build a map of hourly cloud cover for quick lookup
+  const hourlyCloudCover: Record<number, number> = {};
+  todayWeather.forEach(h => {
+    const hDate = new Date(h.time);
+    hourlyCloudCover[hDate.getHours()] = h.cloudCover;
+  });
+  
   const currentTime = new Date(startTime);
   while (currentTime <= endTime) {
-    const percentage = calculateSunnyPercentage(run, currentTime, latitude, longitude);
-    intervals.push({ time: new Date(currentTime), percentage });
+    // Calculate geometric sun exposure based on run orientation
+    const geometricSunPercentage = calculateSunnyPercentage(run, currentTime, latitude, longitude);
+    
+    // Factor in cloud cover for this hour (reduces effective sun exposure)
+    const hour = currentTime.getHours();
+    const cloudCover = hourlyCloudCover[hour] ?? 0; // Default to 0 if no weather data
+    
+    // Cloud cover reduces sun exposure: 0% cloud = full sun, 100% cloud = no sun
+    // We use a slightly less aggressive reduction (clouds don't block 100% of light)
+    const cloudFactor = 1 - (cloudCover / 100) * 0.9; // 90% cloud cover = 10% of sun gets through
+    const effectiveSunPercentage = geometricSunPercentage * cloudFactor;
+    
+    intervals.push({ time: new Date(currentTime), percentage: effectiveSunPercentage });
     currentTime.setMinutes(currentTime.getMinutes() + SAMPLE_INTERVAL_MINUTES);
   }
   
@@ -273,8 +278,8 @@ export function findSunniestTimeWindow(
       sunLevel: 'none',
       averageSunnyPercentage: 0,
       hourlyPercentages: [],
-      isBadWeather: false,
-      weatherCode: null,
+      isBadWeather: isBadWeather,
+      weatherCode: mostCommonWeatherCode ? parseInt(mostCommonWeatherCode) : null,
     };
   }
   

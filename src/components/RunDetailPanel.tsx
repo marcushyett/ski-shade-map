@@ -573,17 +573,42 @@ export const RunDetailPanel = memo(function RunDetailPanel({
         )}
       </div>
       
-      {/* Sun distribution chart */}
-      {(() => {
-        console.log('[DEBUG] RunDetailPanel - analysis:', analysis);
-        console.log('[DEBUG] RunDetailPanel - hourlyPercentages:', analysis?.hourlyPercentages);
-        console.log('[DEBUG] RunDetailPanel - hourlyPercentages length:', analysis?.hourlyPercentages?.length);
-        return null;
-      })()}
-      {analysis && analysis.hourlyPercentages && analysis.hourlyPercentages.length > 0 && (
+      {/* Sun distribution chart or "No sun today" message */}
+      {analysis && (
         <div className="mb-3">
-          <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Sun exposure by hour</div>
-          <SunDistributionChart hourlyData={analysis.hourlyPercentages} />
+          {analysis.hourlyPercentages && analysis.hourlyPercentages.length > 0 ? (
+            // Check if there's any meaningful sun (at least one hour > 5%)
+            analysis.hourlyPercentages.some(h => h.percentage > 5) ? (
+              <>
+                <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Sun exposure by hour</div>
+                <SunDistributionChart hourlyData={analysis.hourlyPercentages} />
+              </>
+            ) : (
+              // All hours are very low sun - show message
+              <div style={{ 
+                color: '#666', 
+                fontSize: 10, 
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,0.05)',
+                borderRadius: 4,
+                textAlign: 'center'
+              }}>
+                ☁️ No direct sun expected today
+              </div>
+            )
+          ) : (
+            // No hourly data available
+            <div style={{ 
+              color: '#666', 
+              fontSize: 10, 
+              padding: '8px 12px',
+              background: 'rgba(255,255,255,0.05)',
+              borderRadius: 4,
+              textAlign: 'center'
+            }}>
+              ☁️ No direct sun expected today
+            </div>
+          )}
         </div>
       )}
       

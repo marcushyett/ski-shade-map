@@ -1276,9 +1276,6 @@ export default function Home() {
     
     const analyses = analyzeRuns([run], selectedTime, skiAreaDetails.latitude, skiAreaDetails.longitude, weather?.hourly);
     const analysis = analyses[0] || null;
-    console.log('[DEBUG] page.tsx - analyzeRuns result:', analyses);
-    console.log('[DEBUG] page.tsx - analysis for run:', run.name, analysis);
-    console.log('[DEBUG] page.tsx - hourlyPercentages:', analysis?.hourlyPercentages);
     const stats = calculateRunStats(run);
     const isFavourite = favourites.some(f => f.id === run.id);
     
