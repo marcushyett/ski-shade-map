@@ -38,7 +38,7 @@ const MobileAwareTooltip = ({ title, children, ...props }: React.ComponentProps<
   }
   return <Tooltip title={title} {...props}>{children}</Tooltip>;
 };
-import type { SkiAreaDetails, RunData, LiftData } from '@/lib/types';
+import type { SkiAreaDetails, RunData, LiftData, POIData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import {
   buildNavigationGraph,
@@ -161,6 +161,8 @@ interface NavigationPanelProps {
   onToggleMinimize?: () => void;
   // Weather data for sun calculations
   hourlyWeather?: HourlyWeather[];
+  // POIs for showing toilets along route
+  pois?: POIData[];
 }
 
 // ============================================================================
@@ -720,9 +722,34 @@ interface DisplaySegment {
 interface RouteSummaryProps {
   route: NavigationRoute;
   sunAnalysis?: RouteSunAnalysis | null;
+  pois?: POIData[];
 }
 
-function RouteSummary({ route, sunAnalysis }: RouteSummaryProps) {
+function RouteSummary({ route, sunAnalysis, pois = [] }: RouteSummaryProps) {
+  // Helper to check if there are toilets near a segment
+  const hasNearbyToilet = useCallback((coordinates: [number, number, number?][]) => {
+    if (pois.length === 0 || coordinates.length === 0) return false;
+    
+    const toilets = pois.filter(poi => poi.type === 'toilet');
+    if (toilets.length === 0) return false;
+    
+    // Check if any toilet is within ~100m of the segment path
+    const NEARBY_THRESHOLD = 0.001; // Roughly 100m in degrees
+    
+    for (const toilet of toilets) {
+      for (const coord of coordinates) {
+        const distance = Math.sqrt(
+          Math.pow(coord[1] - toilet.latitude, 2) + 
+          Math.pow(coord[0] - toilet.longitude, 2)
+        );
+        if (distance < NEARBY_THRESHOLD) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [pois]);
+  
   // Helper to find the next named destination after unnamed segments
   // Traverses through chains of unnamed connections to find the actual destination
   const getConnectionDestination = (segmentIndex: number, segments: typeof route.segments) => {
@@ -881,46 +908,62 @@ function RouteSummary({ route, sunAnalysis }: RouteSummaryProps) {
       <RouteColorLegend />
       
       <div className="nav-route-segments">
-        {displaySegments.map((segment, idx) => (
-          <div key={idx} className="nav-route-segment">
-            <div className="nav-segment-icon">
-              {segment.type === 'lift' ? (
-                <SwapOutlined style={{ fontSize: 10, color: '#9ca3af' }} />
-              ) : segment.type === 'run' ? (
-                <span 
-                  className="nav-dot" 
-                  style={{ 
-                    backgroundColor: getDifficultyColor(segment.difficulty),
-                    width: 8,
-                    height: 8,
-                  }} 
-                />
-              ) : (
-                <span 
-                  className="nav-dot" 
-                  style={{ 
-                    backgroundColor: '#f97316',
-                    width: 8,
-                    height: 8,
-                  }} 
-                />
-              )}
-            </div>
-            <div className="nav-segment-info">
-              <span className="nav-segment-name">
-                {segment.displayName}
-              </span>
-              <span className="nav-segment-meta">
-                {formatDistance(segment.distance)} · {formatDuration(segment.time)}
-                {segment.elevationChange !== 0 && (
-                  <span style={{ color: segment.elevationChange > 0 ? '#52c41a' : '#666' }}>
-                    {' '}· {segment.elevationChange > 0 ? '↑' : '↓'}{Math.abs(Math.round(segment.elevationChange))}m
-                  </span>
+        {displaySegments.map((segment, idx) => {
+          const hasToilet = hasNearbyToilet(segment.coordinates);
+          return (
+            <div key={idx} className="nav-route-segment">
+              <div className="nav-segment-icon">
+                {segment.type === 'lift' ? (
+                  <SwapOutlined style={{ fontSize: 10, color: '#9ca3af' }} />
+                ) : segment.type === 'run' ? (
+                  <span 
+                    className="nav-dot" 
+                    style={{ 
+                      backgroundColor: getDifficultyColor(segment.difficulty),
+                      width: 8,
+                      height: 8,
+                    }} 
+                  />
+                ) : (
+                  <span 
+                    className="nav-dot" 
+                    style={{ 
+                      backgroundColor: '#f97316',
+                      width: 8,
+                      height: 8,
+                    }} 
+                  />
                 )}
-              </span>
+              </div>
+              <div className="nav-segment-info">
+                <span className="nav-segment-name">
+                  {segment.displayName}
+                  {/* Subtle toilet indicator */}
+                  {hasToilet && (
+                    <MobileAwareTooltip title="Toilet nearby" placement="right">
+                      <span style={{ 
+                        marginLeft: 6, 
+                        fontSize: 10, 
+                        opacity: 0.6,
+                        color: '#3b82f6',
+                      }}>
+                        WC
+                      </span>
+                    </MobileAwareTooltip>
+                  )}
+                </span>
+                <span className="nav-segment-meta">
+                  {formatDistance(segment.distance)} · {formatDuration(segment.time)}
+                  {segment.elevationChange !== 0 && (
+                    <span style={{ color: segment.elevationChange > 0 ? '#52c41a' : '#666' }}>
+                      {' '}· {segment.elevationChange > 0 ? '↑' : '↓'}{Math.abs(Math.round(segment.elevationChange))}m
+                    </span>
+                  )}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -963,6 +1006,7 @@ function NavigationPanelInner({
   isMinimized = false,
   onToggleMinimize,
   hourlyWeather,
+  pois = [],
 }: NavigationPanelProps) {
   const [origin, setOrigin] = useState<SelectedPoint | null>(null);
   const [destination, setDestination] = useState<SelectedPoint | null>(null);
@@ -1458,7 +1502,7 @@ function NavigationPanelInner({
 
         {/* Route summary */}
         {route && !isCalculating && (
-          <RouteSummary route={route} sunAnalysis={sunAnalysis} />
+          <RouteSummary route={route} sunAnalysis={sunAnalysis} pois={pois} />
         )}
 
         {/* Advanced options - moved below route results to give search dropdowns more space */}
@@ -1658,6 +1702,37 @@ export const NavigationButton = memo(function NavigationButton({
         onClick={onClick}
       >
         <CompassOutlined style={{ fontSize: 16 }} />
+      </button>
+    </MobileAwareTooltip>
+  );
+});
+
+// ============================================================================
+// WC Button (for quick toilet navigation)
+// ============================================================================
+
+export interface WCButtonProps {
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+export const WCButton = memo(function WCButton({
+  onClick,
+  disabled = false,
+}: WCButtonProps) {
+  return (
+    <MobileAwareTooltip title="Find nearest toilet" placement="left">
+      <button 
+        className="nav-trigger-btn wc-btn"
+        onClick={onClick}
+        disabled={disabled}
+        style={{ 
+          marginTop: 4,
+          opacity: disabled ? 0.5 : 1,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        <span style={{ fontSize: 12, fontWeight: 600 }}>WC</span>
       </button>
     </MobileAwareTooltip>
   );

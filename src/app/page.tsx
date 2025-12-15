@@ -32,7 +32,7 @@ import LocationControls from '@/components/LocationControls';
 import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { RunDetailOverlay } from '@/components/RunDetailPanel';
 import dynamic from 'next/dynamic';
-import { NavigationButton, type NavigationState, type SelectedPoint } from '@/components/NavigationPanel';
+import { NavigationButton, WCButton, type NavigationState, type SelectedPoint } from '@/components/NavigationPanel';
 import NavigationInstructionBar from '@/components/NavigationInstructionBar';
 
 // Lazy load NavigationPanel - only needed when user opens navigation
@@ -922,6 +922,28 @@ export default function Home() {
     });
   }, []);
 
+  // Helper: Find nearest toilet from POIs
+  const findNearestToilet = useCallback((fromLat: number, fromLng: number) => {
+    const toilets = pois.filter(poi => poi.type === 'toilet');
+    if (toilets.length === 0) return null;
+    
+    let nearestToilet = toilets[0];
+    let minDistance = Infinity;
+    
+    for (const toilet of toilets) {
+      const distance = Math.sqrt(
+        Math.pow(toilet.latitude - fromLat, 2) + 
+        Math.pow(toilet.longitude - fromLng, 2)
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearestToilet = toilet;
+      }
+    }
+    
+    return nearestToilet;
+  }, [pois]);
+
   // Navigation handlers
   const handleNavigationOpen = useCallback(() => {
     setIsNavigationOpen(true);
@@ -960,6 +982,58 @@ export default function Home() {
     setCurrentNavSegment(0);
     setIsWeatherCardCollapsed(false); // Uncollapse weather card when ending navigation
   }, []);
+  
+  // WC button handler - quick route to nearest toilet
+  const handleWCNavigation = useCallback(() => {
+    const effectiveUserLocation = fakeLocation || userLocation;
+    
+    if (!effectiveUserLocation) {
+      // No user location - just open navigation panel
+      handleNavigationOpen();
+      trackEvent('wc_navigation_no_location');
+      return;
+    }
+    
+    const nearestToilet = findNearestToilet(effectiveUserLocation.latitude, effectiveUserLocation.longitude);
+    
+    if (!nearestToilet) {
+      // No toilets found - just open navigation panel
+      handleNavigationOpen();
+      trackEvent('wc_navigation_no_toilets');
+      return;
+    }
+    
+    // Set origin to current location
+    const origin: SelectedPoint = {
+      type: 'location',
+      id: 'current-location',
+      name: 'My Current Location',
+      lat: effectiveUserLocation.latitude,
+      lng: effectiveUserLocation.longitude,
+    };
+    
+    // Set destination to nearest toilet
+    const destination: SelectedPoint = {
+      type: 'mapPoint',
+      id: nearestToilet.id,
+      name: nearestToilet.name || 'Toilet',
+      lat: nearestToilet.latitude,
+      lng: nearestToilet.longitude,
+    };
+    
+    // Open navigation panel with these points
+    setExternalNavOrigin(origin);
+    setExternalNavDestination(destination);
+    setIsNavigationOpen(true);
+    setIsWeatherCardCollapsed(true);
+    
+    trackEvent('wc_navigation_started', {
+      distance_km: Math.sqrt(
+        Math.pow(nearestToilet.latitude - effectiveUserLocation.latitude, 2) + 
+        Math.pow(nearestToilet.longitude - effectiveUserLocation.longitude, 2)
+      ) * 111, // Rough conversion to km
+    });
+  }, [fakeLocation, userLocation, pois, findNearestToilet, handleNavigationOpen]);
 
   // Preview route - zoom out to show full route
   const handlePreviewRoute = useCallback(() => {
@@ -1584,6 +1658,11 @@ export default function Home() {
                   : undefined
                 }
               />
+              {/* WC button - quick toilet navigation */}
+              <WCButton
+                onClick={handleWCNavigation}
+                disabled={pois.filter(p => p.type === 'toilet').length === 0}
+              />
             </div>
           )}
         </div>
@@ -1665,6 +1744,7 @@ export default function Home() {
                 isMinimized={isNavPanelMinimized}
                 onToggleMinimize={() => setIsNavPanelMinimized(!isNavPanelMinimized)}
                 hourlyWeather={hourlyWeather}
+                pois={pois}
               />
             </div>
           )}

@@ -1562,6 +1562,33 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
           }
         }
       });
+      
+      // Reset POI styling to normal
+      if (map.current.getLayer('poi-circles')) {
+        map.current.setLayerZoomRange('poi-circles', 14, 24);
+        map.current.setPaintProperty('poi-circles', 'circle-radius', [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          14, 6,
+          16, 10
+        ]);
+        map.current.setPaintProperty('poi-circles', 'circle-opacity', [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          14, 0.8,
+          15, 1
+        ]);
+      }
+      if (map.current.getLayer('poi-icons')) {
+        map.current.setLayerZoomRange('poi-icons', 14.5, 24);
+      }
+      if (map.current.getLayer('poi-labels')) {
+        map.current.setLayerZoomRange('poi-labels', 15.5, 24);
+        map.current.setPaintProperty('poi-labels', 'text-opacity', 1);
+      }
+      
       return;
     }
 
@@ -1723,6 +1750,40 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'text-opacity': 1,
       },
     });
+
+    // Highlight toilets during navigation (subtle)
+    // Make toilets more visible when planning/navigating routes
+    if (map.current.getLayer('poi-circles')) {
+      map.current.setLayoutProperty('poi-circles', 'visibility', 'visible');
+      // Lower minzoom for toilets so they appear earlier
+      map.current.setLayerZoomRange('poi-circles', 12, 24);
+      // Make toilet circles slightly larger and more prominent
+      map.current.setPaintProperty('poi-circles', 'circle-radius', [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        12, ['case', ['==', ['get', 'type'], 'toilet'], 5, 4], // Toilets slightly larger at low zoom
+        14, ['case', ['==', ['get', 'type'], 'toilet'], 8, 6],
+        16, ['case', ['==', ['get', 'type'], 'toilet'], 12, 10]
+      ]);
+      map.current.setPaintProperty('poi-circles', 'circle-opacity', [
+        'case',
+        ['==', ['get', 'type'], 'toilet'], 0.95, // Toilets more opaque
+        0.7 // Other POIs dimmed
+      ]);
+    }
+    if (map.current.getLayer('poi-icons')) {
+      map.current.setLayerZoomRange('poi-icons', 12.5, 24);
+    }
+    if (map.current.getLayer('poi-labels')) {
+      // Show toilet labels earlier
+      map.current.setLayerZoomRange('poi-labels', 14, 24);
+      map.current.setPaintProperty('poi-labels', 'text-opacity', [
+        'case',
+        ['==', ['get', 'type'], 'toilet'], 0.9,
+        0.6 // Other labels dimmed
+      ]);
+    }
 
     // Fit bounds to route
     if (routeCoordinates.length > 0) {
