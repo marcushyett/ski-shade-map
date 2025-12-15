@@ -357,58 +357,55 @@ function PointSearchInput({
       </div>
       {value ? (
         <div className="nav-selected-point-wrapper">
-          <div className="nav-selected-point" onClick={() => onChange(null)}>
-            {value.type === 'location' ? (
-              <AimOutlined style={{ fontSize: 12, color: '#3b82f6', marginRight: 6 }} />
-            ) : value.type === 'home' ? (
-              <HomeOutlined style={{ fontSize: 12, color: '#faad14', marginRight: 6 }} />
-            ) : value.type === 'mapPoint' ? (
-              <EnvironmentOutlined style={{ fontSize: 12, color: '#f59e0b', marginRight: 6 }} />
-            ) : value.type === 'run' ? (
-              <span 
-                className="nav-dot" 
-                style={{ backgroundColor: getDifficultyColor(value.difficulty) }} 
-              />
-            ) : value.type === 'lift' ? (
-              <SwapOutlined style={{ fontSize: 10, color: '#52c41a', marginRight: 6 }} />
-            ) : (
-              <EnvironmentOutlined style={{ fontSize: 12, color: '#888', marginRight: 6 }} />
-            )}
-            <span className="nav-selected-name">
-              {value.name}
-              {(value.type === 'run' || value.type === 'lift') && value.position && (
-                <span style={{ color: '#888', fontSize: 9, marginLeft: 4 }}>
-                  ({value.position === 'top' ? 'top' : 'bottom'})
-                </span>
+          <div className="nav-selected-row">
+            <div className="nav-selected-point" onClick={() => onChange(null)}>
+              {value.type === 'location' ? (
+                <AimOutlined style={{ fontSize: 12, color: '#3b82f6', marginRight: 6 }} />
+              ) : value.type === 'home' ? (
+                <HomeOutlined style={{ fontSize: 12, color: '#faad14', marginRight: 6 }} />
+              ) : value.type === 'mapPoint' ? (
+                <EnvironmentOutlined style={{ fontSize: 12, color: '#f59e0b', marginRight: 6 }} />
+              ) : value.type === 'run' ? (
+                <span 
+                  className="nav-dot" 
+                  style={{ backgroundColor: getDifficultyColor(value.difficulty) }} 
+                />
+              ) : value.type === 'lift' ? (
+                <SwapOutlined style={{ fontSize: 10, color: '#52c41a', marginRight: 6 }} />
+              ) : (
+                <EnvironmentOutlined style={{ fontSize: 12, color: '#888', marginRight: 6 }} />
               )}
-            </span>
-            <CloseOutlined style={{ fontSize: 10, color: '#666', marginLeft: 'auto' }} />
-          </div>
-          {/* Position toggle for runs and lifts */}
-          {(value.type === 'run' || value.type === 'lift') && (
-            <div className="nav-position-toggle">
-              <button
-                className={`nav-position-btn ${value.position === 'top' ? 'active' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChange({ ...value, position: 'top' });
-                }}
-              >
-                <ArrowUpOutlined style={{ fontSize: 9, marginRight: 2 }} />
-                Top
-              </button>
-              <button
-                className={`nav-position-btn ${value.position === 'bottom' || !value.position ? 'active' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChange({ ...value, position: 'bottom' });
-                }}
-              >
-                <ArrowDownOutlined style={{ fontSize: 9, marginRight: 2 }} />
-                Bottom
-              </button>
+              <span className="nav-selected-name">
+                {value.name}
+              </span>
+              <CloseOutlined style={{ fontSize: 10, color: '#666', marginLeft: 'auto' }} />
             </div>
-          )}
+            {/* Position toggle for runs and lifts - inline with search */}
+            {(value.type === 'run' || value.type === 'lift') && (
+              <div className="nav-position-toggle-inline">
+                <button
+                  className={`nav-position-btn-sm ${value.position === 'top' ? 'active' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChange({ ...value, position: 'top' });
+                  }}
+                >
+                  <ArrowUpOutlined style={{ fontSize: 8 }} />
+                  Top
+                </button>
+                <button
+                  className={`nav-position-btn-sm ${value.position === 'bottom' || !value.position ? 'active' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChange({ ...value, position: 'bottom' });
+                  }}
+                >
+                  <ArrowDownOutlined style={{ fontSize: 8 }} />
+                  Bottom
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <>
@@ -607,29 +604,27 @@ function RouteColorLegend() {
 function RouteSummary({ route }: { route: NavigationRoute }) {
   return (
     <div className="nav-route-summary">
-      <div className="nav-route-stats">
-        <div className="nav-route-stat">
-          <span className="nav-route-stat-value">{formatDuration(route.totalTime)}</span>
-          <span className="nav-route-stat-label">total time</span>
-        </div>
-        <div className="nav-route-stat">
-          <span className="nav-route-stat-value">{formatDistance(route.totalDistance)}</span>
-          <span className="nav-route-stat-label">distance</span>
-        </div>
-        <div className="nav-route-stat">
-          <span className="nav-route-stat-value">
-            <ArrowUpOutlined style={{ fontSize: 9, marginRight: 2 }} />
-            {Math.round(route.totalElevationGain)}m
-          </span>
-          <span className="nav-route-stat-label">up</span>
-        </div>
-        <div className="nav-route-stat">
-          <span className="nav-route-stat-value">
-            <ArrowDownOutlined style={{ fontSize: 9, marginRight: 2 }} />
-            {Math.round(route.totalElevationLoss)}m
-          </span>
-          <span className="nav-route-stat-label">down</span>
-        </div>
+      {/* Stats on one line */}
+      <div className="nav-route-stats-inline">
+        <span className="nav-stat-item">
+          <strong>{formatDuration(route.totalTime)}</strong>
+          <span className="nav-stat-label">TOTAL TIME</span>
+        </span>
+        <span className="nav-stat-divider">·</span>
+        <span className="nav-stat-item">
+          <strong>{formatDistance(route.totalDistance)}</strong>
+          <span className="nav-stat-label">DISTANCE</span>
+        </span>
+        <span className="nav-stat-divider">·</span>
+        <span className="nav-stat-item">
+          <strong><ArrowUpOutlined style={{ fontSize: 9 }} /> {Math.round(route.totalElevationGain)}m</strong>
+          <span className="nav-stat-label">UP</span>
+        </span>
+        <span className="nav-stat-divider">·</span>
+        <span className="nav-stat-item">
+          <strong><ArrowDownOutlined style={{ fontSize: 9 }} /> {Math.round(route.totalElevationLoss)}m</strong>
+          <span className="nav-stat-label">DOWN</span>
+        </span>
       </div>
       
       {/* Route color legend */}

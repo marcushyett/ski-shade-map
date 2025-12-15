@@ -1249,6 +1249,9 @@ h5.ant-typography {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Make the whole content scrollable with header always visible */
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 /* Navigation search inputs */
@@ -1336,17 +1339,58 @@ h5.ant-typography {
   pointer-events: none;
 }
 
-/* Position toggle for runs/lifts (top/bottom) */
+/* Position toggle for runs/lifts (top/bottom) - now inline */
 .nav-selected-point-wrapper {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
+/* Nav selected row - holds point and inline position toggle */
+.nav-selected-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
 .nav-position-toggle {
   display: flex;
   gap: 4px;
 }
+
+/* Inline position toggle - Top/Bottom buttons next to selected point */
+.nav-position-toggle-inline {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.nav-position-btn-sm {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  font-size: 9px;
+  background: var(--background-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.nav-position-btn-sm:hover {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.nav-position-btn-sm.active {
+  background: #1e3a5f;
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
 
 .nav-position-btn {
   flex: 1;
@@ -1540,6 +1584,43 @@ h5.ant-typography {
   margin-top: 4px;
 }
 
+/* Stats displayed inline on one line */
+.nav-route-stats-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.nav-stat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-stat-item strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.nav-stat-label {
+  font-size: 8px;
+  color: var(--foreground-muted);
+  text-transform: uppercase;
+  margin-left: 2px;
+}
+
+.nav-stat-divider {
+  color: var(--foreground-muted);
+  margin: 0 6px;
+  opacity: 0.5;
+}
+
 .nav-route-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1569,13 +1650,11 @@ h5.ant-typography {
   margin-top: 2px;
 }
 
-/* Route segments */
+/* Route segments - no separate scroll, part of main panel scroll */
 .nav-route-segments {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 150px;
-  overflow-y: auto;
 }
 
 .nav-route-segment {
