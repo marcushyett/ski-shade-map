@@ -80,35 +80,105 @@ const MANUAL_CONNECTED_SKI_AREAS: Record<string, string[]> = {
   ],
 };
 
-// Distance threshold in degrees (~500m at alpine latitudes)
-// At 45° latitude: 1° lat ≈ 111km, 1° lng ≈ 78km
-// So 0.005° ≈ 500m for latitude, ~400m for longitude
-const CONNECTION_THRESHOLD_DEGREES = 0.005;
+// Ski areas within ~500m of each other are considered connected
+const CONNECTION_THRESHOLD_METERS = 500;
 
-// Check if two bounding boxes are within threshold distance of each other
-// This returns true if they overlap OR if any edge is within ~500m
-function boundsWithinDistance(
+// Calculate distance between two points using Haversine formula
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Quick check if bounding boxes are even close enough to warrant detailed check
+// Uses ~5km buffer to filter out obviously distant areas
+function boundsCouldOverlap(
   bounds1: { minLat: number; maxLat: number; minLng: number; maxLng: number },
-  bounds2: { minLat: number; maxLat: number; minLng: number; maxLng: number },
-  threshold: number = CONNECTION_THRESHOLD_DEGREES
+  bounds2: { minLat: number; maxLat: number; minLng: number; maxLng: number }
 ): boolean {
-  // Expand bounds1 by threshold in all directions
+  const buffer = 0.05; // ~5km buffer for quick filtering
   const expanded = {
-    minLat: bounds1.minLat - threshold,
-    maxLat: bounds1.maxLat + threshold,
-    minLng: bounds1.minLng - threshold,
-    maxLng: bounds1.maxLng + threshold,
+    minLat: bounds1.minLat - buffer,
+    maxLat: bounds1.maxLat + buffer,
+    minLng: bounds1.minLng - buffer,
+    maxLng: bounds1.maxLng + buffer,
   };
   
-  // Check if expanded bounds1 intersects with bounds2
-  const intersects = !(
+  return !(
     expanded.maxLat < bounds2.minLat ||
     expanded.minLat > bounds2.maxLat ||
     expanded.maxLng < bounds2.minLng ||
     expanded.minLng > bounds2.maxLng
   );
+}
+
+// Extract all coordinates from a GeoJSON geometry
+function extractCoordinates(geometry: unknown): Array<[number, number]> {
+  const coords: Array<[number, number]> = [];
   
-  return intersects;
+  if (!geometry || typeof geometry !== 'object') return coords;
+  
+  const geo = geometry as { type?: string; coordinates?: unknown };
+  
+  if (!geo.type || !geo.coordinates) return coords;
+  
+  const extractFromArray = (arr: unknown): void => {
+    if (!Array.isArray(arr)) return;
+    
+    // Check if this is a coordinate pair [lng, lat]
+    if (arr.length >= 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
+      coords.push([arr[1], arr[0]]); // Convert to [lat, lng]
+      return;
+    }
+    
+    // Otherwise recurse into nested arrays
+    for (const item of arr) {
+      extractFromArray(item);
+    }
+  };
+  
+  extractFromArray(geo.coordinates);
+  return coords;
+}
+
+// Find the minimum distance between any two points from two sets of coordinates
+function findMinimumDistance(
+  coords1: Array<[number, number]>,
+  coords2: Array<[number, number]>
+): number {
+  if (coords1.length === 0 || coords2.length === 0) return Infinity;
+  
+  let minDist = Infinity;
+  
+  // Sample coordinates if there are too many (for performance)
+  const sample1 = coords1.length > 100 ? sampleArray(coords1, 100) : coords1;
+  const sample2 = coords2.length > 100 ? sampleArray(coords2, 100) : coords2;
+  
+  for (const [lat1, lng1] of sample1) {
+    for (const [lat2, lng2] of sample2) {
+      const dist = haversineDistance(lat1, lng1, lat2, lng2);
+      if (dist < minDist) {
+        minDist = dist;
+        // Early exit if we find a close point
+        if (minDist < CONNECTION_THRESHOLD_METERS) return minDist;
+      }
+    }
+  }
+  
+  return minDist;
+}
+
+// Evenly sample an array
+function sampleArray<T>(arr: T[], n: number): T[] {
+  if (arr.length <= n) return arr;
+  const step = arr.length / n;
+  return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step)]);
 }
 
 async function fetchSubRegionsFromOverpass(bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }): Promise<OverpassElement[]> {
@@ -329,9 +399,10 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
   }
 }
 
-// Automatically detect connected ski areas based on overlapping/adjacent bounds
+// Automatically detect connected ski areas based on actual run/lift geometry proximity
 async function detectConnectedSkiAreas(dryRun: boolean = false) {
   console.log('\n=== Detecting Connected Ski Areas ===');
+  console.log('Using geometry-based distance check (not bounding boxes)');
   
   const skiAreas = await prisma.skiArea.findMany({
     where: { bounds: { not: null } },
@@ -347,7 +418,42 @@ async function detectConnectedSkiAreas(dryRun: boolean = false) {
 
   console.log(`Checking ${skiAreas.length} ski areas for connections...`);
   
+  // Cache for geometry coordinates to avoid repeated DB queries
+  const geometryCache = new Map<string, Array<[number, number]>>();
+  
+  async function getSkiAreaCoordinates(areaId: string): Promise<Array<[number, number]>> {
+    if (geometryCache.has(areaId)) {
+      return geometryCache.get(areaId)!;
+    }
+    
+    // Get all run and lift geometries for this ski area
+    const [runs, lifts] = await Promise.all([
+      prisma.run.findMany({
+        where: { skiAreaId: areaId },
+        select: { geometry: true },
+      }),
+      prisma.lift.findMany({
+        where: { skiAreaId: areaId },
+        select: { geometry: true },
+      }),
+    ]);
+    
+    const allCoords: Array<[number, number]> = [];
+    
+    for (const run of runs) {
+      allCoords.push(...extractCoordinates(run.geometry));
+    }
+    for (const lift of lifts) {
+      allCoords.push(...extractCoordinates(lift.geometry));
+    }
+    
+    geometryCache.set(areaId, allCoords);
+    return allCoords;
+  }
+  
   let connectionsFound = 0;
+  let pairsChecked = 0;
+  let pairsSkipped = 0;
   const processedPairs = new Set<string>();
 
   for (let i = 0; i < skiAreas.length; i++) {
@@ -365,9 +471,25 @@ async function detectConnectedSkiAreas(dryRun: boolean = false) {
       if (processedPairs.has(pairKey)) continue;
       processedPairs.add(pairKey);
 
-      // Check if bounds are within ~500m of each other
-      if (boundsWithinDistance(bounds1, bounds2)) {
-        console.log(`  Found connection: ${area1.name} <-> ${area2.name}`);
+      // Quick check: if bounding boxes aren't even within 5km, skip
+      if (!boundsCouldOverlap(bounds1, bounds2)) {
+        pairsSkipped++;
+        continue;
+      }
+      
+      pairsChecked++;
+      
+      // Get actual geometry coordinates
+      const coords1 = await getSkiAreaCoordinates(area1.id);
+      const coords2 = await getSkiAreaCoordinates(area2.id);
+      
+      if (coords1.length === 0 || coords2.length === 0) continue;
+      
+      // Calculate minimum distance between actual run/lift points
+      const minDistance = findMinimumDistance(coords1, coords2);
+      
+      if (minDistance <= CONNECTION_THRESHOLD_METERS) {
+        console.log(`  Found connection: ${area1.name} <-> ${area2.name} (${Math.round(minDistance)}m apart)`);
         connectionsFound++;
 
         if (!dryRun) {
@@ -408,7 +530,10 @@ async function detectConnectedSkiAreas(dryRun: boolean = false) {
     }
   }
 
-  console.log(`\nFound ${connectionsFound} ski area connections`);
+  console.log('');
+  console.log(`  Pairs skipped (>5km apart): ${pairsSkipped}`);
+  console.log(`  Pairs checked (geometry): ${pairsChecked}`);
+  console.log(`  Connections found (<${CONNECTION_THRESHOLD_METERS}m): ${connectionsFound}`);
 }
 
 async function assignRunsToSubRegions(skiAreaId: string, dryRun: boolean = false) {
