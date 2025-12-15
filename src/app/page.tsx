@@ -45,7 +45,7 @@ import { formatDuration, formatDistance } from '@/lib/navigation';
 import { analyzeRuns, calculateRunStats } from '@/lib/sunny-time-calculator';
 import { useOffline, useAppUpdate, registerServiceWorker } from '@/hooks/useOffline';
 import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
-import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData } from '@/lib/types';
+import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData, POIData } from '@/lib/types';
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 import { analyzeResortSnowQuality, type ResortSnowSummary, type PisteSnowAnalysis, type SnowQualityAtPoint, getConditionInfo, calculateSnowQualityByAltitude } from '@/lib/snow-quality';
 import { getSunPosition } from '@/lib/suncalc';
@@ -366,6 +366,9 @@ export default function Home() {
   const [currentSubRegion, setCurrentSubRegion] = useState<{ id: string; name: string } | null>(null);
   const [zoomToSubRegion, setZoomToSubRegion] = useState<{ id: string; name: string; lat: number; lng: number } | null>(null);
   
+  // Points of Interest (toilets, restaurants, viewpoints)
+  const [pois, setPois] = useState<POIData[]>([]);
+  
   // Effective user location - uses fake location for debugging if set
   const effectiveUserLocation = useMemo<UserLocation | null>(() => {
     if (fakeLocation) {
@@ -639,6 +642,38 @@ export default function Home() {
 
     fetchDetails();
   }, [selectedArea]);
+
+  // Fetch POIs when ski area details (and bounds) are available
+  useEffect(() => {
+    if (!skiAreaDetails?.bounds) {
+      setPois([]);
+      return;
+    }
+    
+    const bounds = skiAreaDetails.bounds as { minLat: number; maxLat: number; minLng: number; maxLng: number };
+    
+    const fetchPOIs = async () => {
+      try {
+        const params = new URLSearchParams({
+          minLat: bounds.minLat.toString(),
+          maxLat: bounds.maxLat.toString(),
+          minLng: bounds.minLng.toString(),
+          maxLng: bounds.maxLng.toString(),
+        });
+        
+        const res = await fetch(`/api/pois?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPois(data.pois || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch POIs:', error);
+        setPois([]);
+      }
+    };
+    
+    fetchPOIs();
+  }, [skiAreaDetails?.bounds, skiAreaDetails?.id]);
 
   const handleAreaSelect = useCallback((area: SkiAreaSummary) => {
     setSelectedArea(area);
@@ -1484,6 +1519,7 @@ export default function Home() {
           navigationOrigin={navigationOriginMarker}
           navigationDestination={navigationDestinationMarker}
           navigationReturnPoint={navReturnPoint}
+          pois={pois}
         />
 
         {/* Run detail overlay - shows when a run is clicked */}

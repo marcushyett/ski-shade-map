@@ -7,7 +7,7 @@ import { getSunPosition } from '@/lib/suncalc';
 import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded } from '@/lib/shade-calculator';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { trackEvent } from '@/lib/posthog';
-import type { SkiAreaDetails, RunData } from '@/lib/types';
+import type { SkiAreaDetails, RunData, POIData } from '@/lib/types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 import type { NavigationRoute } from '@/lib/navigation';
 
@@ -106,6 +106,8 @@ interface SkiMapProps {
   navigationDestination?: { lat: number; lng: number; name?: string } | null;
   // Return to route point when user is off-route
   navigationReturnPoint?: { lat: number; lng: number } | null;
+  // Points of Interest (toilets, restaurants, viewpoints)
+  pois?: POIData[];
 }
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
@@ -123,7 +125,7 @@ interface SegmentProperties {
   shadedColor: string;
 }
 
-export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, onRunClick, onLiftClick, onMapClick, onMapBackgroundClick, isEditingHome = false, onSetHomeLocation, snowAnalyses = [], navigationRoute, isNavigating = false, userHeading, navMapClickMode, isFakeLocationDropMode = false, navigationOrigin, navigationDestination, navigationReturnPoint }: SkiMapProps) {
+export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highlightedFeatureId, cloudCover, initialView, onViewChange, userLocation, mountainHome, sharedLocations, onRemoveSharedLocation, mapRef, searchPlaceMarker, onClearSearchPlace, favouriteIds = [], onToggleFavourite, onRunClick, onLiftClick, onMapClick, onMapBackgroundClick, isEditingHome = false, onSetHomeLocation, snowAnalyses = [], navigationRoute, isNavigating = false, userHeading, navMapClickMode, isFakeLocationDropMode = false, navigationOrigin, navigationDestination, navigationReturnPoint, pois = [] }: SkiMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -464,6 +466,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded',
       'ski-runs-labels', 'ski-lifts-labels',
       'ski-runs-arrows', 'ski-lifts-arrows',
+      'poi-icons', 'poi-labels',
     ];
     layersToRemove.forEach(layerId => {
       if (map.current?.getLayer(layerId)) {
@@ -471,7 +474,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }
     });
 
-    const sourcesToRemove = ['sun-indicator', 'ski-segments', 'ski-runs', 'ski-runs-polygons', 'ski-lifts'];
+    const sourcesToRemove = ['sun-indicator', 'ski-segments', 'ski-runs', 'ski-runs-polygons', 'ski-lifts', 'pois'];
     sourcesToRemove.forEach(sourceId => {
       if (map.current?.getSource(sourceId)) {
         map.current.removeSource(sourceId);
@@ -931,6 +934,59 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       paint: {
         'text-color': '#1a1a1a',
         'text-opacity': 1,
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
+      },
+    });
+
+    // Initialize empty POI source - will be populated when pois prop changes
+    map.current.addSource('pois', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+
+    // POI icon layer - uses emoji for distinctive icons
+    map.current.addLayer({
+      id: 'poi-icons',
+      type: 'symbol',
+      source: 'pois',
+      minzoom: 14, // Only show at zoom 14+
+      layout: {
+        'text-field': ['get', 'icon'],
+        'text-size': 18,
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'icon-allow-overlap': false,
+        'symbol-sort-key': ['get', 'sortOrder'],
+      },
+      paint: {
+        'text-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          14, 0.7,
+          15, 1
+        ],
+      },
+    });
+
+    // POI labels - show name on hover/high zoom
+    map.current.addLayer({
+      id: 'poi-labels',
+      type: 'symbol',
+      source: 'pois',
+      minzoom: 15.5, // Only show labels at very high zoom
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 10,
+        'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top',
+        'text-max-width': 8,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': '#333333',
         'text-halo-color': '#ffffff',
         'text-halo-width': 1.5,
       },
@@ -1398,6 +1454,54 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       );
     }
   }, [favouriteIds, mapLoaded]);
+
+  // Update POI source when pois change
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !layersInitialized.current) return;
+
+    const poiSource = map.current.getSource('pois') as maplibregl.GeoJSONSource | undefined;
+    if (!poiSource) return;
+
+    // Convert POI data to GeoJSON with appropriate icons
+    const getPoiIcon = (type: string): string => {
+      switch (type) {
+        case 'toilet': return '🚻';
+        case 'restaurant': return '🍽️';
+        case 'viewpoint': return '🏔️';
+        default: return '📍';
+      }
+    };
+
+    const getSortOrder = (type: string): number => {
+      // Lower = higher priority (shown on top when overlapping)
+      switch (type) {
+        case 'viewpoint': return 1;
+        case 'restaurant': return 2;
+        case 'toilet': return 3;
+        default: return 4;
+      }
+    };
+
+    const poiGeoJSON = {
+      type: 'FeatureCollection' as const,
+      features: pois.map(poi => ({
+        type: 'Feature' as const,
+        properties: {
+          id: poi.id,
+          type: poi.type,
+          name: poi.name || '',
+          icon: getPoiIcon(poi.type),
+          sortOrder: getSortOrder(poi.type),
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [poi.longitude, poi.latitude],
+        },
+      })),
+    };
+
+    poiSource.setData(poiGeoJSON);
+  }, [pois, mapLoaded]);
 
   // Handle navigation route rendering and dimming
   useEffect(() => {
