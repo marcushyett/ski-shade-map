@@ -295,27 +295,6 @@ h5.ant-typography {
   font-size: 12px;
 }
 
-.maplibregl-ctrl-group {
-  background-color: var(--background-secondary) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius) !important;
-}
-
-.maplibregl-ctrl-group button {
-  background-color: var(--background-secondary) !important;
-  border-color: var(--border) !important;
-  width: 26px !important;
-  height: 26px !important;
-}
-
-.maplibregl-ctrl-group button + button {
-  border-top: 1px solid var(--border) !important;
-}
-
-.maplibregl-ctrl-group button span {
-  filter: invert(1) !important;
-}
-
 .maplibregl-ctrl-scale {
   background-color: var(--background-secondary) !important;
   border: 1px solid var(--border) !important;
@@ -916,8 +895,8 @@ h5.ant-typography {
 }
 
 .maplibregl-ctrl-group button {
-  width: 29px !important;
-  height: 29px !important;
+  width: var(--map-btn-size) !important;
+  height: var(--map-btn-size) !important;
   background: var(--background-secondary) !important;
   border: none !important;
   border-bottom: 1px solid var(--border) !important;
@@ -938,7 +917,7 @@ h5.ant-typography {
 /* Location controls - positioned below zoom controls on right */
 .location-controls-container {
   position: absolute;
-  top: 105px; /* Below MapLibre compass/zoom (3*29px + gaps) */
+  top: 100px; /* Below MapLibre controls */
   right: 10px;
   z-index: 10;
   pointer-events: none;
