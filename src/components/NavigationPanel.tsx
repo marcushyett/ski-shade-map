@@ -21,6 +21,7 @@ import {
   BulbOutlined,
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
+import LoadingSpinner from './LoadingSpinner';
 
 // Detect touch device to disable tooltips (they require double-tap on mobile)
 const isTouchDevice = () => {
@@ -1318,7 +1319,7 @@ function NavigationPanelInner({
         {/* Loading state */}
         {isCalculating && (
           <div className="nav-loading">
-            <Spin size="small" />
+            <LoadingSpinner size="small" />
             <span style={{ marginLeft: 8 }}>Calculating route...</span>
           </div>
         )}

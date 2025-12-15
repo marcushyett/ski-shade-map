@@ -529,8 +529,11 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
 }
 
 /**
- * Post-route optimization: Find midpoint shortcuts along a calculated route
- * This runs AFTER the initial route is found to optimize transitions between segments
+ * Post-route optimization: Find shortcuts and intersections along the route
+ * This runs AFTER the initial route is found to:
+ * 1. Replace walk segments with ski segments where runs intersect
+ * 2. Find better transition points between segments
+ * 3. Ensure continuous lines with no gaps, following actual piste geometry
  */
 export function optimizeRoute(
   route: NavigationRoute,
@@ -538,55 +541,201 @@ export function optimizeRoute(
 ): NavigationRoute {
   if (route.segments.length < 2) return route;
   
-  const MIN_INTERSECTION_DISTANCE = 50; // meters
-  const optimizedSegments: RouteSegment[] = [];
+  const INTERSECTION_DISTANCE = 30; // meters - how close to consider an intersection
+  let optimizedSegments: RouteSegment[] = [...route.segments];
+  let madeChanges = true;
+  let iterations = 0;
+  const MAX_ITERATIONS = 5; // Prevent infinite loops
   
-  for (let i = 0; i < route.segments.length; i++) {
-    const segment = route.segments[i];
-    const nextSegment = route.segments[i + 1];
+  // Keep optimizing until no more improvements found
+  while (madeChanges && iterations < MAX_ITERATIONS) {
+    madeChanges = false;
+    iterations++;
+    const newSegments: RouteSegment[] = [];
     
-    // If this is a run segment followed by another segment, check for midpoint optimization
-    if (segment.type === 'run' && nextSegment && segment.coordinates.length > 2) {
-      let foundShortcut = false;
+    for (let i = 0; i < optimizedSegments.length; i++) {
+      const segment = optimizedSegments[i];
+      const nextSegment = optimizedSegments[i + 1];
+      const prevSegment = i > 0 ? optimizedSegments[i - 1] : null;
       
-      // Check if any point along this run is close to the start of the next segment
-      if (nextSegment.coordinates.length > 0) {
-        const nextStart = nextSegment.coordinates[0];
-        const nextStartLat = nextStart[1];
-        const nextStartLng = nextStart[0];
+      let optimized = false;
+      
+      // OPTIMIZATION 1: Replace walk segments with ski segments where possible
+      if (segment.type === 'walk' && segment.coordinates.length >= 2) {
+        const walkStart = segment.coordinates[0];
+        const walkEnd = segment.coordinates[segment.coordinates.length - 1];
         
-        for (let j = 1; j < segment.coordinates.length - 1; j++) {
-          const coord = segment.coordinates[j];
-          const dist = haversineDistance(coord[1], coord[0], nextStartLat, nextStartLng);
+        // Check all runs to see if any cover this walk path
+        for (const run of skiArea.runs) {
+          if (!run.geometry || run.geometry.type !== 'LineString') continue;
+          const runCoords = run.geometry.coordinates;
           
-          if (dist < MIN_INTERSECTION_DISTANCE) {
-            // Found a shortcut! Truncate this run segment at the midpoint
-            const truncatedCoords = segment.coordinates.slice(0, j + 1);
-            const truncatedDist = calculatePathDistance(truncatedCoords as number[][]);
-            const startElev = (segment.coordinates[0][2] as number) || 0;
-            const midElev = (coord[2] as number) || 0;
-            const originalSpeed = segment.distance > 0 ? segment.distance / segment.time : 1;
+          // Check if both walk endpoints are close to points on this run
+          let startIdx = -1;
+          let endIdx = -1;
+          let startDist = Infinity;
+          let endDist = Infinity;
+          
+          for (let j = 0; j < runCoords.length; j++) {
+            const runPoint = runCoords[j];
+            const distToStart = haversineDistance(walkStart[1], walkStart[0], runPoint[1], runPoint[0]);
+            const distToEnd = haversineDistance(walkEnd[1], walkEnd[0], runPoint[1], runPoint[0]);
             
-            optimizedSegments.push({
-              ...segment,
-              coordinates: truncatedCoords,
-              distance: truncatedDist,
-              elevationChange: midElev - startElev,
-              time: truncatedDist / originalSpeed,
+            if (distToStart < INTERSECTION_DISTANCE && distToStart < startDist) {
+              startDist = distToStart;
+              startIdx = j;
+            }
+            if (distToEnd < INTERSECTION_DISTANCE && distToEnd < endDist) {
+              endDist = distToEnd;
+              endIdx = j;
+            }
+          }
+          
+          // If both endpoints connect to this run, replace walk with ski segment
+          if (startIdx >= 0 && endIdx >= 0 && endIdx > startIdx) {
+            const skiCoords = runCoords.slice(startIdx, endIdx + 1);
+            const skiDist = calculatePathDistance(skiCoords as number[][]);
+            const startElev = (runCoords[startIdx][2] as number) || 0;
+            const endElev = (runCoords[endIdx][2] as number) || 0;
+            
+            newSegments.push({
+              type: 'run',
+              name: run.name,
+              difficulty: run.difficulty,
+              distance: skiDist,
+              time: skiDist / 6, // Average skiing speed
+              elevationChange: endElev - startElev,
+              coordinates: skiCoords as [number, number, number?][],
             });
             
-            foundShortcut = true;
+            optimized = true;
+            madeChanges = true;
             break;
           }
         }
       }
       
-      if (!foundShortcut) {
-        optimizedSegments.push(segment);
+      // OPTIMIZATION 2: Find shortcuts where segments intersect mid-route
+      if (!optimized && segment.coordinates.length > 2 && nextSegment) {
+        const segmentEnd = segment.coordinates[segment.coordinates.length - 1];
+        
+        // Check if any point along the next segment is closer than the next segment's start
+        if (nextSegment.coordinates.length > 2) {
+          let bestIdx = 0;
+          let bestDist = haversineDistance(
+            segmentEnd[1], segmentEnd[0],
+            nextSegment.coordinates[0][1], nextSegment.coordinates[0][0]
+          );
+          
+          for (let j = 1; j < nextSegment.coordinates.length; j++) {
+            const dist = haversineDistance(
+              segmentEnd[1], segmentEnd[0],
+              nextSegment.coordinates[j][1], nextSegment.coordinates[j][0]
+            );
+            
+            if (dist < bestDist && dist < INTERSECTION_DISTANCE) {
+              bestDist = dist;
+              bestIdx = j;
+            }
+          }
+          
+          // If we found a better connection point, truncate next segment
+          if (bestIdx > 0) {
+            newSegments.push(segment);
+            
+            // Add shortened next segment starting from the better connection point
+            const newCoords = nextSegment.coordinates.slice(bestIdx);
+            if (newCoords.length > 1) {
+              const newDist = calculatePathDistance(newCoords as number[][]);
+              const startElev = (nextSegment.coordinates[bestIdx][2] as number) || 0;
+              const endElev = (nextSegment.coordinates[nextSegment.coordinates.length - 1][2] as number) || 0;
+              
+              newSegments.push({
+                ...nextSegment,
+                coordinates: newCoords as [number, number, number?][],
+                distance: newDist,
+                time: newDist / (nextSegment.distance / nextSegment.time),
+                elevationChange: endElev - startElev,
+              });
+              
+              i++; // Skip next segment as we've processed it
+              optimized = true;
+              madeChanges = true;
+            }
+          }
+        }
       }
-    } else {
-      optimizedSegments.push(segment);
+      
+      // OPTIMIZATION 3: Look for run-to-run shortcuts
+      if (!optimized && segment.type === 'run' && nextSegment?.type === 'walk') {
+        const nextNextSegment = optimizedSegments[i + 2];
+        
+        if (nextNextSegment?.type === 'run') {
+          // Check if the two runs intersect or come close
+          let bestIntersection: { seg1Idx: number; seg2Idx: number; dist: number } | null = null;
+          
+          for (let j = 0; j < segment.coordinates.length; j++) {
+            const coord1 = segment.coordinates[j];
+            
+            for (let k = 0; k < nextNextSegment.coordinates.length; k++) {
+              const coord2 = nextNextSegment.coordinates[k];
+              const dist = haversineDistance(coord1[1], coord1[0], coord2[1], coord2[0]);
+              
+              if (dist < INTERSECTION_DISTANCE) {
+                if (!bestIntersection || dist < bestIntersection.dist) {
+                  bestIntersection = { seg1Idx: j, seg2Idx: k, dist };
+                }
+              }
+            }
+          }
+          
+          // If runs intersect, connect them directly
+          if (bestIntersection && bestIntersection.dist < 20) {
+            // Add first run up to intersection
+            const truncatedCoords1 = segment.coordinates.slice(0, bestIntersection.seg1Idx + 1);
+            if (truncatedCoords1.length > 1) {
+              const dist1 = calculatePathDistance(truncatedCoords1 as number[][]);
+              const startElev1 = (segment.coordinates[0][2] as number) || 0;
+              const endElev1 = (segment.coordinates[bestIntersection.seg1Idx][2] as number) || 0;
+              
+              newSegments.push({
+                ...segment,
+                coordinates: truncatedCoords1 as [number, number, number?][],
+                distance: dist1,
+                time: dist1 / (segment.distance / segment.time),
+                elevationChange: endElev1 - startElev1,
+              });
+            }
+            
+            // Add second run from intersection
+            const truncatedCoords2 = nextNextSegment.coordinates.slice(bestIntersection.seg2Idx);
+            if (truncatedCoords2.length > 1) {
+              const dist2 = calculatePathDistance(truncatedCoords2 as number[][]);
+              const startElev2 = (nextNextSegment.coordinates[bestIntersection.seg2Idx][2] as number) || 0;
+              const endElev2 = (nextNextSegment.coordinates[nextNextSegment.coordinates.length - 1][2] as number) || 0;
+              
+              newSegments.push({
+                ...nextNextSegment,
+                coordinates: truncatedCoords2 as [number, number, number?][],
+                distance: dist2,
+                time: dist2 / (nextNextSegment.distance / nextNextSegment.time),
+                elevationChange: endElev2 - startElev2,
+              });
+            }
+            
+            i += 2; // Skip walk and next run
+            optimized = true;
+            madeChanges = true;
+          }
+        }
+      }
+      
+      if (!optimized) {
+        newSegments.push(segment);
+      }
     }
+    
+    optimizedSegments = newSegments;
   }
   
   // Recalculate totals
@@ -606,12 +755,12 @@ export function optimizeRoute(
   }
   
   return {
-    ...route,
-    segments: optimizedSegments,
+    edges: route.edges,
     totalDistance,
     totalTime,
     totalElevationGain,
     totalElevationLoss,
+    segments: optimizedSegments,
   };
 }
 
