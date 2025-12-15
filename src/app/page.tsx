@@ -923,49 +923,51 @@ export default function Home() {
     });
   }, []);
 
-  // Helper: Find toilet with shortest route (not geographic distance)
+  // Helper: Find toilet with shortest route (optimized approach)
   const findNearestToilet = useCallback((fromLat: number, fromLng: number) => {
     if (!skiAreaDetails) return null;
     
     const toilets = pois.filter(poi => poi.type === 'toilet');
     if (toilets.length === 0) return null;
     
-    // Build navigation graph
+    // Step 1: Find 10 geographically closest toilets (cheap operation)
+    const toiletsWithDistance = toilets.map(toilet => ({
+      toilet,
+      geoDistance: Math.sqrt(
+        Math.pow(toilet.latitude - fromLat, 2) + 
+        Math.pow(toilet.longitude - fromLng, 2)
+      )
+    }));
+    
+    toiletsWithDistance.sort((a, b) => a.geoDistance - b.geoDistance);
+    const closeToilets = toiletsWithDistance.slice(0, Math.min(10, toilets.length));
+    
+    // If only one toilet or very few, just return the closest
+    if (closeToilets.length === 1) {
+      return closeToilets[0].toilet;
+    }
+    
+    // Step 2: Build navigation graph (only once)
     const graph = buildNavigationGraph(skiAreaDetails);
-    
-    // Find the starting node (nearest to user location)
     const startNode = findNearestNode(graph, fromLat, fromLng);
-    if (!startNode) return null;
+    if (!startNode) {
+      // Fallback to geographically closest
+      return closeToilets[0].toilet;
+    }
     
-    let nearestToilet = toilets[0];
+    // Step 3: Calculate actual routes to only the 10 closest toilets
+    let nearestToilet = closeToilets[0].toilet;
     let shortestRouteDistance = Infinity;
     
-    // For each toilet, calculate the actual route distance
-    for (const toilet of toilets) {
+    for (const { toilet } of closeToilets) {
       const toiletNode = findNearestNode(graph, toilet.latitude, toilet.longitude);
       if (!toiletNode) continue;
       
-      // Find route to this toilet
       const route = findRoute(graph, startNode.id, toiletNode.id);
       
       if (route && route.totalDistance < shortestRouteDistance) {
         shortestRouteDistance = route.totalDistance;
         nearestToilet = toilet;
-      }
-    }
-    
-    // If no route found to any toilet, fall back to closest geographic distance
-    if (shortestRouteDistance === Infinity) {
-      let minDistance = Infinity;
-      for (const toilet of toilets) {
-        const distance = Math.sqrt(
-          Math.pow(toilet.latitude - fromLat, 2) + 
-          Math.pow(toilet.longitude - fromLng, 2)
-        );
-        if (distance < minDistance) {
-          minDistance = distance;
-          nearestToilet = toilet;
-        }
       }
     }
     
