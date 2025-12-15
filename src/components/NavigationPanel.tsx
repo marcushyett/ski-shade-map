@@ -81,7 +81,7 @@ export interface NavigationState {
 }
 
 export interface SelectedPoint {
-  type: 'run' | 'lift' | 'location' | 'mapPoint' | 'home';
+  type: 'run' | 'lift' | 'location' | 'mapPoint' | 'home' | 'closestToilet';
   id: string;
   name: string;
   nodeId?: string;
@@ -478,6 +478,8 @@ function PointSearchInput({
               <HomeOutlined style={{ fontSize: 12, color: '#faad14', marginRight: 6 }} />
             ) : value.type === 'mapPoint' ? (
               <EnvironmentOutlined style={{ fontSize: 12, color: '#f59e0b', marginRight: 6 }} />
+            ) : value.type === 'closestToilet' ? (
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#3b82f6', marginRight: 6 }}>WC</span>
             ) : value.type === 'run' ? (
               <span 
                 className="nav-dot" 
@@ -1010,6 +1012,12 @@ function NavigationPanelInner({
 }: NavigationPanelProps) {
   const [origin, setOrigin] = useState<SelectedPoint | null>(null);
   const [destination, setDestination] = useState<SelectedPoint | null>(null);
+  const poisRef = useRef(pois);
+  
+  // Keep pois ref updated
+  useEffect(() => {
+    poisRef.current = pois;
+  }, [pois]);
   const [route, setRoute] = useState<NavigationRoute | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1166,6 +1174,76 @@ function NavigationPanelInner({
         // Build graph lazily on first route calculation
         const graph = getGraph();
         
+        // Helper to find nearest toilet with route-based distance
+        const findNearestToiletFromPoint = (fromLat: number, fromLng: number): SelectedPoint | null => {
+          const toilets = pois.filter(poi => poi.type === 'toilet');
+          if (toilets.length === 0) return null;
+          
+          // Find 10 geographically closest toilets
+          const toiletsWithDistance = toilets.map(toilet => ({
+            toilet,
+            geoDistance: Math.sqrt(
+              Math.pow(toilet.latitude - fromLat, 2) + 
+              Math.pow(toilet.longitude - fromLng, 2)
+            )
+          }));
+          
+          toiletsWithDistance.sort((a, b) => a.geoDistance - b.geoDistance);
+          const closeToilets = toiletsWithDistance.slice(0, Math.min(10, toilets.length));
+          
+          const startNode = findNearestNode(graph, fromLat, fromLng);
+          if (!startNode) {
+            // Fallback to geographically closest
+            const closest = closeToilets[0].toilet;
+            return {
+              type: 'mapPoint',
+              id: closest.id,
+              name: closest.name || 'Toilet',
+              lat: closest.latitude,
+              lng: closest.longitude,
+            };
+          }
+          
+          // Calculate routes to the 10 closest toilets
+          let nearestToilet = closeToilets[0].toilet;
+          let shortestRouteDistance = Infinity;
+          
+          for (const { toilet } of closeToilets) {
+            const toiletNode = findNearestNode(graph, toilet.latitude, toilet.longitude);
+            if (!toiletNode) continue;
+            
+            const route = findRoute(graph, startNode.id, toiletNode.id);
+            
+            if (route && route.totalDistance < shortestRouteDistance) {
+              shortestRouteDistance = route.totalDistance;
+              nearestToilet = toilet;
+            }
+          }
+          
+          return {
+            type: 'mapPoint',
+            id: nearestToilet.id,
+            name: nearestToilet.name || 'Toilet',
+            lat: nearestToilet.latitude,
+            lng: nearestToilet.longitude,
+          };
+        };
+        
+        // Resolve "closestToilet" type to actual toilet location
+        let resolvedDestination = destination;
+        if (destination.type === 'closestToilet' && origin.lat && origin.lng) {
+          const nearestToilet = findNearestToiletFromPoint(origin.lat, origin.lng);
+          if (nearestToilet) {
+            resolvedDestination = nearestToilet;
+            // Update the destination to the resolved toilet
+            setDestination(nearestToilet);
+          } else {
+            setError('No toilets found in this area');
+            setIsCalculating(false);
+            return;
+          }
+        }
+        
         // Helper to get node ID based on point type and position
         const getNodeId = (point: SelectedPoint, isOrigin: boolean): string | null => {
           if (point.type === 'location' || point.type === 'mapPoint' || point.type === 'home') {
@@ -1190,7 +1268,7 @@ function NavigationPanelInner({
         };
 
         const fromNodeId = getNodeId(origin, true);
-        const toNodeId = getNodeId(destination, false);
+        const toNodeId = getNodeId(resolvedDestination, false);
 
         if (fromNodeId && toNodeId) {
           // Use the new diagnostic function

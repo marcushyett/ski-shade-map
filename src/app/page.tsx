@@ -1018,8 +1018,20 @@ export default function Home() {
     const effectiveUserLocation = fakeLocation || userLocation;
     
     if (!effectiveUserLocation) {
-      // No user location - just open navigation panel
-      handleNavigationOpen();
+      // No user location - open navigation with "Closest Toilet" pre-filled as destination
+      // User will need to pick their location on map first
+      const closestToiletDestination: SelectedPoint = {
+        type: 'closestToilet',
+        id: 'closest-toilet',
+        name: 'Closest Toilet',
+      };
+      
+      setExternalNavDestination(closestToiletDestination);
+      setIsNavigationOpen(true);
+      setIsWeatherCardCollapsed(true);
+      // Request map click for origin (start location)
+      setNavMapClickMode('origin');
+      
       trackEvent('wc_navigation_no_location');
       return;
     }
