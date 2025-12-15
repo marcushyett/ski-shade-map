@@ -33,6 +33,7 @@ import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { RunDetailOverlay } from '@/components/RunDetailPanel';
 import dynamic from 'next/dynamic';
 import { NavigationButton, WCButton, type NavigationState, type SelectedPoint } from '@/components/NavigationPanel';
+import { buildNavigationGraph, findNearestNode, findRoute } from '@/lib/navigation';
 import NavigationInstructionBar from '@/components/NavigationInstructionBar';
 
 // Lazy load NavigationPanel - only needed when user opens navigation
@@ -922,27 +923,54 @@ export default function Home() {
     });
   }, []);
 
-  // Helper: Find nearest toilet from POIs
+  // Helper: Find toilet with shortest route (not geographic distance)
   const findNearestToilet = useCallback((fromLat: number, fromLng: number) => {
+    if (!skiAreaDetails) return null;
+    
     const toilets = pois.filter(poi => poi.type === 'toilet');
     if (toilets.length === 0) return null;
     
-    let nearestToilet = toilets[0];
-    let minDistance = Infinity;
+    // Build navigation graph
+    const graph = buildNavigationGraph(skiAreaDetails);
     
+    // Find the starting node (nearest to user location)
+    const startNode = findNearestNode(graph, fromLat, fromLng);
+    if (!startNode) return null;
+    
+    let nearestToilet = toilets[0];
+    let shortestRouteDistance = Infinity;
+    
+    // For each toilet, calculate the actual route distance
     for (const toilet of toilets) {
-      const distance = Math.sqrt(
-        Math.pow(toilet.latitude - fromLat, 2) + 
-        Math.pow(toilet.longitude - fromLng, 2)
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
+      const toiletNode = findNearestNode(graph, toilet.latitude, toilet.longitude);
+      if (!toiletNode) continue;
+      
+      // Find route to this toilet
+      const route = findRoute(graph, startNode.id, toiletNode.id);
+      
+      if (route && route.totalDistance < shortestRouteDistance) {
+        shortestRouteDistance = route.totalDistance;
         nearestToilet = toilet;
       }
     }
     
+    // If no route found to any toilet, fall back to closest geographic distance
+    if (shortestRouteDistance === Infinity) {
+      let minDistance = Infinity;
+      for (const toilet of toilets) {
+        const distance = Math.sqrt(
+          Math.pow(toilet.latitude - fromLat, 2) + 
+          Math.pow(toilet.longitude - fromLng, 2)
+        );
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearestToilet = toilet;
+        }
+      }
+    }
+    
     return nearestToilet;
-  }, [pois]);
+  }, [pois, skiAreaDetails]);
 
   // Navigation handlers
   const handleNavigationOpen = useCallback(() => {
@@ -1030,6 +1058,8 @@ export default function Home() {
     setExternalNavDestination(destination);
     setIsNavigationOpen(true);
     setIsWeatherCardCollapsed(true);
+    // Don't trigger map click mode - this is automatic navigation
+    setNavMapClickMode(null);
     
     trackEvent('wc_navigation_started', {
       distance_km: Math.sqrt(
