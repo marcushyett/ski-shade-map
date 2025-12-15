@@ -521,6 +521,8 @@ h5.ant-typography {
 /* Inline navigation panel (above weather card) */
 .nav-panel-inline {
   margin-bottom: 8px;
+  /* Ensure there's space from the top of viewport */
+  margin-top: 8px;
 }
 
 .nav-panel-inline .nav-panel {
@@ -1139,6 +1141,16 @@ h5.ant-typography {
   overflow: visible; /* Allow dropdown to overflow */
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   animation: fadeIn 0.15s ease-out;
+  /* Constrain max height to prevent header from going off screen */
+  max-height: calc(100vh - 120px); /* Leave 120px for top spacing (search bar + margin) and bottom spacing */
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 767px) {
+  .nav-panel {
+    max-height: calc(100vh - 140px); /* More spacing on mobile for URL bar */
+  }
 }
 
 .nav-panel-collapsed {
@@ -1158,6 +1170,7 @@ h5.ant-typography {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--background-tertiary);
+  flex-shrink: 0; /* Don't shrink the header */
 }
 
 .nav-panel-title {
@@ -1250,15 +1263,10 @@ h5.ant-typography {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* Make the whole content scrollable with header always visible */
-  max-height: calc(100vh - 150px); /* Increased from 180px - Fill more of the screen */
+  /* Flex to fill available space within panel, scroll if needed */
+  flex: 1;
+  min-height: 0; /* Important for flex scrolling */
   overflow-y: auto;
-}
-
-@media (max-width: 767px) {
-  .nav-panel-content {
-    max-height: calc(100vh - 170px); /* Increased from 200px */
-  }
 }
 
 /* Fixed action buttons at bottom of nav panel */
@@ -1268,6 +1276,7 @@ h5.ant-typography {
   padding: 12px;
   border-top: 1px solid var(--border);
   background: var(--background-secondary);
+  flex-shrink: 0; /* Don't shrink the footer */
 }
 
 .nav-clear-btn {
