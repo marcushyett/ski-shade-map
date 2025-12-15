@@ -11,6 +11,10 @@ on:
         description: 'Skip detecting connections between ski areas'
         type: boolean
         default: false
+      force_restart:
+        description: 'Force restart - delete all existing sub-regions and rebuild from scratch'
+        type: boolean
+        default: false
 
   # Can be called from other workflows
   workflow_call:
@@ -20,6 +24,9 @@ on:
         required: false
         default: ''
       skip_connections:
+        type: boolean
+        default: false
+      force_restart:
         type: boolean
         default: false
     secrets:
@@ -65,6 +72,11 @@ jobs:
             CMD="$CMD --skip-connections"
           fi
           
+          if [ "${{ inputs.force_restart }}" = "true" ]; then
+            CMD="$CMD --force-restart"
+            echo "⚠️ Force restart enabled - will delete all existing sub-regions"
+          fi
+          
           # Run with retry logic for Overpass API failures
           MAX_RETRIES=3
           RETRY_DELAY=120  # Overpass API needs longer cooldown
@@ -96,5 +108,8 @@ jobs:
             echo "Synced ski area: ${{ inputs.ski_area_id }}" >> $GITHUB_STEP_SUMMARY
           else
             echo "Synced all ski areas" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ inputs.force_restart }}" = "true" ]; then
+            echo "🔄 Force restart: Yes (deleted all existing sub-regions)" >> $GITHUB_STEP_SUMMARY
           fi
 
