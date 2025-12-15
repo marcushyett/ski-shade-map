@@ -321,16 +321,16 @@ function PointSearchInput({
   // Quick action buttons component (reused in both states)
   const QuickActionButtons = () => {
     // Determine which button should be active by default (matching routing logic)
-    // For runs: origin defaults to bottom (end), destination defaults to top (start)
-    // For lifts: origin defaults to top (end), destination defaults to bottom (start)
+    // For runs: always default to TOP (start of piste)
+    // For lifts: always default to BOTTOM (where you board)
     const getDefaultPosition = () => {
       if (!value || !value.position) {
         if (value?.type === 'run') {
-          // Runs: origin uses bottom, destination uses top
-          return isOrigin ? 'bottom' : 'top';
+          // Runs: default to top (start of piste)
+          return 'top';
         } else if (value?.type === 'lift') {
-          // Lifts: origin uses top, destination uses bottom
-          return isOrigin ? 'top' : 'bottom';
+          // Lifts: default to bottom (boarding point)
+          return 'bottom';
         }
       }
       return value?.position;
@@ -955,15 +955,15 @@ function NavigationPanelInner({
             }
             return null;
           } else if (point.type === 'run') {
-            // For runs: position determines which end
-            // If no position set: origin defaults to bottom (end), destination defaults to top (start)
-            const useTop = point.position === 'top' || (!point.position && !isOrigin);
+            // For runs: default to TOP (start) - the beginning of the piste
+            // User can override with position button
+            const useTop = point.position === 'top' || !point.position;
             return useTop ? `run-${point.id}-start` : `run-${point.id}-end`;
           } else if (point.type === 'lift') {
-            // For lifts: position determines which station
-            // If no position set: origin defaults to top (end), destination defaults to bottom (start)
-            const useTop = point.position === 'top' || (!point.position && isOrigin);
-            return useTop ? `lift-${point.id}-end` : `lift-${point.id}-start`;
+            // For lifts: default to BOTTOM (start) - where you board the lift
+            // User can override with position button
+            const useBottom = point.position === 'bottom' || !point.position;
+            return useBottom ? `lift-${point.id}-start` : `lift-${point.id}-end`;
           }
           return point.nodeId || null;
         };

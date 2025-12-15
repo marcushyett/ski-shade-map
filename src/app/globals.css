@@ -1789,11 +1789,15 @@ h5.ant-typography {
   margin-top: 2px;
 }
 
-/* Route segments - no separate scroll, part of main panel scroll */
+/* Route segments - scrollable container to prevent overlap */
 .nav-route-segments {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-bottom: 8px;
 }
 
 .nav-route-segment {
