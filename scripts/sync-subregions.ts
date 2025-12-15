@@ -16,12 +16,57 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const OVERPASS_API = 'https://overpass-api.de/api/interpreter';
+// Multiple Overpass API endpoints to distribute load
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter',
+  'https://z.overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
 
-// Retry helper for API calls
+// Track last request time per endpoint for rate limiting
+const endpointLastRequest = new Map<string, number>();
+const MIN_DELAY_PER_ENDPOINT = 5000; // 5 seconds between requests to same endpoint
+const CONCURRENCY = 4; // Process 4 ski areas in parallel
+
+// Round-robin endpoint selection
+let currentEndpointIndex = 0;
+function getNextEndpoint(): string {
+  const endpoint = OVERPASS_ENDPOINTS[currentEndpointIndex];
+  currentEndpointIndex = (currentEndpointIndex + 1) % OVERPASS_ENDPOINTS.length;
+  return endpoint;
+}
+
+// Get endpoint with rate limiting
+async function getEndpointWithRateLimit(): Promise<string> {
+  const now = Date.now();
+  
+  // Try each endpoint to find one that's not rate-limited
+  for (let i = 0; i < OVERPASS_ENDPOINTS.length; i++) {
+    const endpoint = getNextEndpoint();
+    const lastRequest = endpointLastRequest.get(endpoint) || 0;
+    const timeSinceLastRequest = now - lastRequest;
+    
+    if (timeSinceLastRequest >= MIN_DELAY_PER_ENDPOINT) {
+      endpointLastRequest.set(endpoint, now);
+      return endpoint;
+    }
+  }
+  
+  // All endpoints are rate-limited, wait for the first one to be available
+  const endpoint = OVERPASS_ENDPOINTS[0];
+  const lastRequest = endpointLastRequest.get(endpoint) || 0;
+  const waitTime = MIN_DELAY_PER_ENDPOINT - (now - lastRequest);
+  if (waitTime > 0) {
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  endpointLastRequest.set(endpoint, Date.now());
+  return endpoint;
+}
+
+// Retry helper for API calls - tries different endpoints on failure
 async function fetchWithRetry(
-  url: string,
-  options: RequestInit,
+  query: string,
   maxRetries: number = 3,
   initialDelay: number = 5000
 ): Promise<Response> {
@@ -29,7 +74,12 @@ async function fetchWithRetry(
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await fetch(url, options);
+      const endpoint = await getEndpointWithRateLimit();
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+      });
       
       // Retry on 429 (rate limit) or 5xx errors
       if (response.status === 429 || response.status >= 500) {
@@ -43,7 +93,7 @@ async function fetchWithRetry(
       
       if (attempt < maxRetries) {
         const delay = initialDelay * Math.pow(2, attempt - 1);
-        console.log(`  Retrying in ${delay / 1000}s...`);
+        console.log(`  Retrying in ${delay / 1000}s (trying different endpoint)...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -197,12 +247,7 @@ async function fetchSubRegionsFromOverpass(bounds: { minLat: number; maxLat: num
   console.log(`Fetching sub-regions in bounds: ${JSON.stringify(bounds)}`);
   
   const response = await fetchWithRetry(
-    OVERPASS_API,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
-    },
+    query,
     3,  // maxRetries
     10000  // initialDelay (10s - Overpass needs longer cooldowns)
   );
@@ -688,41 +733,73 @@ async function main() {
       await assignRunsToSubRegions(skiAreaId, dryRun);
     } else {
       // Sync all ski areas with bounds
-      const skiAreas = await prisma.skiArea.findMany({
+      const allSkiAreas = await prisma.skiArea.findMany({
         where: {
           bounds: { not: null },
+        },
+        include: {
+          subRegions: { select: { id: true } },
         },
         orderBy: { name: 'asc' },
       });
 
+      // Filter out already processed ski areas (unless --force-restart)
+      const skiAreas = forceRestart 
+        ? allSkiAreas 
+        : allSkiAreas.filter(a => a.subRegions.length === 0);
+      
+      const skipped = allSkiAreas.length - skiAreas.length;
+
       console.log('');
       console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      console.log(`  Found ${skiAreas.length} ski areas to process`);
+      console.log(`  Found ${allSkiAreas.length} ski areas total`);
+      if (skipped > 0) console.log(`  Skipping ${skipped} already processed (use --force-restart to re-process)`);
+      console.log(`  Processing ${skiAreas.length} ski areas`);
+      console.log(`  Using ${OVERPASS_ENDPOINTS.length} Overpass endpoints with ${CONCURRENCY} concurrent workers`);
       console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       console.log('');
 
       let processed = 0;
       let errors = 0;
       
-      for (const skiArea of skiAreas) {
-        processed++;
-        const progress = `[${processed}/${skiAreas.length}]`;
-        const percent = Math.round((processed / skiAreas.length) * 100);
-        
+      // Process ski areas with concurrency
+      const processSkiArea = async (skiArea: typeof skiAreas[0]) => {
         try {
-          process.stdout.write(`\r${progress} ${percent}% - Processing: ${skiArea.name.substring(0, 40).padEnd(40)}...`);
           await syncSubRegionsForSkiArea(skiArea.id, dryRun);
           await assignRunsToSubRegions(skiArea.id, dryRun);
-          // Rate limit to be nice to Overpass API
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          return { success: true, name: skiArea.name };
         } catch (error) {
-          errors++;
-          console.error(`\n❌ Error processing ${skiArea.name}:`, error);
+          return { success: false, name: skiArea.name, error };
+        }
+      };
+
+      // Concurrent processing with worker pool
+      const results: Array<{ success: boolean; name: string; error?: unknown }> = [];
+      
+      for (let i = 0; i < skiAreas.length; i += CONCURRENCY) {
+        const batch = skiAreas.slice(i, i + CONCURRENCY);
+        const batchNum = Math.floor(i / CONCURRENCY) + 1;
+        const totalBatches = Math.ceil(skiAreas.length / CONCURRENCY);
+        
+        process.stdout.write(`\rBatch ${batchNum}/${totalBatches} (${Math.round((i / skiAreas.length) * 100)}%) - Processing: ${batch.map(a => a.name.substring(0, 15)).join(', ')}...`);
+        
+        const batchResults = await Promise.all(batch.map(processSkiArea));
+        results.push(...batchResults);
+        
+        processed += batch.length;
+        errors += batchResults.filter(r => !r.success).length;
+        
+        // Log errors
+        for (const result of batchResults) {
+          if (!result.success) {
+            console.error(`\n❌ Error processing ${result.name}:`, result.error);
+          }
         }
       }
       
       console.log('');
       console.log(`  ✅ Processed ${processed - errors}/${processed} ski areas`);
+      if (skipped > 0) console.log(`  ⏭️  Skipped ${skipped} already processed`);
       if (errors > 0) console.log(`  ⚠️  ${errors} ski areas had errors`);
 
       // After processing all ski areas, detect connections between them
