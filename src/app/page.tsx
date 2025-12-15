@@ -994,7 +994,11 @@ export default function Home() {
       return;
     }
     
-    const nearestToilet = findNearestToilet(effectiveUserLocation.latitude, effectiveUserLocation.longitude);
+    // Get lat/lng from either UserLocation or fake location format
+    const userLat = 'latitude' in effectiveUserLocation ? effectiveUserLocation.latitude : effectiveUserLocation.lat;
+    const userLng = 'longitude' in effectiveUserLocation ? effectiveUserLocation.longitude : effectiveUserLocation.lng;
+    
+    const nearestToilet = findNearestToilet(userLat, userLng);
     
     if (!nearestToilet) {
       // No toilets found - just open navigation panel
@@ -1008,8 +1012,8 @@ export default function Home() {
       type: 'location',
       id: 'current-location',
       name: 'My Current Location',
-      lat: effectiveUserLocation.latitude,
-      lng: effectiveUserLocation.longitude,
+      lat: userLat,
+      lng: userLng,
     };
     
     // Set destination to nearest toilet
@@ -1029,8 +1033,8 @@ export default function Home() {
     
     trackEvent('wc_navigation_started', {
       distance_km: Math.sqrt(
-        Math.pow(nearestToilet.latitude - effectiveUserLocation.latitude, 2) + 
-        Math.pow(nearestToilet.longitude - effectiveUserLocation.longitude, 2)
+        Math.pow(nearestToilet.latitude - userLat, 2) + 
+        Math.pow(nearestToilet.longitude - userLng, 2)
       ) * 111, // Rough conversion to km
     });
   }, [fakeLocation, userLocation, pois, findNearestToilet, handleNavigationOpen]);

@@ -99,6 +99,9 @@ export type AnalyticsEvent =
   | 'navigation_started'
   | 'navigation_stopped'
   | 'navigation_destination_from_click'
+  | 'wc_navigation_no_location'
+  | 'wc_navigation_no_toilets'
+  | 'wc_navigation_started'
   
   // Donate
   | 'donate_clicked';
