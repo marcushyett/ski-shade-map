@@ -162,6 +162,7 @@ interface PointSearchInputProps {
   onRequestMapClick?: () => void;
   onCancelMapClick?: () => void;
   isMapClickActive?: boolean;
+  isOrigin?: boolean; // Whether this is the origin (FROM) field
 }
 
 function PointSearchInput({
@@ -179,6 +180,7 @@ function PointSearchInput({
   onRequestMapClick,
   onCancelMapClick,
   isMapClickActive = false,
+  isOrigin = false,
 }: PointSearchInputProps) {
   const [searchText, setSearchText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -317,46 +319,66 @@ function PointSearchInput({
   const showDropdown = isFocused && (allResults.length > 0 || searchText.length > 0);
 
   // Quick action buttons component (reused in both states)
-  const QuickActionButtons = () => (
-    <div className="nav-quick-actions">
-      {/* Position toggle for runs and lifts */}
-      {value && (value.type === 'run' || value.type === 'lift') && (
-        <>
-          <button
-            className={`nav-position-btn-sm ${value.position === 'top' ? 'active' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onChange({ ...value, position: 'top' });
-            }}
-          >
-            <ArrowUpOutlined style={{ fontSize: 8 }} />
-            Top
-          </button>
-          <button
-            className={`nav-position-btn-sm ${value.position === 'bottom' || !value.position ? 'active' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onChange({ ...value, position: 'bottom' });
-            }}
-          >
-            <ArrowDownOutlined style={{ fontSize: 8 }} />
-            Bottom
-          </button>
-        </>
-      )}
-      {/* Pick on map button */}
-      {onRequestMapClick && (
-        <MobileAwareTooltip title={isMapClickActive ? 'Click anywhere on the map' : 'Pick location on map'} placement="top">
-          <button 
-            className={`nav-action-btn ${isMapClickActive ? 'active' : ''}`}
-            onClick={onRequestMapClick}
-          >
-            <EnvironmentOutlined style={{ fontSize: 11 }} />
-          </button>
-        </MobileAwareTooltip>
-      )}
-    </div>
-  );
+  const QuickActionButtons = () => {
+    // Determine which button should be active by default (matching routing logic)
+    // For runs: origin defaults to bottom (end), destination defaults to top (start)
+    // For lifts: origin defaults to top (end), destination defaults to bottom (start)
+    const getDefaultPosition = () => {
+      if (!value || !value.position) {
+        if (value?.type === 'run') {
+          // Runs: origin uses bottom, destination uses top
+          return isOrigin ? 'bottom' : 'top';
+        } else if (value?.type === 'lift') {
+          // Lifts: origin uses top, destination uses bottom
+          return isOrigin ? 'top' : 'bottom';
+        }
+      }
+      return value?.position;
+    };
+    
+    const effectivePosition = getDefaultPosition();
+    
+    return (
+      <div className="nav-quick-actions">
+        {/* Position toggle for runs and lifts */}
+        {value && (value.type === 'run' || value.type === 'lift') && (
+          <>
+            <button
+              className={`nav-position-btn-sm ${effectivePosition === 'top' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange({ ...value, position: 'top' });
+              }}
+            >
+              <ArrowUpOutlined style={{ fontSize: 8 }} />
+              Top
+            </button>
+            <button
+              className={`nav-position-btn-sm ${effectivePosition === 'bottom' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange({ ...value, position: 'bottom' });
+              }}
+            >
+              <ArrowDownOutlined style={{ fontSize: 8 }} />
+              Bottom
+            </button>
+          </>
+        )}
+        {/* Pick on map button */}
+        {onRequestMapClick && (
+          <MobileAwareTooltip title={isMapClickActive ? 'Click anywhere on the map' : 'Pick location on map'} placement="top">
+            <button 
+              className={`nav-action-btn ${isMapClickActive ? 'active' : ''}`}
+              onClick={onRequestMapClick}
+            >
+              <EnvironmentOutlined style={{ fontSize: 11 }} />
+            </button>
+          </MobileAwareTooltip>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div ref={containerRef} className="nav-search-container relative">
@@ -1109,6 +1131,7 @@ function NavigationPanelInner({
           onRequestMapClick={() => onRequestMapClick?.('origin')}
           onCancelMapClick={onCancelMapClick}
           isMapClickActive={mapClickMode === 'origin'}
+          isOrigin={true}
         />
 
         {/* Swap button */}
@@ -1135,6 +1158,7 @@ function NavigationPanelInner({
           onRequestMapClick={() => onRequestMapClick?.('destination')}
           onCancelMapClick={onCancelMapClick}
           isMapClickActive={mapClickMode === 'destination'}
+          isOrigin={false}
         />
 
         {/* Error message */}
