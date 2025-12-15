@@ -584,7 +584,7 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
               
               // Create edge from mid-point to run end (continuing down the run)
               const remainingCoords = coords.slice(i);
-              const remainingDist = calculatePathDistance(remainingCoords);
+              const remainingDist = calculatePathDistance(remainingCoords as number[][]);
               const endElev = (coords[coords.length - 1][2] as number) || 0;
               
               const midToEnd: NavigationEdge = {
@@ -653,7 +653,7 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
                 
                 // Create edge from mid-point to run1 end
                 const remainingCoords1 = coords1.slice(i);
-                const remainingDist1 = calculatePathDistance(remainingCoords1);
+                const remainingDist1 = calculatePathDistance(remainingCoords1 as number[][]);
                 const endElev1 = (coords1[coords1.length - 1][2] as number) || 0;
                 
                 const mid1ToEnd: NavigationEdge = {
@@ -688,7 +688,7 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
                 
                 // Create edge from mid-point to run2 end
                 const remainingCoords2 = coords2.slice(j);
-                const remainingDist2 = calculatePathDistance(remainingCoords2);
+                const remainingDist2 = calculatePathDistance(remainingCoords2 as number[][]);
                 const endElev2 = (coords2[coords2.length - 1][2] as number) || 0;
                 
                 const mid2ToEnd: NavigationEdge = {
