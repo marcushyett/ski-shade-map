@@ -309,15 +309,6 @@ function boundsToJson(bounds: { minlat: number; minlon: number; maxlat: number; 
   };
 }
 
-// Check if a point is within bounds
-function isPointInBounds(
-  lat: number, 
-  lng: number, 
-  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }
-): boolean {
-  return lat >= bounds.minLat && lat <= bounds.maxLat && lng >= bounds.minLng && lng <= bounds.maxLng;
-}
-
 interface SyncResult {
   skiAreaName: string;
   skiAreaId: string;
@@ -640,97 +631,501 @@ async function detectConnectedSkiAreas(dryRun: boolean = false) {
 
 interface AssignResult {
   logs: string[];
-  assignedCount: number;
+  runsAssigned: number;
+  liftsAssigned: number;
+  subRegionStats: Map<string, { name: string; runCount: number; liftCount: number }>;
 }
 
-async function assignRunsToSubRegions(skiAreaId: string, dryRun: boolean = false): Promise<AssignResult> {
+// Point-in-polygon test using ray casting algorithm
+function isPointInPolygon(lat: number, lng: number, polygon: number[][]): boolean {
+  let inside = false;
+  const x = lng, y = lat;
+  
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  
+  return inside;
+}
+
+// Extract polygon coordinates from GeoJSON for point-in-polygon testing
+function extractPolygonRings(geometry: unknown): number[][][] {
+  const rings: number[][][] = [];
+  
+  if (!geometry || typeof geometry !== 'object') return rings;
+  
+  const geo = geometry as { type?: string; coordinates?: unknown };
+  
+  if (geo.type === 'Polygon' && Array.isArray(geo.coordinates)) {
+    // Polygon has coordinates: [[[lng, lat], ...]]
+    for (const ring of geo.coordinates as number[][][]) {
+      if (Array.isArray(ring) && ring.length >= 3) {
+        rings.push(ring);
+      }
+    }
+  } else if (geo.type === 'MultiPolygon' && Array.isArray(geo.coordinates)) {
+    // MultiPolygon has coordinates: [[[[lng, lat], ...]]]
+    for (const polygon of geo.coordinates as number[][][][]) {
+      if (Array.isArray(polygon)) {
+        for (const ring of polygon) {
+          if (Array.isArray(ring) && ring.length >= 3) {
+            rings.push(ring);
+          }
+        }
+      }
+    }
+  }
+  
+  return rings;
+}
+
+// Get the endpoints of a run (bottom = lowest elevation or last point, top = first point)
+function getRunEndpoints(geometry: unknown): { bottom: { lat: number; lng: number }; top: { lat: number; lng: number } } | null {
+  if (!geometry || typeof geometry !== 'object') return null;
+  
+  const geo = geometry as { type?: string; coordinates?: number[][] | number[][][] };
+  
+  let coords: number[][] = [];
+  
+  if (geo.type === 'LineString' && Array.isArray(geo.coordinates)) {
+    coords = geo.coordinates as number[][];
+  } else if (geo.type === 'Polygon' && Array.isArray(geo.coordinates)) {
+    coords = (geo.coordinates as number[][][])[0] || [];
+  }
+  
+  if (coords.length < 2) return null;
+  
+  // Top = first point, Bottom = last point (runs typically go downhill)
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  
+  return {
+    top: { lat: first[1], lng: first[0] },
+    bottom: { lat: last[1], lng: last[0] },
+  };
+}
+
+// Get the start point of a lift (bottom station)
+function getLiftStartPoint(geometry: unknown): { lat: number; lng: number } | null {
+  if (!geometry || typeof geometry !== 'object') return null;
+  
+  const geo = geometry as { type?: string; coordinates?: number[][] };
+  
+  if (geo.type === 'LineString' && Array.isArray(geo.coordinates) && geo.coordinates.length >= 1) {
+    const first = geo.coordinates[0];
+    return { lat: first[1], lng: first[0] };
+  }
+  
+  return null;
+}
+
+// Get all endpoints of a run for deduplication checks
+function getRunAllEndpoints(geometry: unknown): { lat: number; lng: number }[] {
+  if (!geometry || typeof geometry !== 'object') return [];
+  
+  const geo = geometry as { type?: string; coordinates?: number[][] | number[][][] };
+  
+  let coords: number[][] = [];
+  
+  if (geo.type === 'LineString' && Array.isArray(geo.coordinates)) {
+    coords = geo.coordinates as number[][];
+  } else if (geo.type === 'Polygon' && Array.isArray(geo.coordinates)) {
+    coords = (geo.coordinates as number[][][])[0] || [];
+  }
+  
+  if (coords.length < 1) return [];
+  
+  const endpoints: { lat: number; lng: number }[] = [];
+  endpoints.push({ lat: coords[0][1], lng: coords[0][0] });
+  if (coords.length > 1) {
+    endpoints.push({ lat: coords[coords.length - 1][1], lng: coords[coords.length - 1][0] });
+  }
+  return endpoints;
+}
+
+// Check if a point is inside any of the polygon rings
+function isPointInSubRegionGeometry(lat: number, lng: number, subRegionGeometry: unknown): boolean {
+  const rings = extractPolygonRings(subRegionGeometry);
+  
+  // Check outer rings only (first ring is always the outer ring)
+  for (const ring of rings) {
+    if (isPointInPolygon(lat, lng, ring)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Get all coordinates from a geometry as array of [lat, lng] pairs
+function getAllCoordinates(geometry: unknown): Array<{ lat: number; lng: number }> {
+  if (!geometry || typeof geometry !== 'object') return [];
+  
+  const geo = geometry as { type?: string; coordinates?: number[][] | number[][][] };
+  const result: Array<{ lat: number; lng: number }> = [];
+  
+  if (geo.type === 'LineString' && Array.isArray(geo.coordinates)) {
+    for (const coord of geo.coordinates as number[][]) {
+      result.push({ lat: coord[1], lng: coord[0] });
+    }
+  } else if (geo.type === 'Polygon' && Array.isArray(geo.coordinates)) {
+    for (const coord of (geo.coordinates as number[][][])[0] || []) {
+      result.push({ lat: coord[1], lng: coord[0] });
+    }
+  }
+  
+  return result;
+}
+
+// Check if any point of a geometry intersects with a sub-region boundary
+function doesGeometryIntersectSubRegion(geometry: unknown, subRegionGeometry: unknown): boolean {
+  const coords = getAllCoordinates(geometry);
+  
+  for (const coord of coords) {
+    if (isPointInSubRegionGeometry(coord.lat, coord.lng, subRegionGeometry)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Maximum distance in meters for matching runs to place nodes (villages, etc.)
+const MAX_VILLAGE_MATCH_DISTANCE = 3000; // 3km - villages can be a bit spread out
+
+async function assignRunsAndLiftsToSubRegions(skiAreaId: string, dryRun: boolean = false): Promise<AssignResult> {
   const logs: string[] = [];
   const log = (msg: string) => logs.push(msg);
+  const subRegionStats = new Map<string, { name: string; runCount: number; liftCount: number }>();
 
   const skiArea = await prisma.skiArea.findUnique({
     where: { id: skiAreaId },
     include: {
       runs: true,
+      lifts: true,
       subRegions: true,
     },
   });
 
   if (!skiArea) {
-    return { logs: [`Error: Ski area not found: ${skiAreaId}`], assignedCount: 0 };
+    return { logs: [`Error: Ski area not found: ${skiAreaId}`], runsAssigned: 0, liftsAssigned: 0, subRegionStats };
   }
 
   if (skiArea.subRegions.length === 0) {
-    return { logs: [`No sub-regions found for ${skiArea.name}`], assignedCount: 0 };
+    return { logs: [`No sub-regions found for ${skiArea.name}`], runsAssigned: 0, liftsAssigned: 0, subRegionStats };
   }
 
-  log(`Assigning runs: ${skiArea.subRegions.length} sub-regions, ${skiArea.runs.length} runs`);
+  log(`Assigning runs/lifts: ${skiArea.subRegions.length} sub-regions, ${skiArea.runs.length} runs, ${skiArea.lifts.length} lifts`);
 
-  let assignedCount = 0;
+  // Initialize stats for all sub-regions
+  for (const sr of skiArea.subRegions) {
+    subRegionStats.set(sr.id, { name: sr.name, runCount: 0, liftCount: 0 });
+  }
+
+  // Separate sub-regions into polygon-based and point-based
+  const polygonSubRegions = skiArea.subRegions.filter(sr => {
+    const geo = sr.geometry as { type?: string } | null;
+    return geo && (geo.type === 'Polygon' || geo.type === 'MultiPolygon');
+  });
   
-  for (const run of skiArea.runs) {
-    const geometry = run.geometry as unknown;
-    if (!geometry) continue;
+  const pointSubRegions = skiArea.subRegions.filter(sr => {
+    const geo = sr.geometry as { type?: string } | null;
+    return !geo || geo.type === 'Point';
+  });
 
-    // Get centroid of run
-    let runCentroid: { lat: number; lng: number } | null = null;
+  log(`  Sub-regions with polygon boundaries: ${polygonSubRegions.length}`);
+  log(`  Sub-regions with point only: ${pointSubRegions.length}`);
+
+  // Deduplicate runs by name + proximity
+  // Group runs by name
+  const runsByName = new Map<string, typeof skiArea.runs>();
+  for (const run of skiArea.runs) {
+    const name = run.name?.toLowerCase().trim() || '';
+    if (!runsByName.has(name)) {
+      runsByName.set(name, []);
+    }
+    runsByName.get(name)!.push(run);
+  }
+
+  // Find duplicate runs (same name, one end within 100m of another's end)
+  const duplicateRunIds = new Set<string>();
+  for (const [name, runs] of runsByName) {
+    if (!name || runs.length < 2) continue;
     
-    const geo = geometry as { type?: string; coordinates?: number[][] | number[][][] };
-    if (geo.type === 'LineString' && geo.coordinates && geo.coordinates.length > 0) {
-      const coords = geo.coordinates as number[][];
-      const midIndex = Math.floor(coords.length / 2);
-      runCentroid = { lng: coords[midIndex][0], lat: coords[midIndex][1] };
-    } else if (geo.type === 'Polygon' && geo.coordinates && (geo.coordinates as number[][][])[0]?.length > 0) {
-      const coords = (geo.coordinates as number[][][])[0];
-      const lats = coords.map((c: number[]) => c[1]);
-      const lngs = coords.map((c: number[]) => c[0]);
-      runCentroid = {
-        lat: (Math.min(...lats) + Math.max(...lats)) / 2,
-        lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
-      };
+    // Check each pair of runs with same name
+    for (let i = 0; i < runs.length; i++) {
+      for (let j = i + 1; j < runs.length; j++) {
+        const endpoints1 = getRunAllEndpoints(runs[i].geometry);
+        const endpoints2 = getRunAllEndpoints(runs[j].geometry);
+        
+        // Check if any endpoint of run1 is within 100m of any endpoint of run2
+        let isClose = false;
+        for (const ep1 of endpoints1) {
+          for (const ep2 of endpoints2) {
+            const dist = haversineDistance(ep1.lat, ep1.lng, ep2.lat, ep2.lng);
+            if (dist <= 100) {
+              isClose = true;
+              break;
+            }
+          }
+          if (isClose) break;
+        }
+        
+        if (isClose) {
+          // Mark the second one as duplicate (keep the first)
+          duplicateRunIds.add(runs[j].id);
+        }
+      }
+    }
+  }
+
+  if (duplicateRunIds.size > 0) {
+    log(`  Identified ${duplicateRunIds.size} duplicate runs (same name, ends within 100m)`);
+  }
+
+  let runsAssigned = 0;
+  let runsByPolygon = 0;
+  let runsByProximity = 0;
+  
+  // Assign runs to sub-regions
+  for (const run of skiArea.runs) {
+    // Skip duplicates
+    if (duplicateRunIds.has(run.id)) {
+      continue;
     }
 
-    if (!runCentroid) continue;
+    const endpoints = getRunEndpoints(run.geometry);
+    if (!endpoints) continue;
 
-    // Find the sub-region this run belongs to
     let bestSubRegion: typeof skiArea.subRegions[0] | null = null;
-    let bestDistance = Infinity;
 
-    for (const subRegion of skiArea.subRegions) {
-      const subBounds = subRegion.bounds as { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
-      const subCentroid = subRegion.centroid as { lat: number; lng: number } | null;
-
-      // First check if run is within sub-region bounds
-      if (subBounds && isPointInBounds(runCentroid.lat, runCentroid.lng, subBounds)) {
+    // Strategy 1: Check if run is fully contained in or intersects with a polygon sub-region
+    for (const subRegion of polygonSubRegions) {
+      // Check if bottom of run is within polygon
+      if (isPointInSubRegionGeometry(endpoints.bottom.lat, endpoints.bottom.lng, subRegion.geometry)) {
         bestSubRegion = subRegion;
+        runsByPolygon++;
         break;
       }
+      // Check if top of run is within polygon
+      if (isPointInSubRegionGeometry(endpoints.top.lat, endpoints.top.lng, subRegion.geometry)) {
+        bestSubRegion = subRegion;
+        runsByPolygon++;
+        break;
+      }
+      // Check if any point of the run intersects with the polygon
+      if (doesGeometryIntersectSubRegion(run.geometry, subRegion.geometry)) {
+        bestSubRegion = subRegion;
+        runsByPolygon++;
+        break;
+      }
+    }
 
-      // Otherwise find closest sub-region by centroid distance
-      if (subCentroid) {
-        const distance = Math.sqrt(
-          Math.pow(runCentroid.lat - subCentroid.lat, 2) +
-          Math.pow(runCentroid.lng - subCentroid.lng, 2)
+    // Strategy 2: If not in a polygon, find nearest point-based sub-region to the bottom of the run
+    if (!bestSubRegion) {
+      let bestDistance = Infinity;
+      
+      for (const subRegion of pointSubRegions) {
+        const subCentroid = subRegion.centroid as { lat: number; lng: number } | null;
+        if (!subCentroid) continue;
+        
+        // Distance from bottom of run to village/hamlet
+        const distance = haversineDistance(
+          endpoints.bottom.lat, endpoints.bottom.lng,
+          subCentroid.lat, subCentroid.lng
         );
-        if (distance < bestDistance) {
+        
+        if (distance < bestDistance && distance <= MAX_VILLAGE_MATCH_DISTANCE) {
           bestDistance = distance;
           bestSubRegion = subRegion;
         }
       }
+      
+      // Also check if polygon sub-regions are closer by centroid
+      for (const subRegion of polygonSubRegions) {
+        const subCentroid = subRegion.centroid as { lat: number; lng: number } | null;
+        if (!subCentroid) continue;
+        
+        const distance = haversineDistance(
+          endpoints.bottom.lat, endpoints.bottom.lng,
+          subCentroid.lat, subCentroid.lng
+        );
+        
+        if (distance < bestDistance && distance <= MAX_VILLAGE_MATCH_DISTANCE) {
+          bestDistance = distance;
+          bestSubRegion = subRegion;
+        }
+      }
+      
+      if (bestSubRegion) {
+        runsByProximity++;
+      }
     }
 
-    if (bestSubRegion && run.subRegionId !== bestSubRegion.id) {
-      if (!dryRun) {
-        await prisma.run.update({
-          where: { id: run.id },
-          data: { subRegionId: bestSubRegion.id },
-        });
+    if (bestSubRegion) {
+      if (run.subRegionId !== bestSubRegion.id) {
+        if (!dryRun) {
+          await prisma.run.update({
+            where: { id: run.id },
+            data: { subRegionId: bestSubRegion.id },
+          });
+        }
+        runsAssigned++;
       }
-      assignedCount++;
+      // Update stats
+      const stats = subRegionStats.get(bestSubRegion.id)!;
+      stats.runCount++;
     }
   }
 
-  log(`  → Assigned ${assignedCount} runs to sub-regions`);
-  return { logs, assignedCount };
+  log(`  → Assigned ${runsAssigned} runs (${runsByPolygon} by polygon, ${runsByProximity} by proximity)`);
+
+  // Assign lifts to sub-regions
+  let liftsAssigned = 0;
+  let liftsByPolygon = 0;
+  let liftsByProximity = 0;
+
+  for (const lift of skiArea.lifts) {
+    const startPoint = getLiftStartPoint(lift.geometry);
+    if (!startPoint) continue;
+
+    let bestSubRegion: typeof skiArea.subRegions[0] | null = null;
+
+    // Strategy 1: Check if lift start is within a polygon sub-region
+    for (const subRegion of polygonSubRegions) {
+      if (isPointInSubRegionGeometry(startPoint.lat, startPoint.lng, subRegion.geometry)) {
+        bestSubRegion = subRegion;
+        liftsByPolygon++;
+        break;
+      }
+      // Also check if any point of the lift intersects
+      if (doesGeometryIntersectSubRegion(lift.geometry, subRegion.geometry)) {
+        bestSubRegion = subRegion;
+        liftsByPolygon++;
+        break;
+      }
+    }
+
+    // Strategy 2: Find nearest point-based sub-region to the start of the lift
+    if (!bestSubRegion) {
+      let bestDistance = Infinity;
+      
+      for (const subRegion of pointSubRegions) {
+        const subCentroid = subRegion.centroid as { lat: number; lng: number } | null;
+        if (!subCentroid) continue;
+        
+        const distance = haversineDistance(
+          startPoint.lat, startPoint.lng,
+          subCentroid.lat, subCentroid.lng
+        );
+        
+        if (distance < bestDistance && distance <= MAX_VILLAGE_MATCH_DISTANCE) {
+          bestDistance = distance;
+          bestSubRegion = subRegion;
+        }
+      }
+      
+      // Also check polygon sub-regions by centroid
+      for (const subRegion of polygonSubRegions) {
+        const subCentroid = subRegion.centroid as { lat: number; lng: number } | null;
+        if (!subCentroid) continue;
+        
+        const distance = haversineDistance(
+          startPoint.lat, startPoint.lng,
+          subCentroid.lat, subCentroid.lng
+        );
+        
+        if (distance < bestDistance && distance <= MAX_VILLAGE_MATCH_DISTANCE) {
+          bestDistance = distance;
+          bestSubRegion = subRegion;
+        }
+      }
+      
+      if (bestSubRegion) {
+        liftsByProximity++;
+      }
+    }
+
+    if (bestSubRegion) {
+      if (lift.subRegionId !== bestSubRegion.id) {
+        if (!dryRun) {
+          await prisma.lift.update({
+            where: { id: lift.id },
+            data: { subRegionId: bestSubRegion.id },
+          });
+        }
+        liftsAssigned++;
+      }
+      // Update stats
+      const stats = subRegionStats.get(bestSubRegion.id)!;
+      stats.liftCount++;
+    }
+  }
+
+  log(`  → Assigned ${liftsAssigned} lifts (${liftsByPolygon} by polygon, ${liftsByProximity} by proximity)`);
+
+  return { logs, runsAssigned, liftsAssigned, subRegionStats };
+}
+
+// Remove sub-regions that have no runs or lifts assigned
+async function cleanupUnusedSubRegions(skiAreaId: string, dryRun: boolean = false): Promise<{ logs: string[]; removed: number }> {
+  const logs: string[] = [];
+  const log = (msg: string) => logs.push(msg);
+
+  const unusedSubRegions = await prisma.subRegion.findMany({
+    where: {
+      skiAreaId,
+      AND: [
+        { runs: { none: {} } },
+        { lifts: { none: {} } },
+      ],
+    },
+    select: { id: true, name: true },
+  });
+
+  if (unusedSubRegions.length > 0) {
+    log(`  Removing ${unusedSubRegions.length} unused sub-regions (no runs/lifts):`);
+    for (const sr of unusedSubRegions.slice(0, 5)) {
+      log(`    - ${sr.name}`);
+    }
+    if (unusedSubRegions.length > 5) {
+      log(`    ... and ${unusedSubRegions.length - 5} more`);
+    }
+
+    if (!dryRun) {
+      await prisma.subRegion.deleteMany({
+        where: {
+          id: { in: unusedSubRegions.map(sr => sr.id) },
+        },
+      });
+    }
+  }
+
+  return { logs, removed: unusedSubRegions.length };
+}
+
+// Print sub-region summary with run/lift counts
+function printSubRegionSummary(stats: Map<string, { name: string; runCount: number; liftCount: number }>, logs: string[]): void {
+  // Sort by total count descending
+  const sorted = Array.from(stats.entries())
+    .map(([id, stat]) => ({ id, ...stat, total: stat.runCount + stat.liftCount }))
+    .filter(s => s.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  if (sorted.length === 0) return;
+
+  logs.push(`  Sub-region assignment summary:`);
+  for (const stat of sorted.slice(0, 15)) {
+    logs.push(`    ${stat.name}: ${stat.runCount} runs, ${stat.liftCount} lifts`);
+  }
+  if (sorted.length > 15) {
+    logs.push(`    ... and ${sorted.length - 15} more sub-regions`);
+  }
 }
 
 async function main() {
@@ -795,8 +1190,21 @@ async function main() {
       const syncResult = await syncSubRegionsForSkiArea(skiAreaId, dryRun);
       console.log('\n' + syncResult.logs.join('\n'));
       
-      const assignResult = await assignRunsToSubRegions(skiAreaId, dryRun);
+      const assignResult = await assignRunsAndLiftsToSubRegions(skiAreaId, dryRun);
       console.log(assignResult.logs.join('\n'));
+      
+      // Print sub-region summary
+      const summaryLogs: string[] = [];
+      printSubRegionSummary(assignResult.subRegionStats, summaryLogs);
+      if (summaryLogs.length > 0) {
+        console.log(summaryLogs.join('\n'));
+      }
+      
+      // Cleanup unused sub-regions
+      const cleanupResult = await cleanupUnusedSubRegions(skiAreaId, dryRun);
+      if (cleanupResult.logs.length > 0) {
+        console.log(cleanupResult.logs.join('\n'));
+      }
     } else {
       // Sync all ski areas with bounds
       const allSkiAreas = await prisma.skiArea.findMany({
@@ -835,14 +1243,16 @@ async function main() {
         name: string;
         syncResult?: SyncResult;
         assignResult?: AssignResult;
+        cleanupResult?: { logs: string[]; removed: number };
         error?: unknown;
       }
       
       const processSkiArea = async (skiArea: typeof skiAreas[0]): Promise<BatchResult> => {
         try {
           const syncResult = await syncSubRegionsForSkiArea(skiArea.id, dryRun);
-          const assignResult = await assignRunsToSubRegions(skiArea.id, dryRun);
-          return { success: syncResult.success, name: skiArea.name, syncResult, assignResult };
+          const assignResult = await assignRunsAndLiftsToSubRegions(skiArea.id, dryRun);
+          const cleanupResult = await cleanupUnusedSubRegions(skiArea.id, dryRun);
+          return { success: syncResult.success, name: skiArea.name, syncResult, assignResult, cleanupResult };
         } catch (error) {
           return { success: false, name: skiArea.name, error };
         }
@@ -873,6 +1283,17 @@ async function main() {
             }
             if (result.assignResult) {
               for (const line of result.assignResult.logs) {
+                console.log(`   ${line}`);
+              }
+              // Print sub-region summary for this ski area
+              const summaryLogs: string[] = [];
+              printSubRegionSummary(result.assignResult.subRegionStats, summaryLogs);
+              for (const line of summaryLogs) {
+                console.log(`   ${line}`);
+              }
+            }
+            if (result.cleanupResult && result.cleanupResult.logs.length > 0) {
+              for (const line of result.cleanupResult.logs) {
                 console.log(`   ${line}`);
               }
             }
@@ -908,7 +1329,18 @@ async function main() {
     const finalCounts = {
       subRegions: await prisma.subRegion.count(),
       connections: await prisma.skiAreaConnection.count(),
+      runsTotal: await prisma.run.count(),
+      runsAssigned: await prisma.run.count({ where: { subRegionId: { not: null } } }),
+      liftsTotal: await prisma.lift.count(),
+      liftsAssigned: await prisma.lift.count({ where: { subRegionId: { not: null } } }),
     };
+    
+    const runPct = finalCounts.runsTotal > 0 
+      ? Math.round((finalCounts.runsAssigned / finalCounts.runsTotal) * 100) 
+      : 0;
+    const liftPct = finalCounts.liftsTotal > 0 
+      ? Math.round((finalCounts.liftsAssigned / finalCounts.liftsTotal) * 100) 
+      : 0;
     
     console.log('');
     console.log('╔══════════════════════════════════════════════════════════════════╗');
@@ -917,6 +1349,9 @@ async function main() {
     console.log(`║  Duration: ${mins}m ${secs}s`.padEnd(68) + '║');
     console.log(`║  Sub-Regions: ${finalCounts.subRegions}`.padEnd(68) + '║');
     console.log(`║  Connections: ${finalCounts.connections}`.padEnd(68) + '║');
+    console.log('╠══════════════════════════════════════════════════════════════════╣');
+    console.log(`║  Runs assigned: ${finalCounts.runsAssigned}/${finalCounts.runsTotal} (${runPct}%)`.padEnd(68) + '║');
+    console.log(`║  Lifts assigned: ${finalCounts.liftsAssigned}/${finalCounts.liftsTotal} (${liftPct}%)`.padEnd(68) + '║');
     console.log('╚══════════════════════════════════════════════════════════════════╝');
     console.log('');
   } catch (error) {

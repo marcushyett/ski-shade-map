@@ -405,8 +405,7 @@ function PointSearchInput({
         )}
       </div>
       {value ? (
-        <div className="nav-selected-row-full">
-          <QuickActionButtons />
+        <div className="nav-input-row">
           <div className="nav-selected-point-full" onClick={() => onChange(null)}>
             {value.type === 'location' ? (
               <AimOutlined style={{ fontSize: 12, color: '#3b82f6', marginRight: 6 }} />
@@ -429,10 +428,10 @@ function PointSearchInput({
             </span>
             <CloseOutlined style={{ fontSize: 10, color: '#666', marginLeft: 'auto' }} />
           </div>
+          <QuickActionButtons />
         </div>
       ) : (
         <div className="nav-input-row">
-          <QuickActionButtons />
           <Input
             ref={inputRef as any}
             placeholder={isMapClickActive ? 'Click on map or search...' : placeholder}
@@ -447,6 +446,7 @@ function PointSearchInput({
             size="small"
             className="nav-search-input"
           />
+          <QuickActionButtons />
           
           {showDropdown && (
             <div className="nav-search-dropdown">
@@ -1085,72 +1085,70 @@ function NavigationPanelInner({
           isMapClickActive={mapClickMode === 'destination'}
         />
 
-        {/* Advanced options - only show when no route yet */}
-        {!route && (
-          <div className="nav-advanced-section">
-            <div 
-              className="nav-advanced-header"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-              {showAdvanced ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
-              <SettingOutlined style={{ fontSize: 10, marginLeft: 4 }} />
-              <span style={{ marginLeft: 4 }}>Route options</span>
-            </div>
-            
-            {showAdvanced && (
-              <div className="nav-advanced-content">
-                {/* Difficulty filters */}
-                <div className="nav-filter-group">
-                  <div className="nav-filter-label">Slope difficulties:</div>
-                  <div className="nav-filter-options">
-                    {Object.entries(filters.difficulties).map(([key, checked]) => (
-                      <div 
-                        key={key} 
-                        className="nav-filter-checkbox"
-                        onClick={() => setFilters(prev => ({
-                          ...prev,
-                          difficulties: { ...prev.difficulties, [key]: !prev.difficulties[key as keyof typeof prev.difficulties] }
-                        }))}
-                      >
-                        <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
-                        <span 
-                          className="nav-filter-dot"
-                          style={{ 
-                            backgroundColor: getDifficultyColor(key),
-                            border: key === 'advanced' ? '1px solid #666' : undefined,
-                          }}
-                        />
-                        <span className="nav-filter-name">{key.charAt(0).toUpperCase() + key.slice(1)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Lift type filters */}
-                <div className="nav-filter-group">
-                  <div className="nav-filter-label">Lift types:</div>
-                  <div className="nav-filter-options nav-filter-lifts">
-                    {Object.entries(filters.liftTypes).map(([key, checked]) => (
-                      <div 
-                        key={key} 
-                        className="nav-filter-checkbox"
-                        onClick={() => setFilters(prev => ({
-                          ...prev,
-                          liftTypes: { ...prev.liftTypes, [key]: !prev.liftTypes[key as keyof typeof prev.liftTypes] }
-                        }))}
-                      >
-                        <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
-                        <span className="nav-filter-name">
-                          {key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+        {/* Advanced options - always visible */}
+        <div className="nav-advanced-section">
+          <div 
+            className="nav-advanced-header"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+          >
+            {showAdvanced ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
+            <SettingOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+            <span style={{ marginLeft: 4 }}>Route options</span>
+          </div>
+          
+          {showAdvanced && (
+            <div className="nav-advanced-content">
+              {/* Difficulty filters */}
+              <div className="nav-filter-group">
+                <div className="nav-filter-label">Slope difficulties:</div>
+                <div className="nav-filter-options">
+                  {Object.entries(filters.difficulties).map(([key, checked]) => (
+                    <div 
+                      key={key} 
+                      className="nav-filter-checkbox"
+                      onClick={() => setFilters(prev => ({
+                        ...prev,
+                        difficulties: { ...prev.difficulties, [key]: !prev.difficulties[key as keyof typeof prev.difficulties] }
+                      }))}
+                    >
+                      <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
+                      <span 
+                        className="nav-filter-dot"
+                        style={{ 
+                          backgroundColor: getDifficultyColor(key),
+                          border: key === 'advanced' ? '1px solid #666' : undefined,
+                        }}
+                      />
+                      <span className="nav-filter-name">{key.charAt(0).toUpperCase() + key.slice(1)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            )}
-          </div>
-        )}
+              
+              {/* Lift type filters */}
+              <div className="nav-filter-group">
+                <div className="nav-filter-label">Lift types:</div>
+                <div className="nav-filter-options nav-filter-lifts">
+                  {Object.entries(filters.liftTypes).map(([key, checked]) => (
+                    <div 
+                      key={key} 
+                      className="nav-filter-checkbox"
+                      onClick={() => setFilters(prev => ({
+                        ...prev,
+                        liftTypes: { ...prev.liftTypes, [key]: !prev.liftTypes[key as keyof typeof prev.liftTypes] }
+                      }))}
+                    >
+                      <span className={`nav-filter-check ${checked ? 'checked' : ''}`} />
+                      <span className="nav-filter-name">
+                        {key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Error message */}
         {error && (

@@ -1251,8 +1251,14 @@ h5.ant-typography {
   flex-direction: column;
   gap: 8px;
   /* Make the whole content scrollable with header always visible */
-  max-height: 50vh;
+  max-height: calc(100vh - 180px); /* Fill to top of map, leave room for header/footer */
   overflow-y: auto;
+}
+
+@media (max-width: 767px) {
+  .nav-panel-content {
+    max-height: calc(100vh - 200px); /* Slightly less on mobile due to URL bar */
+  }
 }
 
 /* Fixed action buttons at bottom of nav panel */
@@ -1307,6 +1313,16 @@ h5.ant-typography {
   min-width: 0;
 }
 
+/* Consistent input height */
+.nav-search-input .ant-input {
+  height: 32px !important;
+}
+
+.nav-search-input.ant-input-affix-wrapper {
+  height: 32px !important;
+  padding: 0 8px !important;
+}
+
 /* Quick action buttons container */
 .nav-quick-actions {
   display: flex;
@@ -1319,14 +1335,15 @@ h5.ant-typography {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   background: var(--background-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--foreground-muted);
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 
 .nav-action-btn:hover {
@@ -1341,19 +1358,14 @@ h5.ant-typography {
   color: #3b82f6;
 }
 
-/* Selected row - full width with actions on left */
-.nav-selected-row-full {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
+/* Selected point - same height as input (32px) */
 .nav-selected-point-full {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  padding: 6px 10px;
+  height: 32px;
+  padding: 0 10px;
   background: var(--background-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1483,15 +1495,18 @@ h5.ant-typography {
 .nav-position-btn-sm {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 8px;
-  font-size: 9px;
+  justify-content: center;
+  gap: 3px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 10px;
   background: var(--background-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--foreground-muted);
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 
 .nav-position-btn-sm:hover {
