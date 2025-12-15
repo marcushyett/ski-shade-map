@@ -107,3 +107,14 @@ export interface SkiLiftsGeoJSON extends FeatureCollection<LineString> {
   features: SkiLiftFeature[];
 }
 
+// Points of Interest types
+export type POIType = 'toilet' | 'restaurant' | 'viewpoint';
+
+export interface POIData {
+  id: string;
+  type: POIType;
+  name: string | null;
+  latitude: number;
+  longitude: number;
+}
+
