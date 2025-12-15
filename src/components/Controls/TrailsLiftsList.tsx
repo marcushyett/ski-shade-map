@@ -8,7 +8,8 @@ import {
   SwapOutlined,
   DownOutlined,
   RightOutlined,
-  EnvironmentOutlined
+  EnvironmentOutlined,
+  ArrowRightOutlined
 } from '@ant-design/icons';
 import type { RunData, LiftData, SubRegionData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
@@ -118,7 +119,7 @@ const SubRegionHeader = memo(function SubRegionHeader({
           }}
           title="Go to sub-region"
         >
-          →
+          <ArrowRightOutlined style={{ fontSize: 8 }} />
         </button>
       )}
     </div>

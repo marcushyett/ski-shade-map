@@ -10,6 +10,7 @@ import {
   DeleteOutlined,
   DownOutlined,
   RightOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
@@ -1697,7 +1698,7 @@ export default function Home() {
                 className="location-search-overlay-close"
                 onClick={() => setIsLocationSearchOpen(false)}
               >
-                ✕
+                <CloseOutlined />
               </button>
             </div>
             <LocationSearch
