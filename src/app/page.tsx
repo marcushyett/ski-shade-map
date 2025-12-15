@@ -1337,12 +1337,15 @@ export default function Home() {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                   }}
-                  title={`${skiAreaDetails.country ? skiAreaDetails.country + ' · ' : ''}${skiAreaDetails.name}`}
+                  title={`${skiAreaDetails.country ? skiAreaDetails.country + ' · ' : ''}${skiAreaDetails.name}${currentSubRegion ? ' · ' + currentSubRegion.name : ''}`}
                 >
                   {skiAreaDetails.country && (
                     <span style={{ color: '#666' }}>{skiAreaDetails.country} · </span>
                   )}
                   {skiAreaDetails.name}
+                  {currentSubRegion && (
+                    <span style={{ color: '#888' }}> · {currentSubRegion.name}</span>
+                  )}
                 </span>
               </div>
             )}

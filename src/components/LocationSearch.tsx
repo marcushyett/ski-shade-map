@@ -35,7 +35,7 @@ export default function LocationSearch({
   disabled,
   placeholder = 'Search ski areas, regions, villages...',
 }: LocationSearchProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<LocationSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,7 +47,9 @@ export default function LocationSearch({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+        setIsSearching(false);
+        setQuery('');
+        setResults([]);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -114,13 +116,13 @@ export default function LocationSearch({
     }
 
     onSelect(selection);
-    setIsOpen(false);
+    setIsSearching(false);
     setQuery('');
     setResults([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!isOpen || results.length === 0) return;
+    if (!isSearching || results.length === 0) return;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -132,18 +134,9 @@ export default function LocationSearch({
       e.preventDefault();
       handleSelect(results[selectedIndex]);
     } else if (e.key === 'Escape') {
-      setIsOpen(false);
-    }
-  };
-
-  const getTypeIcon = (type: LocationSearchResult['type']) => {
-    switch (type) {
-      case 'country':
-        return <GlobalOutlined style={{ color: '#666' }} />;
-      case 'region':
-        return <EnvironmentOutlined style={{ color: '#3b82f6' }} />;
-      case 'subregion':
-        return <CompassOutlined style={{ color: '#10b981' }} />;
+      setIsSearching(false);
+      setQuery('');
+      setResults([]);
     }
   };
 
@@ -154,9 +147,37 @@ export default function LocationSearch({
       case 'region':
         return 'Ski Area';
       case 'subregion':
-        return 'Village/Sub-area';
+        return 'Village';
     }
   };
+
+  const startSearching = () => {
+    setIsSearching(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  // Show current location as a clickable box when not searching
+  if (!isSearching && currentLocation?.region) {
+    return (
+      <div className="location-search" ref={containerRef}>
+        <button
+          className="location-selected-box"
+          onClick={startSearching}
+          disabled={disabled}
+        >
+          <EnvironmentOutlined className="location-selected-icon" />
+          <div className="location-selected-content">
+            <div className="location-selected-name">{currentLocation.region}</div>
+            <div className="location-selected-meta">
+              {currentLocation.country}
+              {currentLocation.subRegion && ` · ${currentLocation.subRegion}`}
+            </div>
+          </div>
+          <SearchOutlined className="location-selected-search-icon" />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="location-search" ref={containerRef}>
@@ -167,51 +188,18 @@ export default function LocationSearch({
           type="text"
           value={query}
           onChange={handleInputChange}
-          onFocus={() => setIsOpen(true)}
+          onFocus={() => setIsSearching(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
           className="location-search-input"
+          autoFocus={isSearching}
         />
         {loading && <Spin size="small" className="location-search-spinner" />}
       </div>
 
-      {/* Current location display when not searching */}
-      {!isOpen && currentLocation && (
-        <button
-          className="location-current"
-          onClick={() => {
-            setIsOpen(true);
-            inputRef.current?.focus();
-          }}
-        >
-          <EnvironmentOutlined style={{ marginRight: 6, opacity: 0.6 }} />
-          <span className="location-breadcrumb">
-            {currentLocation.country && (
-              <span className="location-breadcrumb-item">{currentLocation.country}</span>
-            )}
-            {currentLocation.region && (
-              <>
-                <span className="location-breadcrumb-sep">›</span>
-                <span className="location-breadcrumb-item location-breadcrumb-region">
-                  {currentLocation.region}
-                </span>
-              </>
-            )}
-            {currentLocation.subRegion && (
-              <>
-                <span className="location-breadcrumb-sep">›</span>
-                <span className="location-breadcrumb-item location-breadcrumb-subregion">
-                  {currentLocation.subRegion}
-                </span>
-              </>
-            )}
-          </span>
-        </button>
-      )}
-
       {/* Dropdown results */}
-      {isOpen && (query.length >= 2 || results.length > 0) && (
+      {isSearching && (query.length >= 2 || results.length > 0) && (
         <div className="location-search-dropdown">
           {results.length === 0 && !loading && query.length >= 2 && (
             <div className="location-search-empty">
@@ -226,30 +214,24 @@ export default function LocationSearch({
               onClick={() => handleSelect(result)}
               onMouseEnter={() => setSelectedIndex(index)}
             >
-              <div className="location-result-icon">
-                {getTypeIcon(result.type)}
-              </div>
+              <EnvironmentOutlined className="location-result-icon" />
               <div className="location-result-content">
                 <div className="location-result-name">{result.name}</div>
                 <div className="location-result-meta">
                   {result.type === 'subregion' && result.region && (
-                    <span className="location-result-parent">
+                    <>
                       {result.region}
-                      {result.country && ` • ${result.country}`}
-                    </span>
+                      {result.country && ` · ${result.country}`}
+                    </>
                   )}
                   {result.type === 'region' && result.country && (
-                    <span className="location-result-parent">{result.country}</span>
+                    <>{result.country}</>
                   )}
                   {result.type === 'country' && result.runCount && (
-                    <span className="location-result-count">
-                      {result.runCount} ski areas
-                    </span>
+                    <>{result.runCount} ski areas</>
                   )}
                   {result.type !== 'country' && result.runCount && (
-                    <span className="location-result-count">
-                      {result.runCount} runs
-                    </span>
+                    <> · {result.runCount} runs</>
                   )}
                 </div>
               </div>
@@ -263,4 +245,3 @@ export default function LocationSearch({
     </div>
   );
 }
-
