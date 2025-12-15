@@ -18,6 +18,40 @@ const prisma = new PrismaClient();
 
 const OVERPASS_API = 'https://overpass-api.de/api/interpreter';
 
+// Retry helper for API calls
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries: number = 3,
+  initialDelay: number = 5000
+): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      
+      // Retry on 429 (rate limit) or 5xx errors
+      if (response.status === 429 || response.status >= 500) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return response;
+    } catch (error) {
+      lastError = error as Error;
+      console.error(`  Attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
+      
+      if (attempt < maxRetries) {
+        const delay = initialDelay * Math.pow(2, attempt - 1);
+        console.log(`  Retrying in ${delay / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError || new Error('All retry attempts failed');
+}
+
 interface OverpassElement {
   type: string;
   id: number;
@@ -92,11 +126,16 @@ async function fetchSubRegionsFromOverpass(bounds: { minLat: number; maxLat: num
 
   console.log(`Fetching sub-regions in bounds: ${JSON.stringify(bounds)}`);
   
-  const response = await fetch(OVERPASS_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(query)}`,
-  });
+  const response = await fetchWithRetry(
+    OVERPASS_API,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+    },
+    3,  // maxRetries
+    10000  // initialDelay (10s - Overpass needs longer cooldowns)
+  );
 
   if (!response.ok) {
     throw new Error(`Overpass API error: ${response.status} ${response.statusText}`);

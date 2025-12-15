@@ -1,0 +1,113 @@
+name: Sync Ski Area Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      country:
+        description: 'Country code (e.g., FR, CH, AT) or "all" for all countries'
+        required: true
+        default: 'FR'
+      skip_runs:
+        description: 'Skip syncing runs (faster for testing)'
+        type: boolean
+        default: false
+      skip_lifts:
+        description: 'Skip syncing lifts (faster for testing)'
+        type: boolean
+        default: false
+
+  # Can be called from other workflows
+  workflow_call:
+    inputs:
+      country:
+        type: string
+        required: true
+      skip_runs:
+        type: boolean
+        default: false
+      skip_lifts:
+        type: boolean
+        default: false
+    secrets:
+      DATABASE_URL:
+        required: true
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  sync-country:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    strategy:
+      matrix:
+        # If "all" is specified, run for all countries; otherwise just the specified one
+        country: ${{ inputs.country == 'all' && fromJson('["FR", "CH", "AT", "IT", "DE", "US", "CA", "NZ", "JP", "NO", "SE", "FI", "ES", "AD", "BG", "RO", "SI", "SK", "PL", "CZ"]') || fromJson(format('["{0}"]', inputs.country)) }}
+      fail-fast: false
+      max-parallel: 2  # Be nice to OpenSkiMap API
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Sync ski area data for ${{ matrix.country }}
+        run: |
+          echo "🎿 Syncing ski area data for ${{ matrix.country }}..."
+          
+          # Build command with optional flags
+          CMD="npx tsx scripts/sync-data.ts --country=${{ matrix.country }}"
+          
+          if [ "${{ inputs.skip_runs }}" = "true" ]; then
+            CMD="$CMD --skip-runs"
+          fi
+          
+          if [ "${{ inputs.skip_lifts }}" = "true" ]; then
+            CMD="$CMD --skip-lifts"
+          fi
+          
+          # Run with retry logic
+          MAX_RETRIES=3
+          RETRY_DELAY=60
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES..."
+            if $CMD; then
+              echo "✅ Successfully synced ${{ matrix.country }}"
+              exit 0
+            else
+              if [ $i -lt $MAX_RETRIES ]; then
+                echo "⚠️ Attempt $i failed, retrying in ${RETRY_DELAY}s..."
+                sleep $RETRY_DELAY
+                RETRY_DELAY=$((RETRY_DELAY * 2))
+              fi
+            fi
+          done
+          
+          echo "❌ Failed to sync ${{ matrix.country }} after $MAX_RETRIES attempts"
+          exit 1
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Sync Results for ${{ matrix.country }}" >> $GITHUB_STEP_SUMMARY
+          if [ $? -eq 0 ]; then
+            echo "✅ Successfully synced ski area data" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Failed to sync ski area data" >> $GITHUB_STEP_SUMMARY
+          fi
+

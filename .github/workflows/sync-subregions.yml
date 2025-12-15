@@ -1,0 +1,100 @@
+name: Sync Sub-Regions
+
+on:
+  workflow_dispatch:
+    inputs:
+      ski_area_id:
+        description: 'Specific ski area ID (leave empty for all)'
+        required: false
+        default: ''
+      skip_connections:
+        description: 'Skip detecting connections between ski areas'
+        type: boolean
+        default: false
+
+  # Can be called from other workflows
+  workflow_call:
+    inputs:
+      ski_area_id:
+        type: string
+        required: false
+        default: ''
+      skip_connections:
+        type: boolean
+        default: false
+    secrets:
+      DATABASE_URL:
+        required: true
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  sync-subregions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hours for full sync
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Sync sub-regions
+        run: |
+          echo "🏔️ Syncing sub-regions..."
+          
+          # Build command with optional flags
+          CMD="npx tsx scripts/sync-subregions.ts"
+          
+          if [ -n "${{ inputs.ski_area_id }}" ]; then
+            CMD="$CMD --ski-area-id=${{ inputs.ski_area_id }}"
+          fi
+          
+          if [ "${{ inputs.skip_connections }}" = "true" ]; then
+            CMD="$CMD --skip-connections"
+          fi
+          
+          # Run with retry logic for Overpass API failures
+          MAX_RETRIES=3
+          RETRY_DELAY=120  # Overpass API needs longer cooldown
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES..."
+            if $CMD; then
+              echo "✅ Successfully synced sub-regions"
+              exit 0
+            else
+              if [ $i -lt $MAX_RETRIES ]; then
+                echo "⚠️ Attempt $i failed, retrying in ${RETRY_DELAY}s..."
+                sleep $RETRY_DELAY
+                RETRY_DELAY=$((RETRY_DELAY * 2))
+              fi
+            fi
+          done
+          
+          echo "❌ Failed to sync sub-regions after $MAX_RETRIES attempts"
+          exit 1
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Sub-Region Sync Results" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ inputs.ski_area_id }}" ]; then
+            echo "Synced ski area: ${{ inputs.ski_area_id }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Synced all ski areas" >> $GITHUB_STEP_SUMMARY
+          fi
+

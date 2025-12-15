@@ -1,0 +1,70 @@
+name: Sync Ski Area Connections
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (preview only, no changes)'
+        type: boolean
+        default: false
+
+  # Can be called from other workflows
+  workflow_call:
+    inputs:
+      dry_run:
+        type: boolean
+        default: false
+    secrets:
+      DATABASE_URL:
+        required: true
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  sync-connections:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Detect ski area connections
+        run: |
+          echo "🔗 Detecting ski area connections..."
+          
+          CMD="npx tsx scripts/sync-subregions.ts --connections-only"
+          
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            CMD="$CMD --dry-run"
+          fi
+          
+          $CMD
+          
+          echo "✅ Connection detection complete"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Connection Sync Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "🔍 Dry run - no changes made" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Connections updated" >> $GITHUB_STEP_SUMMARY
+          fi
+

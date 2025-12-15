@@ -1,0 +1,239 @@
+name: Full Data Sync Pipeline
+
+on:
+  # Run on the 1st of every month at midnight UTC
+  schedule:
+    - cron: '0 0 1 * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      skip_ski_areas:
+        description: 'Skip syncing ski area data (just do sub-regions/connections)'
+        type: boolean
+        default: false
+      countries:
+        description: 'Countries to sync (comma-separated, or "all")'
+        default: 'all'
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  # Step 1: Apply any pending database migrations
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply database migrations
+        run: |
+          echo "📦 Applying database migrations..."
+          npx prisma migrate deploy
+          echo "✅ Migrations complete"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # Step 2: Sync ski area data for all countries (in batches)
+  sync-ski-areas:
+    needs: migrate
+    if: ${{ inputs.skip_ski_areas != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours
+    
+    strategy:
+      matrix:
+        # Split countries into batches to avoid timeouts
+        batch:
+          - name: "Europe West"
+            countries: "FR,CH,AT,IT,DE,ES,AD"
+          - name: "Europe East"
+            countries: "BG,RO,SI,SK,PL,CZ"
+          - name: "Scandinavia"
+            countries: "NO,SE,FI"
+          - name: "Americas & Pacific"
+            countries: "US,CA,NZ,JP"
+      fail-fast: false
+      max-parallel: 2
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Sync ${{ matrix.batch.name }}
+        run: |
+          echo "🎿 Syncing ski areas for ${{ matrix.batch.name }}: ${{ matrix.batch.countries }}"
+          
+          # Split countries and process each
+          IFS=',' read -ra COUNTRIES <<< "${{ matrix.batch.countries }}"
+          
+          for COUNTRY in "${COUNTRIES[@]}"; do
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Processing $COUNTRY..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Retry logic
+            MAX_RETRIES=3
+            RETRY_DELAY=60
+            SUCCESS=false
+            
+            for i in $(seq 1 $MAX_RETRIES); do
+              echo "Attempt $i of $MAX_RETRIES..."
+              if npx tsx scripts/sync-data.ts --country="$COUNTRY"; then
+                echo "✅ Successfully synced $COUNTRY"
+                SUCCESS=true
+                break
+              else
+                if [ $i -lt $MAX_RETRIES ]; then
+                  echo "⚠️ Attempt $i failed, retrying in ${RETRY_DELAY}s..."
+                  sleep $RETRY_DELAY
+                  RETRY_DELAY=$((RETRY_DELAY * 2))
+                fi
+              fi
+            done
+            
+            if [ "$SUCCESS" = false ]; then
+              echo "❌ Failed to sync $COUNTRY after $MAX_RETRIES attempts (continuing with other countries)"
+            fi
+            
+            # Rate limit between countries
+            echo "Waiting 30s before next country..."
+            sleep 30
+          done
+          
+          echo ""
+          echo "✅ Batch ${{ matrix.batch.name }} complete"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ${{ matrix.batch.name }} Sync" >> $GITHUB_STEP_SUMMARY
+          echo "Countries: ${{ matrix.batch.countries }}" >> $GITHUB_STEP_SUMMARY
+
+  # Step 3: Sync sub-regions
+  sync-subregions:
+    needs: [migrate, sync-ski-areas]
+    if: always() && needs.migrate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Sync sub-regions
+        run: |
+          echo "🏔️ Syncing sub-regions for all ski areas..."
+          
+          MAX_RETRIES=3
+          RETRY_DELAY=120
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES..."
+            if npx tsx scripts/sync-subregions.ts --skip-connections; then
+              echo "✅ Successfully synced sub-regions"
+              exit 0
+            else
+              if [ $i -lt $MAX_RETRIES ]; then
+                echo "⚠️ Attempt $i failed, retrying in ${RETRY_DELAY}s..."
+                sleep $RETRY_DELAY
+                RETRY_DELAY=$((RETRY_DELAY * 2))
+              fi
+            fi
+          done
+          
+          echo "❌ Failed to sync sub-regions after $MAX_RETRIES attempts"
+          exit 1
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # Step 4: Detect connections between ski areas
+  sync-connections:
+    needs: [migrate, sync-subregions]
+    if: always() && needs.migrate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Detect ski area connections
+        run: |
+          echo "🔗 Detecting ski area connections..."
+          npx tsx scripts/sync-subregions.ts --connections-only
+          echo "✅ Connection detection complete"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # Summary job
+  summary:
+    needs: [migrate, sync-ski-areas, sync-subregions, sync-connections]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "# 🎿 Full Data Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Database Migration | ${{ needs.migrate.result == 'success' && '✅' || '❌' }} ${{ needs.migrate.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ski Area Sync | ${{ needs.sync-ski-areas.result == 'success' && '✅' || (needs.sync-ski-areas.result == 'skipped' && '⏭️' || '❌') }} ${{ needs.sync-ski-areas.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Sub-Region Sync | ${{ needs.sync-subregions.result == 'success' && '✅' || '❌' }} ${{ needs.sync-subregions.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Connection Detection | ${{ needs.sync-connections.result == 'success' && '✅' || '❌' }} ${{ needs.sync-connections.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Run completed at: $(date -u)" >> $GITHUB_STEP_SUMMARY
+

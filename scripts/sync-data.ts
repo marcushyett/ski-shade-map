@@ -138,7 +138,7 @@ function mapDifficulty(difficulty?: string): string | null {
   return diffMap[difficulty.toLowerCase()] || difficulty;
 }
 
-async function downloadFile(url: string, filename: string): Promise<string> {
+async function downloadFile(url: string, filename: string, maxRetries: number = 3): Promise<string> {
   const filepath = `${TMP_DIR}/${filename}`;
   
   // Check if already downloaded recently (within last hour)
@@ -152,12 +152,33 @@ async function downloadFile(url: string, filename: string): Promise<string> {
   }
   
   console.log(`   Downloading from ${url}...`);
-  execSync(`curl -s "${url}" -o "${filepath}"`, { stdio: 'pipe' });
   
-  const stats = statSync(filepath);
-  console.log(`   Downloaded ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Use curl with retry flags and timeout
+      execSync(`curl -s --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 600 "${url}" -o "${filepath}"`, { stdio: 'pipe' });
+      
+      const stats = statSync(filepath);
+      if (stats.size === 0) {
+        throw new Error('Downloaded file is empty');
+      }
+      
+      console.log(`   Downloaded ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
+      return filepath;
+    } catch (error) {
+      lastError = error as Error;
+      console.error(`   Attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
+      
+      if (attempt < maxRetries) {
+        const delay = 10 * Math.pow(2, attempt - 1);
+        console.log(`   Retrying in ${delay}s...`);
+        await new Promise(resolve => setTimeout(resolve, delay * 1000));
+      }
+    }
+  }
   
-  return filepath;
+  throw lastError || new Error(`Failed to download ${filename} after ${maxRetries} attempts`);
 }
 
 async function processStreamedGeoJSON<T>(
