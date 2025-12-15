@@ -459,7 +459,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny', 'ski-segments-shaded', 
-      'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-symbols',
+      'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-touch', 'ski-lifts-symbols',
       'ski-segments-sunny-glow',
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded',
       'ski-runs-labels', 'ski-lifts-labels',
@@ -702,7 +702,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       data: runsGeoJSON,
     });
 
-    // Runs line layer - invisible but used for click detection
+    // Runs line layer - invisible but used for click/touch detection
+    // Wider on touch devices for easier tapping
     map.current.addLayer({
       id: 'ski-runs-line',
       type: 'line',
@@ -713,7 +714,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 8, // Wide for easy clicking
+        'line-width': 20, // Wide for easy touch/click detection on mobile
         'line-opacity': 0, // Invisible - segments show the actual colors
       },
     });
@@ -754,6 +755,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     map.current.addSource('ski-lifts', {
       type: 'geojson',
       data: liftsGeoJSON,
+    });
+
+    // Lift touch detection layer - invisible but wide for easy tapping
+    map.current.addLayer({
+      id: 'ski-lifts-touch',
+      type: 'line',
+      source: 'ski-lifts',
+      paint: {
+        'line-color': '#000000',
+        'line-width': 20, // Wide for easy touch/click detection on mobile
+        'line-opacity': 0, // Invisible
+      },
     });
 
     // Lift lines with status-based coloring
@@ -1729,9 +1742,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         return;
       }
       
-      // Check if we clicked on a run or lift
+      // Check if we clicked on a run or lift (includes touch detection layers)
       const features = map.current?.queryRenderedFeatures(e.point, { 
-        layers: ['ski-runs-line', 'ski-lifts'] 
+        layers: ['ski-runs-line', 'ski-lifts', 'ski-lifts-touch'] 
       });
       
       // If nav click mode or fake location drop mode is active and we didn't click a feature, handle background click
@@ -1809,7 +1822,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       map.current.on('click', 'ski-runs-polygon-fill-shaded', handlePolygonClick);
     }
 
-    map.current.on('click', 'ski-lifts', (e) => {
+    // Lift click handler (shared for both visible and touch layers)
+    const handleLiftClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
       if (!e.features?.length || !map.current) return;
       if (isEditingHomeRef.current) return; // Don't show popup in edit mode
       
@@ -1842,7 +1856,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
           `)
           .addTo(map.current);
       }
-    });
+    };
+
+    map.current.on('click', 'ski-lifts', handleLiftClick);
+    map.current.on('click', 'ski-lifts-touch', handleLiftClick);
 
     map.current.on('mouseenter', 'ski-runs-line', () => {
       if (map.current) map.current.getCanvas().style.cursor = 'pointer';
@@ -1852,12 +1869,20 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       if (map.current) map.current.getCanvas().style.cursor = '';
     });
     
-    // Also make lifts clickable
+    // Also make lifts clickable (both visible and touch layers)
     map.current.on('mouseenter', 'ski-lifts', () => {
       if (map.current) map.current.getCanvas().style.cursor = 'pointer';
     });
 
     map.current.on('mouseleave', 'ski-lifts', () => {
+      if (map.current) map.current.getCanvas().style.cursor = '';
+    });
+
+    map.current.on('mouseenter', 'ski-lifts-touch', () => {
+      if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+    });
+
+    map.current.on('mouseleave', 'ski-lifts-touch', () => {
       if (map.current) map.current.getCanvas().style.cursor = '';
     });
   }, []);
