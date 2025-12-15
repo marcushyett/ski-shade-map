@@ -1860,11 +1860,11 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const cache = getGeometryCache(area.id);
       let segments: GeoJSON.FeatureCollection;
       
-      if (cache && cache.processedCount > 0) {
+      if (cache && cache.isComplete) {
         // Use precomputed geometry - much faster, only calculates isShaded
         segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
       } else {
-        // Fallback to on-demand calculation (initial load or cache not ready)
+        // Fallback to on-demand calculation (initial load or cache still processing)
         segments = createRunSegments(area, time, area.latitude, area.longitude);
       }
 
