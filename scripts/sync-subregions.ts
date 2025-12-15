@@ -309,6 +309,82 @@ function boundsToJson(bounds: { minlat: number; minlon: number; maxlat: number; 
   };
 }
 
+// Deduplicate sub-regions by name - merge duplicates intelligently
+function deduplicateSubRegionsByName(elements: OverpassElement[]): OverpassElement[] {
+  const byName = new Map<string, OverpassElement[]>();
+  
+  // Group by name
+  for (const el of elements) {
+    const name = el.tags?.name?.toLowerCase().trim() || '';
+    if (!name) continue;
+    
+    if (!byName.has(name)) {
+      byName.set(name, []);
+    }
+    byName.get(name)!.push(el);
+  }
+  
+  const deduplicated: OverpassElement[] = [];
+  
+  for (const [name, group] of byName) {
+    if (group.length === 1) {
+      deduplicated.push(group[0]);
+      continue;
+    }
+    
+    // Multiple elements with same name - choose the best one
+    // Priority: relations (polygons) > nodes with bounds > nodes (points)
+    
+    // Check for polygon relations (piste or administrative)
+    const polygons = group.filter(el => {
+      if (el.type !== 'relation') return false;
+      const hasSite = el.tags?.site === 'piste';
+      const hasAdminBoundary = el.tags?.boundary === 'administrative';
+      return hasSite || hasAdminBoundary;
+    });
+    
+    if (polygons.length > 0) {
+      // Use the largest polygon (by bounds area)
+      let best = polygons[0];
+      let bestArea = 0;
+      
+      for (const poly of polygons) {
+        if (poly.bounds) {
+          const area = (poly.bounds.maxlat - poly.bounds.minlat) * (poly.bounds.maxlon - poly.bounds.minlon);
+          if (area > bestArea) {
+            bestArea = area;
+            best = poly;
+          }
+        }
+      }
+      
+      deduplicated.push(best);
+      continue;
+    }
+    
+    // No polygons, use any node
+    // Prefer nodes with more metadata
+    let best = group[0];
+    let bestScore = 0;
+    
+    for (const node of group) {
+      let score = 0;
+      if (node.tags?.place) score += 2;
+      if (node.tags?.population) score += 1;
+      if (node.tags?.wikidata) score += 1;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        best = node;
+      }
+    }
+    
+    deduplicated.push(best);
+  }
+  
+  return deduplicated;
+}
+
 interface SyncResult {
   skiAreaName: string;
   skiAreaId: string;
@@ -373,7 +449,7 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
   log(`Found ${elements.length} potential sub-regions (${relationCount} relations, ${nodeCount} place nodes)`);
 
   // Filter out the parent ski area itself and elements without names
-  const subRegions = elements.filter(el => {
+  let subRegions = elements.filter(el => {
     const osmId = `${el.type}/${el.id}`;
     // Skip if this is the parent ski area
     if (skiArea.osmId === osmId) return false;
@@ -381,6 +457,13 @@ async function syncSubRegionsForSkiArea(skiAreaId: string, dryRun: boolean = fal
     if (!el.tags?.name) return false;
     return true;
   });
+
+  // Deduplicate by name
+  const beforeDedup = subRegions.length;
+  subRegions = deduplicateSubRegionsByName(subRegions);
+  if (beforeDedup > subRegions.length) {
+    log(`Deduplicated ${beforeDedup - subRegions.length} sub-regions with identical names`);
+  }
 
   log(`Processing ${subRegions.length} potential sub-regions`);
 
@@ -1128,6 +1211,236 @@ function printSubRegionSummary(stats: Map<string, { name: string; runCount: numb
   }
 }
 
+// Deduplicate sub-regions by name at the database level
+// This catches duplicates that weren't caught during Overpass data processing
+async function deduplicateSubRegionsInDatabase(skiAreaId: string, dryRun: boolean = false): Promise<{ logs: string[]; merged: number }> {
+  const logs: string[] = [];
+  const log = (msg: string) => logs.push(msg);
+
+  // Get all sub-regions for this ski area
+  const subRegions = await prisma.subRegion.findMany({
+    where: { skiAreaId },
+    include: {
+      runs: { select: { id: true } },
+      lifts: { select: { id: true } },
+    },
+  });
+
+  if (subRegions.length === 0) {
+    return { logs, merged: 0 };
+  }
+
+  // Group by normalized name (lowercase, trimmed)
+  const byName = new Map<string, typeof subRegions>();
+  for (const sr of subRegions) {
+    const normalizedName = sr.name.toLowerCase().trim();
+    if (!byName.has(normalizedName)) {
+      byName.set(normalizedName, []);
+    }
+    byName.get(normalizedName)!.push(sr);
+  }
+
+  let mergedCount = 0;
+
+  // Process each group with duplicates
+  for (const [normalizedName, group] of byName) {
+    if (group.length <= 1) continue; // No duplicates
+
+    log(`  Found ${group.length} sub-regions named "${group[0].name}":`);
+
+    // Choose the best one to keep
+    // Priority: 
+    // 1. Has polygon geometry (not just a point)
+    // 2. Most runs + lifts
+    // 3. Largest bounds area
+    let best = group[0];
+    let bestScore = 0;
+
+    for (const sr of group) {
+      let score = 0;
+      
+      // Prefer regions with polygon geometry
+      const geo = sr.geometry as { type?: string } | null;
+      if (geo && (geo.type === 'Polygon' || geo.type === 'MultiPolygon')) {
+        score += 1000;
+      }
+      
+      // Prefer regions with more runs/lifts
+      const totalFeatures = sr.runs.length + sr.lifts.length;
+      score += totalFeatures * 10;
+      
+      // Prefer regions with larger bounds
+      if (sr.bounds) {
+        const bounds = sr.bounds as { minLat: number; maxLat: number; minLng: number; maxLng: number };
+        const area = (bounds.maxLat - bounds.minLat) * (bounds.maxLng - bounds.minLng);
+        score += area * 100;
+      }
+      
+      log(`    - ${sr.osmId}: ${sr.runs.length}R+${sr.lifts.length}L, ${geo?.type || 'Point'}, score=${score.toFixed(0)}`);
+      
+      if (score > bestScore) {
+        bestScore = score;
+        best = sr;
+      }
+    }
+
+    log(`    → Keeping ${best.osmId}, merging ${group.length - 1} duplicates into it`);
+
+    // Merge all others into the best one
+    for (const sr of group) {
+      if (sr.id === best.id) continue;
+
+      if (!dryRun) {
+        // Move runs and lifts to the best sub-region
+        await prisma.run.updateMany({
+          where: { subRegionId: sr.id },
+          data: { subRegionId: best.id },
+        });
+
+        await prisma.lift.updateMany({
+          where: { subRegionId: sr.id },
+          data: { subRegionId: best.id },
+        });
+
+        // Delete the duplicate
+        await prisma.subRegion.delete({
+          where: { id: sr.id },
+        });
+      }
+
+      mergedCount++;
+    }
+  }
+
+  if (mergedCount > 0) {
+    log(`  → Merged ${mergedCount} duplicate sub-regions by name`);
+  }
+
+  return { logs, merged: mergedCount };
+}
+
+// Merge small sub-regions into larger overlapping ones
+// Small = fewer than N runs/lifts, Large = more than M runs/lifts
+const SMALL_REGION_THRESHOLD = 5; // Regions with <= 5 runs/lifts are considered small
+const LARGE_REGION_THRESHOLD = 15; // Regions with >= 15 runs/lifts are considered large enough to merge into
+
+async function mergeSmallIntoLargeSubRegions(skiAreaId: string, dryRun: boolean = false): Promise<{ logs: string[]; merged: number }> {
+  const logs: string[] = [];
+  const log = (msg: string) => logs.push(msg);
+
+  // Get all sub-regions with their run/lift counts
+  const subRegions = await prisma.subRegion.findMany({
+    where: { skiAreaId },
+    include: {
+      runs: { select: { id: true, geometry: true } },
+      lifts: { select: { id: true, geometry: true } },
+    },
+  });
+
+  if (subRegions.length === 0) {
+    return { logs, merged: 0 };
+  }
+
+  // Separate small and large sub-regions
+  const smallRegions = subRegions.filter(sr => {
+    const total = sr.runs.length + sr.lifts.length;
+    return total > 0 && total <= SMALL_REGION_THRESHOLD;
+  });
+
+  const largeRegions = subRegions.filter(sr => {
+    const total = sr.runs.length + sr.lifts.length;
+    return total >= LARGE_REGION_THRESHOLD;
+  });
+
+  if (smallRegions.length === 0 || largeRegions.length === 0) {
+    return { logs, merged: 0 };
+  }
+
+  log(`  Merging small sub-regions (≤${SMALL_REGION_THRESHOLD} runs/lifts) into larger ones (≥${LARGE_REGION_THRESHOLD} runs/lifts)`);
+  log(`  Found ${smallRegions.length} small and ${largeRegions.length} large sub-regions`);
+
+  let mergedCount = 0;
+
+  // For each small region, check if any of its runs/lifts overlap with a large region
+  for (const smallRegion of smallRegions) {
+    const allGeometries = [
+      ...smallRegion.runs.map(r => r.geometry),
+      ...smallRegion.lifts.map(l => l.geometry),
+    ];
+
+    if (allGeometries.length === 0) continue;
+
+    // Extract all coordinates from this small region's runs/lifts
+    const smallCoords: Array<{ lat: number; lng: number }> = [];
+    for (const geom of allGeometries) {
+      smallCoords.push(...getAllCoordinates(geom));
+    }
+
+    if (smallCoords.length === 0) continue;
+
+    // Check each large region to see if any of the small region's coordinates intersect
+    let bestLargeRegion: typeof largeRegions[0] | null = null;
+    let bestOverlapCount = 0;
+
+    for (const largeRegion of largeRegions) {
+      // Skip if this is the main ski area (typically named after the whole resort)
+      // We want to avoid merging everything into the top-level region
+      if (largeRegion.name === smallRegion.name) continue;
+
+      const largeGeometry = largeRegion.geometry;
+      if (!largeGeometry) continue;
+
+      // Check if this large region has polygon boundaries
+      const rings = extractPolygonRings(largeGeometry);
+      if (rings.length === 0) continue;
+
+      // Count how many points from small region overlap with large region
+      let overlapCount = 0;
+      for (const coord of smallCoords) {
+        if (isPointInSubRegionGeometry(coord.lat, coord.lng, largeGeometry)) {
+          overlapCount++;
+        }
+      }
+
+      if (overlapCount > bestOverlapCount) {
+        bestOverlapCount = overlapCount;
+        bestLargeRegion = largeRegion;
+      }
+    }
+
+    // If we found a large region with overlap, merge the small region into it
+    if (bestLargeRegion && bestOverlapCount > 0) {
+      log(`    Merging "${smallRegion.name}" (${smallRegion.runs.length}R+${smallRegion.lifts.length}L) into "${bestLargeRegion.name}" (${bestOverlapCount}/${smallCoords.length} points overlap)`);
+
+      if (!dryRun) {
+        // Update all runs/lifts from small region to point to large region
+        await prisma.run.updateMany({
+          where: { subRegionId: smallRegion.id },
+          data: { subRegionId: bestLargeRegion.id },
+        });
+
+        await prisma.lift.updateMany({
+          where: { subRegionId: smallRegion.id },
+          data: { subRegionId: bestLargeRegion.id },
+        });
+
+        // Delete the small region
+        await prisma.subRegion.delete({
+          where: { id: smallRegion.id },
+        });
+      }
+
+      mergedCount++;
+    }
+  }
+
+  if (mergedCount > 0) {
+    log(`  → Merged ${mergedCount} small sub-regions into larger ones`);
+  }
+
+  return { logs, merged: mergedCount };
+}
+
 async function main() {
   const startTime = Date.now();
   const args = process.argv.slice(2);
@@ -1193,11 +1506,49 @@ async function main() {
       const assignResult = await assignRunsAndLiftsToSubRegions(skiAreaId, dryRun);
       console.log(assignResult.logs.join('\n'));
       
-      // Print sub-region summary
-      const summaryLogs: string[] = [];
-      printSubRegionSummary(assignResult.subRegionStats, summaryLogs);
-      if (summaryLogs.length > 0) {
-        console.log(summaryLogs.join('\n'));
+      // Deduplicate sub-regions by name (database level)
+      const dedupResult = await deduplicateSubRegionsInDatabase(skiAreaId, dryRun);
+      if (dedupResult.logs.length > 0) {
+        console.log(dedupResult.logs.join('\n'));
+      }
+      
+      // Merge small regions into larger overlapping ones
+      const mergeResult = await mergeSmallIntoLargeSubRegions(skiAreaId, dryRun);
+      if (mergeResult.logs.length > 0) {
+        console.log(mergeResult.logs.join('\n'));
+      }
+      
+      // Print sub-region summary (after deduplication and merging)
+      // Re-fetch stats if we deduplicated or merged anything
+      if ((dedupResult.merged > 0 || mergeResult.merged > 0) && !dryRun) {
+        const updatedSubRegions = await prisma.subRegion.findMany({
+          where: { skiAreaId },
+          include: {
+            _count: {
+              select: { runs: true, lifts: true },
+            },
+          },
+        });
+        const updatedStats = new Map<string, { name: string; runCount: number; liftCount: number }>();
+        for (const sr of updatedSubRegions) {
+          updatedStats.set(sr.id, {
+            name: sr.name,
+            runCount: sr._count.runs,
+            liftCount: sr._count.lifts,
+          });
+        }
+        const summaryLogs: string[] = [];
+        printSubRegionSummary(updatedStats, summaryLogs);
+        if (summaryLogs.length > 0) {
+          console.log(summaryLogs.join('\n'));
+        }
+      } else {
+        // Print sub-region summary
+        const summaryLogs: string[] = [];
+        printSubRegionSummary(assignResult.subRegionStats, summaryLogs);
+        if (summaryLogs.length > 0) {
+          console.log(summaryLogs.join('\n'));
+        }
       }
       
       // Cleanup unused sub-regions
@@ -1243,6 +1594,7 @@ async function main() {
         name: string;
         syncResult?: SyncResult;
         assignResult?: AssignResult;
+        mergeResult?: { logs: string[]; merged: number };
         cleanupResult?: { logs: string[]; removed: number };
         error?: unknown;
       }
@@ -1251,8 +1603,9 @@ async function main() {
         try {
           const syncResult = await syncSubRegionsForSkiArea(skiArea.id, dryRun);
           const assignResult = await assignRunsAndLiftsToSubRegions(skiArea.id, dryRun);
+          const mergeResult = await mergeSmallIntoLargeSubRegions(skiArea.id, dryRun);
           const cleanupResult = await cleanupUnusedSubRegions(skiArea.id, dryRun);
-          return { success: syncResult.success, name: skiArea.name, syncResult, assignResult, cleanupResult };
+          return { success: syncResult.success, name: skiArea.name, syncResult, assignResult, mergeResult, cleanupResult };
         } catch (error) {
           return { success: false, name: skiArea.name, error };
         }
@@ -1285,7 +1638,14 @@ async function main() {
               for (const line of result.assignResult.logs) {
                 console.log(`   ${line}`);
               }
-              // Print sub-region summary for this ski area
+            }
+            if (result.mergeResult && result.mergeResult.logs.length > 0) {
+              for (const line of result.mergeResult.logs) {
+                console.log(`   ${line}`);
+              }
+            }
+            // Print sub-region summary for this ski area (after merging)
+            if (result.assignResult) {
               const summaryLogs: string[] = [];
               printSubRegionSummary(result.assignResult.subRegionStats, summaryLogs);
               for (const line of summaryLogs) {
@@ -1368,4 +1728,6 @@ async function main() {
 }
 
 main();
+
+
 
