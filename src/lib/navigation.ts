@@ -453,6 +453,45 @@ export function findRoute(
 }
 
 /**
+ * Clean up route segments:
+ * 1. Remove walk segments < 100m (too short to be meaningful)
+ * 2. Merge consecutive walk segments into one
+ */
+function cleanupSegments(segments: RouteSegment[]): RouteSegment[] {
+  const MIN_WALK_DISTANCE = 100; // meters
+  const cleaned: RouteSegment[] = [];
+  
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    
+    // Skip walk segments that are too short (< 100m)
+    if (segment.type === 'walk' && segment.distance < MIN_WALK_DISTANCE) {
+      continue;
+    }
+    
+    // If this is a walk segment and we can merge with previous walk segment
+    if (segment.type === 'walk' && cleaned.length > 0) {
+      const lastSegment = cleaned[cleaned.length - 1];
+      
+      if (lastSegment.type === 'walk') {
+        // Merge with previous walk segment
+        lastSegment.distance += segment.distance;
+        lastSegment.time += segment.time;
+        lastSegment.elevationChange += segment.elevationChange;
+        // Combine coordinates
+        lastSegment.coordinates = [...lastSegment.coordinates, ...segment.coordinates];
+        continue;
+      }
+    }
+    
+    // Add segment as-is
+    cleaned.push({ ...segment });
+  }
+  
+  return cleaned;
+}
+
+/**
  * Reconstruct the route from the pathfinding result
  */
 function reconstructRoute(
@@ -500,14 +539,34 @@ function reconstructRoute(
       coordinates: edge.coordinates,
     });
   }
+  
+  // Clean up segments: remove short walks and merge consecutive walks
+  const cleanedSegments = cleanupSegments(segments);
+  
+  // Recalculate totals based on cleaned segments
+  let cleanedTotalDistance = 0;
+  let cleanedTotalTime = 0;
+  let cleanedTotalElevationGain = 0;
+  let cleanedTotalElevationLoss = 0;
+  
+  for (const segment of cleanedSegments) {
+    cleanedTotalDistance += segment.distance;
+    cleanedTotalTime += segment.time;
+    
+    if (segment.elevationChange > 0) {
+      cleanedTotalElevationGain += segment.elevationChange;
+    } else {
+      cleanedTotalElevationLoss += Math.abs(segment.elevationChange);
+    }
+  }
 
   return {
     edges,
-    totalDistance,
-    totalTime,
-    totalElevationGain,
-    totalElevationLoss,
-    segments,
+    totalDistance: cleanedTotalDistance,
+    totalTime: cleanedTotalTime,
+    totalElevationGain: cleanedTotalElevationGain,
+    totalElevationLoss: cleanedTotalElevationLoss,
+    segments: cleanedSegments,
   };
 }
 

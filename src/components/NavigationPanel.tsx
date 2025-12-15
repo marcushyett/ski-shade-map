@@ -195,15 +195,16 @@ function PointSearchInput({
 
   // Filter runs and lifts by search
   // Deduplicate runs by name+subregion, keeping highest altitude
+  // Filter out unnamed runs
   const filteredRuns = useMemo(() => {
     if (!searchText) return [];
     const lower = searchText.toLowerCase();
-    const matchingRuns = skiArea.runs.filter((r) => r.name?.toLowerCase().includes(lower));
+    const matchingRuns = skiArea.runs.filter((r) => r.name && r.name.toLowerCase().includes(lower));
     
     // Group by name + subregion, keep highest altitude
     const grouped = new Map<string, typeof matchingRuns[0]>();
     for (const run of matchingRuns) {
-      const key = `${run.name || 'Unnamed'}::${run.subRegionName || ''}`;
+      const key = `${run.name}::${run.subRegionName || ''}`;
       const existing = grouped.get(key);
       if (!existing) {
         grouped.set(key, run);
@@ -638,6 +639,35 @@ function RouteColorLegend() {
 }
 
 function RouteSummary({ route }: { route: NavigationRoute }) {
+  // Helper to find the next named destination after an unnamed run
+  const getConnectionDestination = (segmentIndex: number) => {
+    // Look ahead to find the next named segment
+    for (let i = segmentIndex + 1; i < route.segments.length; i++) {
+      const nextSeg = route.segments[i];
+      if (nextSeg.name) {
+        return nextSeg.name;
+      }
+    }
+    return null;
+  };
+  
+  // Get display name for a segment
+  const getSegmentName = (segment: typeof route.segments[0], idx: number) => {
+    if (segment.type === 'walk') {
+      return 'Walk/Skate';
+    }
+    
+    // For unnamed runs, show "Connection to X"
+    if (segment.type === 'run' && !segment.name) {
+      const destination = getConnectionDestination(idx);
+      if (destination) {
+        return `Connection to ${destination}`;
+      }
+    }
+    
+    return segment.name || 'Unnamed';
+  };
+  
   return (
     <div className="nav-route-summary">
       {/* Stats on one line */}
@@ -682,12 +712,19 @@ function RouteSummary({ route }: { route: NavigationRoute }) {
                   }} 
                 />
               ) : (
-                <span style={{ fontSize: 10 }}>🚶</span>
+                <span 
+                  className="nav-dot" 
+                  style={{ 
+                    backgroundColor: '#f97316',
+                    width: 8,
+                    height: 8,
+                  }} 
+                />
               )}
             </div>
             <div className="nav-segment-info">
               <span className="nav-segment-name">
-                {segment.type === 'walk' ? 'Walk/Skate' : segment.name || 'Unnamed'}
+                {getSegmentName(segment, idx)}
               </span>
               <span className="nav-segment-meta">
                 {formatDistance(segment.distance)} · {formatDuration(segment.time)}

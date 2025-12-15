@@ -184,10 +184,12 @@ function TrailsListInner({
   }, []);
 
   // Filter runs and lifts by search
+  // Filter out unnamed runs
   const filteredRuns = useMemo(() => {
-    if (!searchText) return runs;
+    const namedRuns = runs.filter(r => r.name);
+    if (!searchText) return namedRuns;
     const lower = searchText.toLowerCase();
-    return runs.filter(r => 
+    return namedRuns.filter(r => 
       r.name?.toLowerCase().includes(lower) ||
       r.difficulty?.toLowerCase().includes(lower) ||
       r.subRegionName?.toLowerCase().includes(lower)

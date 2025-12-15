@@ -116,8 +116,20 @@ function NavigationInstructionBarInner({
     return etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }, [remainingTime]);
   
+  // Helper to find the next named destination after an unnamed run
+  const getConnectionDestination = (segmentIndex: number) => {
+    // Look ahead to find the next named segment
+    for (let i = segmentIndex + 1; i < route.segments.length; i++) {
+      const nextSeg = route.segments[i];
+      if (nextSeg.name) {
+        return nextSeg.name;
+      }
+    }
+    return null;
+  };
+  
   // Get instruction text for a segment
-  const getInstruction = (segment: typeof currentSegment) => {
+  const getInstruction = (segment: typeof currentSegment, segmentIndex?: number) => {
     if (!segment) return '';
     
     if (segment.type === 'walk') {
@@ -125,6 +137,13 @@ function NavigationInstructionBarInner({
     } else if (segment.type === 'lift') {
       return `Take ${segment.name || 'lift'}`;
     } else if (segment.type === 'run') {
+      // If unnamed, show "Connection to X"
+      if (!segment.name && segmentIndex !== undefined) {
+        const destination = getConnectionDestination(segmentIndex);
+        if (destination) {
+          return `Connection to ${destination}`;
+        }
+      }
       return `Ski ${segment.name || 'run'}`;
     }
     return segment.name || 'Continue';
@@ -135,7 +154,17 @@ function NavigationInstructionBarInner({
     if (!segment) return null;
     
     if (segment.type === 'walk') {
-      return <span style={{ fontSize: 12 }}>🚶</span>;
+      return (
+        <span 
+          style={{ 
+            display: 'inline-block',
+            width: 10, 
+            height: 10, 
+            borderRadius: '50%',
+            backgroundColor: '#f97316',
+          }} 
+        />
+      );
     } else if (segment.type === 'lift') {
       return <SwapOutlined style={{ fontSize: 12, color: '#52c41a' }} />;
     } else if (segment.type === 'run') {
@@ -171,7 +200,7 @@ function NavigationInstructionBarInner({
             ) : (
               <>
                 {getIcon(currentSegment)}
-                <span style={{ marginLeft: 4 }}>{getInstruction(currentSegment)}</span>
+                <span style={{ marginLeft: 4 }}>{getInstruction(currentSegment, currentSegmentIndex)}</span>
               </>
             )}
           </span>
@@ -207,7 +236,7 @@ function NavigationInstructionBarInner({
           </div>
           <div className="nav-instruction-text">
             <span className="nav-instruction-action">
-              {offRouteInfo ? 'Return to route' : getInstruction(currentSegment)}
+              {offRouteInfo ? 'Return to route' : getInstruction(currentSegment, currentSegmentIndex)}
             </span>
             <span className="nav-instruction-detail">
               {offRouteInfo 
@@ -236,12 +265,12 @@ function NavigationInstructionBarInner({
           {offRouteInfo ? (
             <>
               {getIcon(currentSegment)}
-              <span style={{ marginLeft: 4 }}>{getInstruction(currentSegment)}</span>
+              <span style={{ marginLeft: 4 }}>{getInstruction(currentSegment, currentSegmentIndex)}</span>
             </>
           ) : nextSegment ? (
             <>
               {getIcon(nextSegment)}
-              <span style={{ marginLeft: 4 }}>{getInstruction(nextSegment)}</span>
+              <span style={{ marginLeft: 4 }}>{getInstruction(nextSegment, currentSegmentIndex + 1)}</span>
             </>
           ) : (
             <span style={{ color: '#22c55e' }}>🏁 Arrive at destination</span>

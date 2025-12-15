@@ -173,15 +173,16 @@ function SearchBarInner({
 
   // Filter runs and lifts by search
   // Deduplicate runs by name+subregion, keeping highest altitude
+  // Filter out unnamed runs
   const filteredRuns = useMemo(() => {
     if (!searchText) return [];
     const lower = searchText.toLowerCase();
-    const matchingRuns = runs.filter((r) => r.name?.toLowerCase().includes(lower));
+    const matchingRuns = runs.filter((r) => r.name && r.name.toLowerCase().includes(lower));
     
     // Group by name + subregion, keep highest altitude
     const grouped = new Map<string, typeof matchingRuns[0]>();
     for (const run of matchingRuns) {
-      const key = `${run.name || 'Unnamed'}::${run.subRegionName || ''}`;
+      const key = `${run.name}::${run.subRegionName || ''}`;
       const existing = grouped.get(key);
       if (!existing) {
         grouped.set(key, run);
