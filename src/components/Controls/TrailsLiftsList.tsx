@@ -28,7 +28,7 @@ interface TrailsLiftsListProps {
   onSelectSubRegion?: (subRegion: SubRegionData) => void;
 }
 
-// Simple run item - minimal DOM
+// Simple run item - minimal DOM, tight spacing
 const RunItem = memo(function RunItem({ 
   name, 
   subRegionName,
@@ -40,10 +40,11 @@ const RunItem = memo(function RunItem({
 }) {
   return (
     <div 
-      className="run-item py-0.5 px-1 cursor-pointer flex items-center justify-between"
+      className="run-item cursor-pointer flex items-center justify-between hover:bg-white/5"
       onClick={onClick}
+      style={{ padding: '1px 4px' }}
     >
-      <span className="truncate" style={{ fontSize: 10, color: '#ccc' }}>
+      <span className="truncate" style={{ fontSize: 9, color: '#ccc', lineHeight: '14px' }}>
         {name}
       </span>
       {subRegionName && (
@@ -55,7 +56,7 @@ const RunItem = memo(function RunItem({
   );
 });
 
-// Simple lift item
+// Simple lift item - tight spacing to match runs
 const LiftItem = memo(function LiftItem({ 
   name,
   liftType,
@@ -67,14 +68,15 @@ const LiftItem = memo(function LiftItem({
 }) {
   return (
     <div 
-      className="lift-item py-0.5 px-1 cursor-pointer flex justify-between"
+      className="lift-item cursor-pointer flex justify-between hover:bg-white/5"
       onClick={onClick}
+      style={{ padding: '1px 4px' }}
     >
-      <span style={{ fontSize: 10, color: '#ccc' }} className="truncate">
+      <span style={{ fontSize: 9, color: '#ccc', lineHeight: '14px' }} className="truncate">
         {name}
       </span>
       {liftType && (
-        <span style={{ fontSize: 9, color: '#666', marginLeft: 4, flexShrink: 0 }}>
+        <span style={{ fontSize: 8, color: '#666', marginLeft: 4, flexShrink: 0 }}>
           {liftType}
         </span>
       )}
@@ -184,16 +186,49 @@ function TrailsListInner({
   }, []);
 
   // Filter runs and lifts by search
-  // Filter out unnamed runs
+  // Filter out unnamed runs and deduplicate by name+subregion (keep highest altitude)
   const filteredRuns = useMemo(() => {
     const namedRuns = runs.filter(r => r.name);
-    if (!searchText) return namedRuns;
-    const lower = searchText.toLowerCase();
-    return namedRuns.filter(r => 
-      r.name?.toLowerCase().includes(lower) ||
-      r.difficulty?.toLowerCase().includes(lower) ||
-      r.subRegionName?.toLowerCase().includes(lower)
-    );
+    
+    // Apply search filter if present
+    const searchFiltered = !searchText 
+      ? namedRuns 
+      : namedRuns.filter(r => {
+          const lower = searchText.toLowerCase();
+          return r.name?.toLowerCase().includes(lower) ||
+                 r.difficulty?.toLowerCase().includes(lower) ||
+                 r.subRegionName?.toLowerCase().includes(lower);
+        });
+    
+    // Deduplicate: group by name+subregion, keep highest altitude
+    const grouped = new Map<string, typeof searchFiltered[0]>();
+    for (const run of searchFiltered) {
+      const key = `${run.name}::${run.subRegionName || ''}`;
+      const existing = grouped.get(key);
+      
+      if (!existing) {
+        grouped.set(key, run);
+      } else {
+        // Get max elevation from geometry (first point for runs)
+        const getMaxElevation = (r: typeof run) => {
+          if (r.geometry.type === 'LineString') {
+            const coords = r.geometry.coordinates;
+            return coords.length > 0 ? (coords[0][2] || coords[0][1]) : 0;
+          } else if (r.geometry.type === 'Polygon') {
+            const ring = r.geometry.coordinates[0];
+            return ring.length > 0 ? (ring[0][2] || ring[0][1]) : 0;
+          }
+          return 0;
+        };
+        
+        // Keep the run with higher starting elevation
+        if (getMaxElevation(run) > getMaxElevation(existing)) {
+          grouped.set(key, run);
+        }
+      }
+    }
+    
+    return Array.from(grouped.values());
   }, [runs, searchText]);
 
   const filteredLifts = useMemo(() => {
