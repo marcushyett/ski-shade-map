@@ -10,12 +10,10 @@ import {
   DeleteOutlined,
   DownOutlined,
   RightOutlined,
-  CloseOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
 import LocationSearch, { type LocationSelection } from '@/components/LocationSearch';
-import LocationNavbar from '@/components/LocationNavbar';
 import TimeSlider from '@/components/Controls/TimeSlider';
 import ViewToggle from '@/components/Controls/ViewToggle';
 import Legend from '@/components/Controls/Legend';
@@ -366,7 +364,6 @@ export default function Home() {
   
   // Location/sub-region tracking
   const [currentSubRegion, setCurrentSubRegion] = useState<{ id: string; name: string } | null>(null);
-  const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
   const [zoomToSubRegion, setZoomToSubRegion] = useState<{ id: string; name: string; lat: number; lng: number } | null>(null);
   
   // Effective user location - uses fake location for debugging if set
@@ -662,7 +659,6 @@ export default function Home() {
     });
     setWeather(null);
     setMobileMenuOpen(false);
-    setIsLocationSearchOpen(false);
     
     // If a sub-region was selected, zoom to it after data loads
     if (location.zoomToSubRegion && location.subRegionId && location.latitude && location.longitude) {
@@ -1446,27 +1442,6 @@ export default function Home() {
 
       {/* Map area */}
       <div className="map-container">
-        {/* Location navbar - shows breadcrumb and allows changing location */}
-        <div className="location-navbar-container">
-          <LocationNavbar
-            country={selectedArea?.country || undefined}
-            region={selectedArea?.name || undefined}
-            subRegion={currentSubRegion?.name}
-            onChangeLocation={() => setIsLocationSearchOpen(true)}
-            onNavigateToRegion={handleNavigateToRegion}
-            onNavigateToSubRegion={currentSubRegion ? () => {
-              const subRegion = skiAreaDetails?.subRegions?.find(s => s.id === currentSubRegion.id);
-              if (subRegion) {
-                handleNavigateToSubRegion({
-                  id: subRegion.id,
-                  name: subRegion.name,
-                  centroid: subRegion.centroid as { lat: number; lng: number } | null,
-                });
-              }
-            } : undefined}
-          />
-        </div>
-
         {loading && (
           <div className="loading-overlay">
             <LoadingSpinner size={48} />
@@ -1685,32 +1660,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Location search overlay - shown when changing location from navbar */}
-      {isLocationSearchOpen && (
-        <div className="location-search-overlay" onClick={() => setIsLocationSearchOpen(false)}>
-          <div 
-            className="location-search-overlay-content" 
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="location-search-overlay-header">
-              <span className="location-search-overlay-title">Search for a ski area</span>
-              <button 
-                className="location-search-overlay-close"
-                onClick={() => setIsLocationSearchOpen(false)}
-              >
-                <CloseOutlined />
-              </button>
-            </div>
-            <LocationSearch
-              onSelect={(location) => {
-                handleLocationSelect(location);
-                setIsLocationSearchOpen(false);
-              }}
-              placeholder="Search ski areas, villages, countries..."
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
