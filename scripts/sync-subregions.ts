@@ -501,19 +501,27 @@ async function assignRunsToSubRegions(skiAreaId: string, dryRun: boolean = false
 }
 
 async function main() {
+  const startTime = Date.now();
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
   const skiAreaIdArg = args.find(a => a.startsWith('--ski-area-id='));
   const skiAreaId = skiAreaIdArg?.split('=')[1];
   const connectionsOnly = args.includes('--connections-only');
   const skipConnections = args.includes('--skip-connections');
-
   const forceRestart = args.includes('--force-restart');
 
-  console.log('=== Sub-Region Sync ===');
-  console.log(`Dry run: ${dryRun}`);
-  console.log(`Connections only: ${connectionsOnly}`);
-  console.log(`Force restart: ${forceRestart}`);
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════════════╗');
+  console.log('║  🏔️  SUB-REGION & CONNECTION SYNC                                 ║');
+  console.log('╠══════════════════════════════════════════════════════════════════╣');
+  console.log(`║  Started: ${new Date().toISOString()}                   ║`);
+  if (dryRun) console.log('║  🔍 DRY RUN - No changes will be made                            ║');
+  if (connectionsOnly) console.log('║  🔗 Connections only mode                                         ║');
+  if (skipConnections) console.log('║  ⏭️  Skipping connection detection                                ║');
+  if (forceRestart) console.log('║  🔄 Force restart - clearing existing data                       ║');
+  if (skiAreaId) console.log(`║  📍 Single ski area: ${skiAreaId.substring(0, 20)}...                     ║`);
+  console.log('╚══════════════════════════════════════════════════════════════════╝');
+  console.log('');
 
   try {
     // If force restart, delete all existing sub-regions and connections
@@ -562,18 +570,35 @@ async function main() {
         orderBy: { name: 'asc' },
       });
 
-      console.log(`Found ${skiAreas.length} ski areas to process`);
+      console.log('');
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`  Found ${skiAreas.length} ski areas to process`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log('');
 
+      let processed = 0;
+      let errors = 0;
+      
       for (const skiArea of skiAreas) {
+        processed++;
+        const progress = `[${processed}/${skiAreas.length}]`;
+        const percent = Math.round((processed / skiAreas.length) * 100);
+        
         try {
+          process.stdout.write(`\r${progress} ${percent}% - Processing: ${skiArea.name.substring(0, 40).padEnd(40)}...`);
           await syncSubRegionsForSkiArea(skiArea.id, dryRun);
           await assignRunsToSubRegions(skiArea.id, dryRun);
           // Rate limit to be nice to Overpass API
           await new Promise(resolve => setTimeout(resolve, 2000));
         } catch (error) {
-          console.error(`Error processing ${skiArea.name}:`, error);
+          errors++;
+          console.error(`\n❌ Error processing ${skiArea.name}:`, error);
         }
       }
+      
+      console.log('');
+      console.log(`  ✅ Processed ${processed - errors}/${processed} ski areas`);
+      if (errors > 0) console.log(`  ⚠️  ${errors} ski areas had errors`);
 
       // After processing all ski areas, detect connections between them
       if (!skipConnections) {
@@ -581,9 +606,32 @@ async function main() {
       }
     }
 
-    console.log('\n=== Sync Complete ===');
+    // Final summary
+    const duration = Math.round((Date.now() - startTime) / 1000);
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+    
+    const finalCounts = {
+      subRegions: await prisma.subRegion.count(),
+      connections: await prisma.skiAreaConnection.count(),
+    };
+    
+    console.log('');
+    console.log('╔══════════════════════════════════════════════════════════════════╗');
+    console.log('║  ✅ SUB-REGION SYNC COMPLETE                                     ║');
+    console.log('╠══════════════════════════════════════════════════════════════════╣');
+    console.log(`║  Duration: ${mins}m ${secs}s`.padEnd(68) + '║');
+    console.log(`║  Sub-Regions: ${finalCounts.subRegions}`.padEnd(68) + '║');
+    console.log(`║  Connections: ${finalCounts.connections}`.padEnd(68) + '║');
+    console.log('╚══════════════════════════════════════════════════════════════════╝');
+    console.log('');
   } catch (error) {
-    console.error('Sync failed:', error);
+    console.error('');
+    console.error('╔══════════════════════════════════════════════════════════════════╗');
+    console.error('║  ❌ SUB-REGION SYNC FAILED                                       ║');
+    console.error('╚══════════════════════════════════════════════════════════════════╝');
+    console.error('');
+    console.error('Error:', error);
     process.exit(1);
   } finally {
     await prisma.$disconnect();

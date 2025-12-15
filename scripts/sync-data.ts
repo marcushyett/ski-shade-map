@@ -223,15 +223,21 @@ async function processStreamedGeoJSON<T>(
 }
 
 async function main() {
+  const startTime = Date.now();
   const args = process.argv.slice(2);
   const countryArg = args.find(a => a.startsWith('--country='));
   const countryFilter = countryArg ? countryArg.split('=')[1].toUpperCase() : null;
   const skipRuns = args.includes('--skip-runs');
   const skipLifts = args.includes('--skip-lifts');
   
-  console.log(`🎿 Starting ski data sync${countryFilter ? ` for ${countryFilter}` : ' (all countries)'}...`);
-  if (skipRuns) console.log('   (skipping runs)');
-  if (skipLifts) console.log('   (skipping lifts)');
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════════════╗');
+  console.log(`║  🎿 SKI DATA SYNC${countryFilter ? ` - ${countryFilter}`.padEnd(48) : ''.padEnd(48)} ║`);
+  console.log('╠══════════════════════════════════════════════════════════════════╣');
+  console.log(`║  Started: ${new Date().toISOString()}                   ║`);
+  if (skipRuns) console.log('║  ⏭️  Skipping runs                                                ║');
+  if (skipLifts) console.log('║  ⏭️  Skipping lifts                                               ║');
+  console.log('╚══════════════════════════════════════════════════════════════════╝');
   console.log('');
 
   // Step 1: Fetch and process ski areas
@@ -575,10 +581,31 @@ async function recalculateBoundsFromRunsLifts() {
   }
 
   console.log(`   Updated bounds for ${updated} ski areas`);
+  
+  // Final summary
+  const duration = Math.round((Date.now() - startTime) / 1000);
+  const mins = Math.floor(duration / 60);
+  const secs = duration % 60;
+  
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════════════╗');
+  console.log('║  ✅ SYNC COMPLETE                                                ║');
+  console.log('╠══════════════════════════════════════════════════════════════════╣');
+  console.log(`║  Duration: ${mins}m ${secs}s`.padEnd(68) + '║');
+  console.log(`║  Ski Areas: ${areas.length}`.padEnd(68) + '║');
+  console.log('╚══════════════════════════════════════════════════════════════════╝');
+  console.log('');
+  
+  await prisma.$disconnect();
 }
 
 main().catch(async (e) => {
-  console.error('Sync failed:', e);
+  console.error('');
+  console.error('╔══════════════════════════════════════════════════════════════════╗');
+  console.error('║  ❌ SYNC FAILED                                                  ║');
+  console.error('╚══════════════════════════════════════════════════════════════════╝');
+  console.error('');
+  console.error('Error:', e);
   await prisma.$disconnect();
   process.exit(1);
 });
