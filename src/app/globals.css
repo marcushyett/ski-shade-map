@@ -1142,14 +1142,14 @@ h5.ant-typography {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   animation: fadeIn 0.15s ease-out;
   /* Constrain max height to prevent header from going off screen */
-  max-height: calc(100vh - 120px); /* Leave 120px for top spacing (search bar + margin) and bottom spacing */
+  max-height: calc(100vh - 90px); /* Increased from 120px - Leave room for top spacing */
   display: flex;
   flex-direction: column;
 }
 
 @media (max-width: 767px) {
   .nav-panel {
-    max-height: calc(100vh - 140px); /* More spacing on mobile for URL bar */
+    max-height: calc(100vh - 110px); /* Increased from 140px */
   }
 }
 
@@ -1907,13 +1907,16 @@ h5.ant-typography {
 }
 
 .nav-advanced-content {
-  padding: 8px;
+  padding: 6px 8px;
   border-top: 1px solid var(--border);
   background: var(--background-tertiary);
+  /* Make scrollable if content is too tall */
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .nav-filter-group {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .nav-filter-group:last-child {
@@ -1921,31 +1924,33 @@ h5.ant-typography {
 }
 
 .nav-filter-label {
-  font-size: 9px;
+  font-size: 8px;
   color: var(--foreground-muted);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .nav-filter-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 2px 8px;
 }
 
 .nav-filter-lifts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 2px 8px;
 }
 
 .nav-filter-checkbox {
   display: flex;
   align-items: center;
-  font-size: 10px;
+  font-size: 9px;
   color: var(--foreground);
   cursor: pointer;
-  padding: 2px 0;
-  gap: 4px;
+  padding: 1px 0;
+  gap: 3px;
 }
 
 .nav-filter-checkbox:hover {
@@ -1954,9 +1959,9 @@ h5.ant-typography {
 
 /* Custom checkbox indicator - replaces Ant checkbox */
 .nav-filter-check {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
   border: 1.5px solid rgba(255, 255, 255, 0.35);
   display: flex;
   align-items: center;
@@ -1973,16 +1978,16 @@ h5.ant-typography {
 .nav-filter-check.checked::after {
   content: '✓';
   color: white;
-  font-size: 10px;
+  font-size: 8px;
   font-weight: bold;
   line-height: 1;
 }
 
 .nav-filter-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  margin-left: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  margin-left: 1px;
   flex-shrink: 0;
 }
 

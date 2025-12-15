@@ -1031,7 +1031,7 @@ function NavigationPanelInner({
               onClick={onToggleMinimize}
               title="Minimize to preview route"
             >
-              <UpOutlined style={{ fontSize: 10 }} />
+              <DownOutlined style={{ fontSize: 10 }} />
             </button>
           )}
           <button className="nav-close-btn" onClick={onClose}>
