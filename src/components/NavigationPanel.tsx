@@ -639,14 +639,20 @@ function RouteColorLegend() {
 }
 
 function RouteSummary({ route }: { route: NavigationRoute }) {
-  // Helper to find the next named destination after an unnamed run
+  // Helper to find the next named destination after unnamed segments
+  // Traverses through chains of unnamed connections to find the actual destination
   const getConnectionDestination = (segmentIndex: number) => {
-    // Look ahead to find the next named segment
+    // Look ahead through ALL unnamed segments (runs and walks) to find the next named feature
     for (let i = segmentIndex + 1; i < route.segments.length; i++) {
       const nextSeg = route.segments[i];
-      if (nextSeg.name) {
-        return nextSeg.name;
+      
+      // Skip unnamed runs and "Connection" walks - keep looking
+      if (!nextSeg.name || nextSeg.name === 'Connection') {
+        continue;
       }
+      
+      // Found a named segment (lift or named run)
+      return nextSeg.name;
     }
     return null;
   };

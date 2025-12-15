@@ -284,6 +284,8 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
   }
 
   // Create walk/connection edges between nearby endpoints
+  // IMPORTANT: Only create walking connections where there's no better piste option
+  // Walking should be a last resort, not a shortcut
   const nodeList = Array.from(nodes.values());
   for (let i = 0; i < nodeList.length; i++) {
     for (let j = i + 1; j < nodeList.length; j++) {
@@ -306,6 +308,28 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
 
       // Skip if too much elevation change for walking
       if (absElevDiff > MAX_WALK_ELEVATION_DIFF) continue;
+      
+      // RESTRICT walking connections to meaningful transitions:
+      // Only create walking connections between:
+      // 1. Lift end -> Run start (getting off lift to ski)
+      // 2. Run end -> Lift start (finishing run to take lift)
+      // 3. Lift end -> Lift start (lift-to-lift transfer)
+      // Do NOT create: Run end -> Run start (these should follow pistes, not shortcuts)
+      const isRunToRun = (
+        (nodeA.type === 'run_end' && nodeB.type === 'run_start') ||
+        (nodeA.type === 'run_start' && nodeB.type === 'run_end')
+      );
+      
+      // Skip run-to-run connections UNLESS they're between different ski areas (for cross-region routing)
+      if (isRunToRun) {
+        // Allow if features are from different ski areas (enables cross-region routing)
+        // Otherwise skip (prevents shortcuts within same area)
+        const nodeASkiArea = nodeA.featureId?.split('-')[0]; // Extract ski area prefix if exists
+        const nodeBSkiArea = nodeB.featureId?.split('-')[0];
+        if (nodeASkiArea === nodeBSkiArea) {
+          continue; // Skip shortcuts within same area
+        }
+      }
 
       // Calculate 3D distance
       const dist3D = Math.sqrt(horizontalDist * horizontalDist + absElevDiff * absElevDiff);
@@ -327,6 +351,10 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         speedAtoB = SPEEDS.walk.downhill_gentle;
         speedBtoA = SPEEDS.walk.uphill;
       }
+      
+      // Add a time penalty to walking to make it less desirable than following pistes
+      // This ensures the router prefers actual ski routes over walking shortcuts
+      const WALKING_TIME_PENALTY = 3.0; // Walking takes 3x longer than calculated
 
       // Create bidirectional walk edges
       const walkEdgeAB: NavigationEdge = {
@@ -338,7 +366,7 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         featureName: 'Connection',
         distance: dist3D,
         elevationChange: elevDiff,
-        travelTime: dist3D / speedAtoB,
+        travelTime: (dist3D / speedAtoB) * WALKING_TIME_PENALTY,
         speed: speedAtoB,
         coordinates: [
           [nodeA.lng, nodeA.lat, nodeA.elevation],
@@ -355,7 +383,7 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         featureName: 'Connection',
         distance: dist3D,
         elevationChange: -elevDiff,
-        travelTime: dist3D / speedBtoA,
+        travelTime: (dist3D / speedBtoA) * WALKING_TIME_PENALTY,
         speed: speedBtoA,
         coordinates: [
           [nodeB.lng, nodeB.lat, nodeB.elevation],
