@@ -1445,6 +1445,15 @@ h5.ant-typography {
   right: auto !important;
 }
 
+/* FROM dropdown should be on top of TO dropdown */
+.nav-search-dropdown-origin {
+  z-index: 10000; /* Higher than base dropdown */
+}
+
+.nav-search-dropdown-destination {
+  z-index: 9999; /* Same as base, but lower than origin */
+}
+
 /* Subregion display in search results */
 .nav-search-item-subregion {
   font-size: 9px;

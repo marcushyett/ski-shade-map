@@ -508,7 +508,7 @@ function PointSearchInput({
           
           {showDropdown && dropdownPosition && (
             <div 
-              className="nav-search-dropdown nav-search-dropdown-fixed"
+              className={`nav-search-dropdown nav-search-dropdown-fixed ${isOrigin ? 'nav-search-dropdown-origin' : 'nav-search-dropdown-destination'}`}
               style={{
                 position: 'fixed',
                 top: `${dropdownPosition.top}px`,
