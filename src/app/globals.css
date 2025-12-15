@@ -1289,7 +1289,15 @@ h5.ant-typography {
 .nav-search-container {
   position: relative;
   overflow: visible; /* Allow dropdown to extend beyond */
-  z-index: 1; /* Ensure search container has stacking context */
+}
+
+/* When the FROM field dropdown is open, it needs to be above the TO field */
+.nav-search-container.nav-search-origin {
+  z-index: 100;
+}
+
+.nav-search-container.nav-search-destination {
+  z-index: 1;
 }
 
 /* Label row with FROM/TO and quick action buttons */

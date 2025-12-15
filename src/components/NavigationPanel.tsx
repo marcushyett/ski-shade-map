@@ -410,7 +410,7 @@ function PointSearchInput({
   };
 
   return (
-    <div ref={containerRef} className="nav-search-container relative">
+    <div ref={containerRef} className={`nav-search-container relative ${isOrigin ? 'nav-search-origin' : 'nav-search-destination'}`}>
       <div className="nav-search-label-row">
         <label style={{ fontSize: 9, color: '#666' }}>
           {label}
