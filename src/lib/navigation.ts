@@ -121,6 +121,175 @@ const SPEEDS = {
 const MAX_CONNECTION_DISTANCE = 150;
 // Maximum elevation difference for walking connections (meters)
 const MAX_WALK_ELEVATION_DIFF = 50;
+// Maximum distance to consider two points on different runs as an intersection (meters)
+const RUN_INTERSECTION_DISTANCE = 30;
+
+// ============================================================================
+// Intersection Detection
+// ============================================================================
+
+interface RunCoords {
+  runId: string;
+  runName: string | null;
+  difficulty: string | null;
+  coords: number[][];
+}
+
+/**
+ * Find a point on a line segment closest to a given point
+ * Returns the distance to the closest point and the interpolation factor (0-1)
+ */
+function pointToSegmentDistance(
+  px: number, py: number,
+  x1: number, y1: number,
+  x2: number, y2: number
+): { distance: number; t: number } {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSq = dx * dx + dy * dy;
+  
+  if (lengthSq === 0) {
+    // Segment is a point
+    return { distance: Math.sqrt((px - x1) ** 2 + (py - y1) ** 2), t: 0 };
+  }
+  
+  // Clamp t to [0, 1] to stay on segment
+  let t = ((px - x1) * dx + (py - y1) * dy) / lengthSq;
+  t = Math.max(0, Math.min(1, t));
+  
+  const closestX = x1 + t * dx;
+  const closestY = y1 + t * dy;
+  const distance = Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2);
+  
+  return { distance, t };
+}
+
+/**
+ * Find intersection points between runs
+ * Returns a map of runId -> array of intersection points (as parameter t along the run, 0 = start, 1 = end)
+ */
+function findRunIntersections(runs: RunCoords[]): Map<string, { t: number; otherRunId: string; coord: number[] }[]> {
+  const intersections = new Map<string, { t: number; otherRunId: string; coord: number[] }[]>();
+  
+  // Initialize empty arrays for each run
+  for (const run of runs) {
+    intersections.set(run.runId, []);
+  }
+  
+  // Compare each pair of runs
+  for (let i = 0; i < runs.length; i++) {
+    for (let j = i + 1; j < runs.length; j++) {
+      const runA = runs[i];
+      const runB = runs[j];
+      
+      // Check each segment of run A against each segment of run B
+      for (let ai = 0; ai < runA.coords.length; ai++) {
+        const [ax, ay, az] = runA.coords[ai];
+        
+        // Find closest point on run B to this point of run A
+        let minDist = Infinity;
+        let minT = 0;
+        let minCoord: number[] = [];
+        let totalLengthB = 0;
+        let lengthToMinPoint = 0;
+        
+        // Calculate total length of run B
+        for (let bi = 1; bi < runB.coords.length; bi++) {
+          const [bx1, by1] = runB.coords[bi - 1];
+          const [bx2, by2] = runB.coords[bi];
+          totalLengthB += haversineDistance(by1, bx1, by2, bx2);
+        }
+        
+        let accumulatedLength = 0;
+        for (let bi = 1; bi < runB.coords.length; bi++) {
+          const [bx1, by1, bz1] = runB.coords[bi - 1];
+          const [bx2, by2, bz2] = runB.coords[bi];
+          
+          // Use haversine for actual distance calculation
+          const segmentLength = haversineDistance(by1, bx1, by2, bx2);
+          
+          // For closest point, we need to work in a projected space
+          // Use simple approximation: convert lat/lng differences to meters
+          const metersPerDegLat = 111000;
+          const metersPerDegLng = 111000 * Math.cos(ay * Math.PI / 180);
+          
+          const result = pointToSegmentDistance(
+            ax * metersPerDegLng, ay * metersPerDegLat,
+            bx1 * metersPerDegLng, by1 * metersPerDegLat,
+            bx2 * metersPerDegLng, by2 * metersPerDegLat
+          );
+          
+          if (result.distance < minDist) {
+            minDist = result.distance;
+            // Calculate t as position along entire run B
+            lengthToMinPoint = accumulatedLength + result.t * segmentLength;
+            minT = totalLengthB > 0 ? lengthToMinPoint / totalLengthB : 0;
+            
+            // Interpolate the actual coordinate
+            const interpLng = bx1 + result.t * (bx2 - bx1);
+            const interpLat = by1 + result.t * (by2 - by1);
+            const interpElev = ((bz1 as number) || 0) + result.t * (((bz2 as number) || 0) - ((bz1 as number) || 0));
+            minCoord = [interpLng, interpLat, interpElev];
+          }
+          
+          accumulatedLength += segmentLength;
+        }
+        
+        // If this point is close enough, record as intersection
+        if (minDist < RUN_INTERSECTION_DISTANCE) {
+          // Calculate t for run A at this point
+          let totalLengthA = 0;
+          for (let k = 1; k < runA.coords.length; k++) {
+            const [x1, y1] = runA.coords[k - 1];
+            const [x2, y2] = runA.coords[k];
+            totalLengthA += haversineDistance(y1, x1, y2, x2);
+          }
+          
+          let lengthToPointA = 0;
+          for (let k = 1; k <= ai; k++) {
+            const [x1, y1] = runA.coords[k - 1];
+            const [x2, y2] = runA.coords[k];
+            lengthToPointA += haversineDistance(y1, x1, y2, x2);
+          }
+          const tA = totalLengthA > 0 ? lengthToPointA / totalLengthA : 0;
+          
+          // Avoid intersections too close to endpoints (within 5% of run length)
+          if (tA > 0.05 && tA < 0.95 && minT > 0.05 && minT < 0.95) {
+            // Add intersection to run A
+            intersections.get(runA.runId)!.push({
+              t: tA,
+              otherRunId: runB.runId,
+              coord: runA.coords[ai],
+            });
+            
+            // Add intersection to run B
+            intersections.get(runB.runId)!.push({
+              t: minT,
+              otherRunId: runA.runId,
+              coord: minCoord,
+            });
+          }
+        }
+      }
+    }
+  }
+  
+  // Sort intersections by t and remove duplicates (intersections within 10% of each other)
+  for (const [runId, points] of intersections) {
+    points.sort((a, b) => a.t - b.t);
+    
+    // Remove duplicates
+    const filtered: typeof points = [];
+    for (const point of points) {
+      if (filtered.length === 0 || point.t - filtered[filtered.length - 1].t > 0.1) {
+        filtered.push(point);
+      }
+    }
+    intersections.set(runId, filtered);
+  }
+  
+  return intersections;
+}
 
 // ============================================================================
 // Graph Building
@@ -208,7 +377,9 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
     addEdge(edge);
   }
 
-  // Process runs - they go from top to bottom (downhill direction)
+  // First pass: collect all run coordinates for intersection detection
+  const runCoordsList: (RunCoords & { orderedCoords: number[][] })[] = [];
+  
   for (const run of skiArea.runs) {
     let coords: number[][];
     
@@ -232,6 +403,24 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
     const isCorrectDirection = firstElev >= lastElev;
     const orderedCoords = isCorrectDirection ? coords : [...coords].reverse();
 
+    runCoordsList.push({
+      runId: run.id,
+      runName: run.name,
+      difficulty: run.difficulty,
+      coords: orderedCoords,
+      orderedCoords,
+    });
+  }
+  
+  // Find intersections between runs
+  const runIntersections = findRunIntersections(runCoordsList);
+  
+  // Second pass: process runs with intermediate nodes at intersections
+  for (const runData of runCoordsList) {
+    const run = skiArea.runs.find(r => r.id === runData.runId);
+    if (!run) continue;
+    
+    const orderedCoords = runData.orderedCoords;
     const startCoord = orderedCoords[0];
     const endCoord = orderedCoords[orderedCoords.length - 1];
 
@@ -258,29 +447,101 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
 
     addNode(startNode);
     addNode(endNode);
+    
+    // Get intersections for this run
+    const intersections = runIntersections.get(run.id) || [];
+    
+    if (intersections.length === 0) {
+      // No intersections - create single edge from start to end
+      const distance = calculatePathDistance(orderedCoords);
+      const elevationChange = endNode.elevation - startNode.elevation;
+      const speed = getSkiingSpeed(run.difficulty);
+      const travelTime = distance / speed;
 
-    // Calculate edge properties
-    const distance = calculatePathDistance(orderedCoords);
-    const elevationChange = endNode.elevation - startNode.elevation; // Negative for downhill
-    const speed = getSkiingSpeed(run.difficulty);
-    const travelTime = distance / speed;
+      const edge: NavigationEdge = {
+        id: `edge-run-${run.id}`,
+        fromNodeId: startNode.id,
+        toNodeId: endNode.id,
+        type: 'run',
+        featureId: run.id,
+        featureName: run.name,
+        difficulty: run.difficulty,
+        distance,
+        elevationChange,
+        travelTime,
+        speed,
+        coordinates: orderedCoords as [number, number, number?][],
+      };
 
-    const edge: NavigationEdge = {
-      id: `edge-run-${run.id}`,
-      fromNodeId: startNode.id,
-      toNodeId: endNode.id,
-      type: 'run',
-      featureId: run.id,
-      featureName: run.name,
-      difficulty: run.difficulty,
-      distance,
-      elevationChange,
-      travelTime,
-      speed,
-      coordinates: orderedCoords as [number, number, number?][],
-    };
+      addEdge(edge);
+    } else {
+      // Create intermediate nodes at intersection points and split run into segments
+      const totalLength = calculatePathDistance(orderedCoords);
+      const speed = getSkiingSpeed(run.difficulty);
+      
+      // Build list of all segment points: start, intersections, end
+      const segmentPoints: { nodeId: string; t: number; coord: number[] }[] = [
+        { nodeId: startNode.id, t: 0, coord: startCoord },
+      ];
+      
+      for (let i = 0; i < intersections.length; i++) {
+        const intersection = intersections[i];
+        const nodeId = `run-${run.id}-int-${i}`;
+        
+        // Create intermediate node
+        const intNode: NavigationNode = {
+          id: nodeId,
+          lng: intersection.coord[0],
+          lat: intersection.coord[1],
+          elevation: (intersection.coord[2] as number) || 0,
+          type: 'connection',
+          featureId: run.id,
+          featureName: run.name,
+        };
+        addNode(intNode);
+        
+        segmentPoints.push({
+          nodeId,
+          t: intersection.t,
+          coord: intersection.coord,
+        });
+      }
+      
+      segmentPoints.push({ nodeId: endNode.id, t: 1, coord: endCoord });
+      
+      // Create edges between consecutive segment points
+      for (let i = 0; i < segmentPoints.length - 1; i++) {
+        const fromPoint = segmentPoints[i];
+        const toPoint = segmentPoints[i + 1];
+        
+        // Calculate segment properties
+        const segmentLength = (toPoint.t - fromPoint.t) * totalLength;
+        const fromElev = (fromPoint.coord[2] as number) || 0;
+        const toElev = (toPoint.coord[2] as number) || 0;
+        const elevationChange = toElev - fromElev;
+        const travelTime = segmentLength / speed;
+        
+        // Extract coordinates for this segment (approximate using linear interpolation)
+        const segmentCoords = extractSegmentCoords(orderedCoords, fromPoint.t, toPoint.t);
+        
+        const edge: NavigationEdge = {
+          id: `edge-run-${run.id}-seg-${i}`,
+          fromNodeId: fromPoint.nodeId,
+          toNodeId: toPoint.nodeId,
+          type: 'run',
+          featureId: run.id,
+          featureName: run.name,
+          difficulty: run.difficulty,
+          distance: segmentLength,
+          elevationChange,
+          travelTime,
+          speed,
+          coordinates: segmentCoords as [number, number, number?][],
+        };
 
-    addEdge(edge);
+        addEdge(edge);
+      }
+    }
   }
 
   // Create walk/connection edges between nearby endpoints
@@ -484,6 +745,7 @@ export function findRoute(
  * Clean up route segments:
  * 1. Remove walk segments < 100m (too short to be meaningful)
  * 2. Merge consecutive walk segments into one
+ * 3. Merge consecutive unnamed run segments (they're all "connections")
  */
 function cleanupSegments(segments: RouteSegment[]): RouteSegment[] {
   const MIN_WALK_DISTANCE = 100; // meters
@@ -503,6 +765,23 @@ function cleanupSegments(segments: RouteSegment[]): RouteSegment[] {
       
       if (lastSegment.type === 'walk') {
         // Merge with previous walk segment
+        lastSegment.distance += segment.distance;
+        lastSegment.time += segment.time;
+        lastSegment.elevationChange += segment.elevationChange;
+        // Combine coordinates
+        lastSegment.coordinates = [...lastSegment.coordinates, ...segment.coordinates];
+        continue;
+      }
+    }
+    
+    // Merge consecutive unnamed run segments (they're connection segments)
+    // An unnamed run is one where name is null/empty
+    if (segment.type === 'run' && !segment.name && cleaned.length > 0) {
+      const lastSegment = cleaned[cleaned.length - 1];
+      
+      // Merge if previous segment is also an unnamed run with same difficulty
+      if (lastSegment.type === 'run' && !lastSegment.name && lastSegment.difficulty === segment.difficulty) {
+        // Merge with previous unnamed run segment
         lastSegment.distance += segment.distance;
         lastSegment.time += segment.time;
         lastSegment.elevationChange += segment.elevationChange;
@@ -776,6 +1055,72 @@ function getLiftSpeed(liftType: string | null): number {
   if (!liftType) return SPEEDS.lifts.unknown;
   const key = liftType.toLowerCase().replace(/[_\s]/g, '_') as keyof typeof SPEEDS.lifts;
   return SPEEDS.lifts[key] || SPEEDS.lifts.unknown;
+}
+
+/**
+ * Extract coordinates for a segment of a run between two t values (0 = start, 1 = end)
+ */
+function extractSegmentCoords(coords: number[][], tStart: number, tEnd: number): number[][] {
+  if (coords.length < 2) return coords;
+  
+  const totalLength = calculatePathDistance(coords);
+  const startDist = tStart * totalLength;
+  const endDist = tEnd * totalLength;
+  
+  const result: number[][] = [];
+  let accumulatedDist = 0;
+  
+  for (let i = 0; i < coords.length; i++) {
+    if (i > 0) {
+      const [lng1, lat1] = coords[i - 1];
+      const [lng2, lat2] = coords[i];
+      const segmentDist = haversineDistance(lat1, lng1, lat2, lng2);
+      const prevAccumulatedDist = accumulatedDist;
+      accumulatedDist += segmentDist;
+      
+      // Check if start point is within this segment
+      if (result.length === 0 && accumulatedDist >= startDist) {
+        // Interpolate start point
+        const t = segmentDist > 0 ? (startDist - prevAccumulatedDist) / segmentDist : 0;
+        const [x1, y1, z1] = coords[i - 1];
+        const [x2, y2, z2] = coords[i];
+        result.push([
+          x1 + t * (x2 - x1),
+          y1 + t * (y2 - y1),
+          ((z1 as number) || 0) + t * (((z2 as number) || 0) - ((z1 as number) || 0)),
+        ]);
+      }
+      
+      // Add points that are within the segment
+      if (accumulatedDist >= startDist && accumulatedDist <= endDist) {
+        result.push(coords[i]);
+      }
+      
+      // Check if end point is within this segment
+      if (accumulatedDist >= endDist && prevAccumulatedDist < endDist) {
+        const t = segmentDist > 0 ? (endDist - prevAccumulatedDist) / segmentDist : 0;
+        const [x1, y1, z1] = coords[i - 1];
+        const [x2, y2, z2] = coords[i];
+        result.push([
+          x1 + t * (x2 - x1),
+          y1 + t * (y2 - y1),
+          ((z1 as number) || 0) + t * (((z2 as number) || 0) - ((z1 as number) || 0)),
+        ]);
+        break;
+      }
+    } else if (tStart === 0) {
+      result.push(coords[0]);
+    }
+  }
+  
+  // Ensure we have at least 2 points
+  if (result.length < 2 && coords.length >= 2) {
+    const startIdx = Math.floor(tStart * (coords.length - 1));
+    const endIdx = Math.ceil(tEnd * (coords.length - 1));
+    return coords.slice(startIdx, endIdx + 1);
+  }
+  
+  return result;
 }
 
 /**
