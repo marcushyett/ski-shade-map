@@ -364,7 +364,7 @@ h5.ant-typography {
 .view-toggle-container {
   position: absolute;
   top: 6px;
-  right: 50px;
+  right: 60px; /* Leave room for MapLibre controls */
   z-index: 10;
 }
 
@@ -373,6 +373,17 @@ h5.ant-typography {
   top: 6px;
   left: 6px;
   z-index: 10;
+}
+
+/* Make cache/share buttons consistent size */
+.cache-button-container .ant-btn {
+  width: 29px !important;
+  height: 29px !important;
+  min-width: 29px !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 /* Desktop layout */
@@ -889,7 +900,7 @@ h5.ant-typography {
 /* Location controls - positioned below zoom controls on right */
 .location-controls-container {
   position: absolute;
-  top: 110px;
+  top: 100px; /* Below MapLibre compass/zoom */
   right: 10px;
   z-index: 10;
   pointer-events: none;
@@ -903,8 +914,13 @@ h5.ant-typography {
 }
 
 .location-controls-container .location-btn {
-  width: 29px;
-  height: 29px;
+  width: 29px !important;
+  height: 29px !important;
+  min-width: 29px !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .location-controls-container .location-btn .anticon {
@@ -2129,18 +2145,56 @@ h5.ant-typography {
   }
   
   /* Location controls container positioning adjustment */
-  .location-controls-container .location-btn {
-    width: 44px !important;
-    height: 44px !important;
-  }
-  
   /* MapLibre navigation controls - larger touch targets */
   .maplibregl-ctrl-group button {
     width: 44px !important;
     height: 44px !important;
   }
   
-  /* Ant Design buttons - larger touch targets */
+  /* Location controls - position below MapLibre controls with matching size */
+  .location-controls-container {
+    top: 160px !important; /* Below MapLibre compass + zoom in + zoom out (3 * 44px + margins) */
+    right: 10px !important;
+  }
+  
+  .location-controls-container .location-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+  }
+  
+  .location-controls-container .location-btn .anticon {
+    font-size: 18px !important;
+  }
+  
+  /* View toggle - position to not overlap with MapLibre controls */
+  .view-toggle-container {
+    top: 6px !important;
+    right: 60px !important; /* Leave room for MapLibre controls */
+  }
+  
+  .view-toggle-container .ant-segmented {
+    min-height: 44px !important;
+  }
+  
+  .view-toggle-container .ant-segmented-item {
+    min-height: 42px !important;
+    padding: 0 12px !important;
+  }
+  
+  /* Cache/share buttons - same size as other buttons */
+  .cache-button-container .ant-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    padding: 0 !important;
+  }
+  
+  .cache-button-container .ant-btn .anticon {
+    font-size: 18px !important;
+  }
+  
+  /* Ant Design buttons - general touch target size */
   .ant-btn {
     min-height: 36px !important;
     padding: 0 12px !important;
