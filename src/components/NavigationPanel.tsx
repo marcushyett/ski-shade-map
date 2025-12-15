@@ -1319,7 +1319,7 @@ function NavigationPanelInner({
         {/* Loading state */}
         {isCalculating && (
           <div className="nav-loading">
-            <LoadingSpinner size="small" />
+            <LoadingSpinner size={20} />
             <span style={{ marginLeft: 8 }}>Calculating route...</span>
           </div>
         )}
