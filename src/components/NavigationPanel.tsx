@@ -1137,7 +1137,32 @@ function NavigationPanelInner({
           isMapClickActive={mapClickMode === 'destination'}
         />
 
-        {/* Advanced options - always visible */}
+        {/* Error message */}
+        {error && (
+          <div className="nav-error">
+            {error}
+            {error.includes('No route found') && (
+              <div style={{ marginTop: 4, fontSize: 9, color: '#f59e0b' }}>
+                💡 Try adjusting route options below to allow more lift types or slope difficulties.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Loading state */}
+        {isCalculating && (
+          <div className="nav-loading">
+            <Spin size="small" />
+            <span style={{ marginLeft: 8 }}>Calculating route...</span>
+          </div>
+        )}
+
+        {/* Route summary */}
+        {route && !isCalculating && (
+          <RouteSummary route={route} />
+        )}
+
+        {/* Advanced options - moved below route results to give search dropdowns more space */}
         <div className="nav-advanced-section">
           <div 
             className="nav-advanced-header"
@@ -1201,31 +1226,6 @@ function NavigationPanelInner({
             </div>
           )}
         </div>
-
-        {/* Error message */}
-        {error && (
-          <div className="nav-error">
-            {error}
-            {error.includes('No route found') && (
-              <div style={{ marginTop: 4, fontSize: 9, color: '#f59e0b' }}>
-                💡 Try adjusting route options above to allow more lift types or slope difficulties.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Loading state */}
-        {isCalculating && (
-          <div className="nav-loading">
-            <Spin size="small" />
-            <span style={{ marginLeft: 8 }}>Calculating route...</span>
-          </div>
-        )}
-
-        {/* Route summary */}
-        {route && !isCalculating && (
-          <RouteSummary route={route} />
-        )}
       </div>
 
       {/* Action buttons - fixed at bottom, outside scroll area */}
