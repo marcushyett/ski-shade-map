@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       force_restart:
-        description: 'Force restart - delete all existing sub-regions and rebuild from scratch'
+        description: 'Force restart - delete all existing sub-regions and rebuild (preserves ski area connections)'
         type: boolean
         default: false
 
@@ -110,6 +110,6 @@ jobs:
             echo "Synced all ski areas" >> $GITHUB_STEP_SUMMARY
           fi
           if [ "${{ inputs.force_restart }}" = "true" ]; then
-            echo "🔄 Force restart: Yes (deleted all existing sub-regions)" >> $GITHUB_STEP_SUMMARY
+            echo "🔄 Force restart: Yes (deleted all sub-regions, connections preserved)" >> $GITHUB_STEP_SUMMARY
           fi
 

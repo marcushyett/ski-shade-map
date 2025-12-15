@@ -1465,9 +1465,9 @@ async function main() {
   console.log('');
 
   try {
-    // If force restart, delete all existing sub-regions and connections
+    // If force restart, delete all existing sub-regions (keeps ski area connections)
     if (forceRestart && !dryRun) {
-      console.log('\n🗑️  Force restart: Deleting all existing sub-regions and connections...');
+      console.log('\n🗑️  Force restart: Deleting all existing sub-regions...');
       
       // First, clear subRegionId from all runs and lifts
       const runsUpdated = await prisma.run.updateMany({
@@ -1486,13 +1486,9 @@ async function main() {
       const subRegionsDeleted = await prisma.subRegion.deleteMany({});
       console.log(`  Deleted ${subRegionsDeleted.count} sub-regions`);
       
-      // Delete all connections
-      const connectionsDeleted = await prisma.skiAreaConnection.deleteMany({});
-      console.log(`  Deleted ${connectionsDeleted.count} connections`);
-      
-      console.log('  ✓ Force restart complete\n');
+      console.log('  ✓ Force restart complete (ski area connections preserved)\n');
     } else if (forceRestart && dryRun) {
-      console.log('\n[DRY RUN] Would delete all sub-regions and connections\n');
+      console.log('\n[DRY RUN] Would delete all sub-regions (connections preserved)\n');
     }
 
     if (connectionsOnly) {
