@@ -83,6 +83,8 @@ interface NavigationPanelProps {
   onToggleMinimize?: () => void;
   hourlyWeather?: HourlyWeather[];
   pois?: POIData[];
+  // Optional prebuilt graph to avoid rebuilding - performance optimization
+  prebuiltGraph?: NavigationGraph | null;
 }
 
 function NavigationPanelInner({
@@ -104,6 +106,7 @@ function NavigationPanelInner({
   onToggleMinimize,
   hourlyWeather,
   pois = [],
+  prebuiltGraph,
 }: NavigationPanelProps) {
   // State
   const [origin, setOrigin] = useState<SelectedPoint | null>(null);
@@ -145,13 +148,14 @@ function NavigationPanelInner({
     return distance <= MAX_DISTANCE_FROM_SKI_AREA_KM;
   }, [userLocation, skiArea.latitude, skiArea.longitude]);
 
-  // Graph building (lazy)
+  // Graph building (lazy, or use prebuilt graph for better performance)
   const getGraph = useCallback(() => {
     if (graphSkiAreaIdRef.current !== skiArea.id) {
       graphRef.current = null;
     }
     if (!graphRef.current) {
-      graphRef.current = buildNavigationGraph(skiArea);
+      // Use prebuilt graph if available, otherwise build from scratch
+      graphRef.current = prebuiltGraph || buildNavigationGraph(skiArea);
       graphSkiAreaIdRef.current = skiArea.id;
     }
 
@@ -185,7 +189,7 @@ function NavigationPanelInner({
       edges: graphRef.current.edges,
       adjacency: filteredAdjacency,
     };
-  }, [skiArea, filters]);
+  }, [skiArea, filters, prebuiltGraph]);
 
   // Auto-start map click mode for origin
   useEffect(() => {

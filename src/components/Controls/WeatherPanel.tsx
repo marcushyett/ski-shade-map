@@ -33,6 +33,8 @@ interface WeatherPanelProps {
   altitude?: number;
   selectedTime: Date;
   onWeatherLoad?: (weather: WeatherData) => void;
+  // Pre-fetched weather data (from parallel fetch) - avoids waterfall
+  initialWeather?: WeatherData | null;
 }
 
 const UNITS_STORAGE_KEY = 'ski-shade-units';
@@ -86,10 +88,12 @@ function WeatherPanelInner({
   longitude, 
   altitude,
   selectedTime,
-  onWeatherLoad 
+  onWeatherLoad,
+  initialWeather,
 }: WeatherPanelProps) {
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Use initial weather if provided (from parallel fetch)
+  const [weather, setWeather] = useState<WeatherData | null>(initialWeather || null);
+  const [loading, setLoading] = useState(!initialWeather); // Not loading if we have initial data
   const [error, setError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [units, setUnits] = useState<UnitPreferences>({
@@ -141,9 +145,21 @@ function WeatherPanelInner({
     }
   }, [latitude, longitude, onWeatherLoad]);
 
+  // Sync with initialWeather prop when it changes
   useEffect(() => {
-    fetchWeather();
-  }, [fetchWeather]);
+    if (initialWeather) {
+      setWeather(initialWeather);
+      setLoading(false);
+      onWeatherLoad?.(initialWeather);
+    }
+  }, [initialWeather, onWeatherLoad]);
+
+  // Only fetch weather if not provided via prop
+  useEffect(() => {
+    if (!initialWeather) {
+      fetchWeather();
+    }
+  }, [fetchWeather, initialWeather]);
 
   // Find hourly weather closest to selected time
   const getHourlyForTime = useCallback((time: Date): HourlyWeather | null => {

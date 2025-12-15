@@ -33,7 +33,7 @@ import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { RunDetailOverlay } from '@/components/RunDetailPanel';
 import dynamic from 'next/dynamic';
 import { NavigationButton, WCButton, type NavigationState, type SelectedPoint } from '@/components/NavigationPanel';
-import { buildNavigationGraph, findNearestNode, findRoute, addPoiNodeToGraph } from '@/lib/navigation';
+import { buildNavigationGraph, findNearestNode, findRoute, addPoiNodeToGraph, type NavigationGraph } from '@/lib/navigation';
 import NavigationInstructionBar from '@/components/NavigationInstructionBar';
 
 // Lazy load NavigationPanel - only needed when user opens navigation
@@ -163,6 +163,7 @@ const ControlsContent = memo(function ControlsContent({
               longitude={skiAreaDetails.longitude}
               selectedTime={selectedTime}
               onWeatherLoad={onWeatherLoad}
+              initialWeather={weather}
             />
           </div>
 
@@ -612,36 +613,52 @@ export default function Home() {
       return;
     }
 
-    // Weather will start loading when WeatherPanel renders
+    // Fetch ski area details AND weather in parallel for faster initial load
+    setLoading(true);
     setWeatherLoading(true);
+    setError(null);
 
-    const fetchDetails = async () => {
-      setLoading(true);
-      setError(null);
-      
-      try {
-        const res = await fetch(`/api/ski-areas/${selectedArea.id}?includeConnected=true`);
-        if (!res.ok) throw new Error('Failed to load ski area details');
-        
-        const data = await res.json();
+    const fetchSkiArea = async () => {
+      const res = await fetch(`/api/ski-areas/${selectedArea.id}?includeConnected=true`);
+      if (!res.ok) throw new Error('Failed to load ski area details');
+      return res.json();
+    };
+
+    const fetchWeatherData = async () => {
+      const res = await fetch(`/api/weather?lat=${selectedArea.latitude}&lng=${selectedArea.longitude}`);
+      if (!res.ok) throw new Error('Failed to fetch weather');
+      return res.json();
+    };
+
+    // Run both fetches in parallel
+    Promise.all([
+      fetchSkiArea(),
+      fetchWeatherData().catch(() => null), // Weather errors shouldn't block the app
+    ])
+      .then(([skiAreaData, weatherData]) => {
         setSkiAreaDetails({
-          ...data,
-          runs: data.runs || [],
-          lifts: data.lifts || [],
+          ...skiAreaData,
+          runs: skiAreaData.runs || [],
+          lifts: skiAreaData.lifts || [],
         });
         
         // Update selectedArea name if it was empty (from URL state)
-        if (!selectedArea.name && data.name) {
-          setSelectedArea(prev => prev ? { ...prev, name: data.name } : prev);
+        if (!selectedArea.name && skiAreaData.name) {
+          setSelectedArea(prev => prev ? { ...prev, name: skiAreaData.name } : prev);
         }
-      } catch (err) {
+        
+        // Set weather if fetched successfully
+        if (weatherData) {
+          setWeather(weatherData);
+        }
+      })
+      .catch((err) => {
         setError(err instanceof Error ? err.message : 'Failed to load ski area');
-      } finally {
+      })
+      .finally(() => {
         setLoading(false);
-      }
-    };
-
-    fetchDetails();
+        setWeatherLoading(false);
+      });
   }, [selectedArea]);
 
   // Fetch POIs when ski area details (and bounds) are available
@@ -923,9 +940,16 @@ export default function Home() {
     });
   }, []);
 
-  // Helper: Find toilet with shortest route (optimized approach)
-  const findNearestToilet = useCallback((fromLat: number, fromLng: number) => {
+  // Memoize navigation graph - expensive to build, only rebuild when ski area changes
+  const navigationGraph = useMemo<NavigationGraph | null>(() => {
     if (!skiAreaDetails) return null;
+    return buildNavigationGraph(skiAreaDetails);
+  }, [skiAreaDetails]);
+
+  // Helper: Find toilet with shortest route (optimized approach)
+  // Uses memoized navigation graph for much better performance
+  const findNearestToilet = useCallback((fromLat: number, fromLng: number) => {
+    if (!skiAreaDetails || !navigationGraph) return null;
     
     const toilets = pois.filter(poi => poi.type === 'toilet');
     if (toilets.length === 0) return null;
@@ -947,9 +971,8 @@ export default function Home() {
       return closeToilets[0].toilet;
     }
     
-    // Step 2: Build navigation graph (only once)
-    const graph = buildNavigationGraph(skiAreaDetails);
-    const startNode = findNearestNode(graph, fromLat, fromLng);
+    // Step 2: Use memoized navigation graph (no rebuild needed!)
+    const startNode = findNearestNode(navigationGraph, fromLat, fromLng);
     if (!startNode) {
       // Fallback to geographically closest
       return closeToilets[0].toilet;
@@ -963,14 +986,14 @@ export default function Home() {
     for (const { toilet } of closeToilets) {
       // Add the toilet as a POI node with generous walking connections
       const toiletNodeId = addPoiNodeToGraph(
-        graph, 
+        navigationGraph, 
         toilet.id, 
         toilet.latitude, 
         toilet.longitude, 
         toilet.name || 'Toilet'
       );
       
-      const route = findRoute(graph, startNode.id, toiletNodeId);
+      const route = findRoute(navigationGraph, startNode.id, toiletNodeId);
       
       if (route && route.totalTime < shortestRouteTime) {
         shortestRouteTime = route.totalTime;
@@ -979,7 +1002,7 @@ export default function Home() {
     }
     
     return nearestToilet;
-  }, [pois, skiAreaDetails]);
+  }, [pois, skiAreaDetails, navigationGraph]);
 
   // Navigation handlers
   const handleNavigationOpen = useCallback(() => {
@@ -1350,7 +1373,14 @@ export default function Home() {
     } : null;
   }, [weather, selectedTime]);
 
-  // Calculate snow quality for all runs (uses deferred time for performance)
+  // Cache key for snow quality - only recalculate when hour/date changes, not every minute
+  // Snow quality doesn't meaningfully change minute-to-minute, only hour-to-hour
+  const snowQualityCacheKey = useMemo(() => {
+    if (!deferredTime) return '';
+    return `${deferredTime.getFullYear()}-${deferredTime.getMonth()}-${deferredTime.getDate()}-${deferredTime.getHours()}`;
+  }, [deferredTime]);
+
+  // Calculate snow quality for all runs (only recalculates when hour changes)
   const snowQuality = useMemo(() => {
     if (!skiAreaDetails || !weather?.hourly || !weather?.daily) {
       return { analyses: [], summary: null };
@@ -1373,7 +1403,8 @@ export default function Home() {
       analyses: result.analyses,
       summary: result.summary,
     };
-  }, [skiAreaDetails, weather, deferredTime]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skiAreaDetails?.id, weather, snowQualityCacheKey]);
 
   // Format snow analyses for the map component
   const snowAnalysesForMap = useMemo(() => {
@@ -1385,7 +1416,8 @@ export default function Home() {
     }));
   }, [snowQuality.analyses]);
 
-  // Calculate snow quality by altitude for favourite runs and selected run (uses deferred time)
+  // Calculate snow quality by altitude for favourite runs and selected run
+  // Only recalculates when hour changes (not every slider tick)
   const snowQualityByRun = useMemo(() => {
     if (!skiAreaDetails || !weather?.hourly || !weather?.daily) {
       return {};
@@ -1429,7 +1461,8 @@ export default function Home() {
     }
     
     return result;
-  }, [skiAreaDetails, weather, deferredTime, favourites, selectedRunDetail?.runId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skiAreaDetails?.id, weather, snowQualityCacheKey, favourites, selectedRunDetail?.runId]);
 
   // Calculate analysis and stats for the selected run overlay
   const selectedRunData = useMemo(() => {
@@ -1800,6 +1833,7 @@ export default function Home() {
                 onToggleMinimize={() => setIsNavPanelMinimized(!isNavPanelMinimized)}
                 hourlyWeather={hourlyWeather}
                 pois={pois}
+                prebuiltGraph={navigationGraph}
               />
             </div>
           )}

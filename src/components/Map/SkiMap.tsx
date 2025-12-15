@@ -5,6 +5,13 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
 import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded } from '@/lib/shade-calculator';
+import { 
+  startGeometryPrecomputation, 
+  getGeometryCache, 
+  generateShadedGeoJSON,
+  calculateSegmentShadeFromCache,
+  type GeometryCache 
+} from '@/lib/geometry-cache';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { trackEvent } from '@/lib/posthog';
 import type { SkiAreaDetails, RunData, POIData } from '@/lib/types';
@@ -134,6 +141,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const currentSkiAreaId = useRef<string | null>(null);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingUpdateRef = useRef<{ area: SkiAreaDetails; time: Date } | null>(null);
+  const rafIdRef = useRef<number | null>(null); // For batching map updates
   const currentSunAzimuth = useRef<number>(0);
   const currentSkiAreaRef = useRef<SkiAreaDetails | null>(null);
   const favouriteIdsRef = useRef<string[]>([]);
@@ -147,6 +155,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   
   const snowAnalysesRef = useRef<SnowAnalysis[]>([]);
   const onLiftClickRef = useRef(onLiftClick);
+  const geometryCacheRef = useRef<GeometryCache | null>(null);
   
   // Keep refs updated
   favouriteIdsRef.current = favouriteIds;
@@ -271,6 +280,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
+      }
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
       }
       map.current?.remove();
       map.current = null;
@@ -411,6 +423,13 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       currentSkiAreaId.current = skiArea.id;
       layersInitialized.current = false;
 
+      // Start lazy background geometry precomputation
+      // This runs in idle time and doesn't block initial rendering
+      geometryCacheRef.current = startGeometryPrecomputation(
+        skiArea.id,
+        skiArea.runs
+      );
+
       // Use initial view if provided (from URL state), otherwise fly to ski area center
       const center = initialView 
         ? [initialView.lng, initialView.lat] as [number, number]
@@ -444,7 +463,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         pendingUpdateRef.current = null;
       }
       setIsUpdating(false);
-    }, 50);
+    }, 150); // Increased from 50ms for smoother slider experience
 
     return () => {
       if (updateTimeoutRef.current) {
@@ -1817,107 +1836,134 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   }, [userHeading, isNavigating, mapLoaded]);
 
   // Update shading without recreating layers
+  // Uses requestAnimationFrame to batch all MapLibre updates into a single frame
   const updateShading = useCallback((area: SkiAreaDetails, time: Date) => {
     if (!map.current) return;
 
-    const sunPos = getSunPosition(time, area.latitude, area.longitude);
-    const isNight = sunPos.altitudeDegrees <= 0;
-    
-    // Store refs for map move updates
-    currentSunAzimuth.current = sunPos.azimuthDegrees;
-    currentSkiAreaRef.current = area;
-
-    // Update night overlay
-    if (map.current.getLayer('night-overlay')) {
-      map.current.setPaintProperty('night-overlay', 'background-opacity', isNight ? 0.4 : 0);
+    // Cancel any pending animation frame to avoid duplicate updates
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
     }
 
-    // Update hillshade - subtle terrain shading
-    if (map.current.getLayer('terrain-hillshade')) {
-      const illuminationDir = isNight ? 315 : sunPos.azimuthDegrees;
-      // Subtle exaggeration for better readability
-      const exaggeration = isNight ? 0.2 : Math.min(0.5, 0.25 + (90 - sunPos.altitudeDegrees) / 180);
+    // Batch all map updates in a single animation frame for better performance
+    rafIdRef.current = requestAnimationFrame(() => {
+      if (!map.current) return;
       
-      map.current.setPaintProperty('terrain-hillshade', 'hillshade-illumination-direction', illuminationDir);
-      map.current.setPaintProperty('terrain-hillshade', 'hillshade-exaggeration', exaggeration);
-    }
+      const sunPos = getSunPosition(time, area.latitude, area.longitude);
+      const isNight = sunPos.altitudeDegrees <= 0;
+      
+      // Store refs for map move updates
+      currentSunAzimuth.current = sunPos.azimuthDegrees;
+      currentSkiAreaRef.current = area;
 
-    // Update sun indicator
-    const sunIndicatorSource = map.current.getSource('sun-indicator') as maplibregl.GeoJSONSource | undefined;
-    if (sunIndicatorSource) {
-      sunIndicatorSource.setData(createSunIndicator(area, sunPos.azimuthDegrees, map.current));
-    }
+      // Prepare segment data first (outside of map updates)
+      const cache = getGeometryCache(area.id);
+      let segments: GeoJSON.FeatureCollection;
+      
+      if (cache && cache.processedCount > 0) {
+        // Use precomputed geometry - much faster, only calculates isShaded
+        segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+      } else {
+        // Fallback to on-demand calculation (initial load or cache not ready)
+        segments = createRunSegments(area, time, area.latitude, area.longitude);
+      }
 
-    // Update sun visibility
-    if (map.current.getLayer('sun-rays')) {
-      map.current.setPaintProperty('sun-rays', 'line-opacity', isNight ? 0 : ['get', 'opacity']);
-      map.current.setPaintProperty('sun-icon-glow', 'circle-opacity', isNight ? 0 : 0.7);
-      map.current.setPaintProperty('sun-icon', 'circle-opacity', isNight ? 0 : 1);
-    }
+      // Prepare polygon data
+      let polygonRunsGeoJSON: GeoJSON.FeatureCollection | null = null;
+      const polygonsSource = map.current.getSource('ski-runs-polygons') as maplibregl.GeoJSONSource | undefined;
+      if (polygonsSource) {
+        polygonRunsGeoJSON = {
+          type: 'FeatureCollection' as const,
+          features: area.runs
+            .filter(run => run.geometry.type === 'Polygon')
+            .map(run => {
+              const ring = run.geometry.coordinates[0] as number[][];
+              let minLat = Infinity, maxLat = -Infinity;
+              let minLng = Infinity, maxLng = -Infinity;
+              
+              for (const [lng, lat] of ring) {
+                minLat = Math.min(minLat, lat);
+                maxLat = Math.max(maxLat, lat);
+                minLng = Math.min(minLng, lng);
+                maxLng = Math.max(maxLng, lng);
+              }
+              
+              const latRange = maxLat - minLat;
+              const lngRange = maxLng - minLng;
+              const slopeAspect = latRange > lngRange ? 90 : 0;
+              const isShaded = isNight ? true : calculateSegmentShade(slopeAspect, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+              
+              return {
+                type: 'Feature' as const,
+                properties: {
+                  id: run.id,
+                  name: run.name,
+                  difficulty: run.difficulty,
+                  status: run.status,
+                  isShaded,
+                  color: getDifficultyColor(run.difficulty),
+                  sunnyColor: getDifficultyColorSunny(run.difficulty),
+                  shadedColor: getDifficultyColorShaded(run.difficulty),
+                },
+                geometry: run.geometry,
+              };
+            }),
+        };
+      }
 
-    // Update segments data
-    const segments = createRunSegments(area, time, area.latitude, area.longitude);
-    const segmentsSource = map.current.getSource('ski-segments') as maplibregl.GeoJSONSource | undefined;
-    if (segmentsSource) {
-      segmentsSource.setData(segments);
-    }
+      // Now apply all map updates together
+      // Update night overlay
+      if (map.current.getLayer('night-overlay')) {
+        map.current.setPaintProperty('night-overlay', 'background-opacity', isNight ? 0.4 : 0);
+      }
 
-    // Update polygon fills with new sun/shade data
-    const polygonsSource = map.current.getSource('ski-runs-polygons') as maplibregl.GeoJSONSource | undefined;
-    if (polygonsSource) {
-      const polygonRunsGeoJSON = {
-        type: 'FeatureCollection' as const,
-        features: area.runs
-          .filter(run => run.geometry.type === 'Polygon')
-          .map(run => {
-            const ring = run.geometry.coordinates[0] as number[][];
-            let minLat = Infinity, maxLat = -Infinity;
-            let minLng = Infinity, maxLng = -Infinity;
-            
-            for (const [lng, lat] of ring) {
-              minLat = Math.min(minLat, lat);
-              maxLat = Math.max(maxLat, lat);
-              minLng = Math.min(minLng, lng);
-              maxLng = Math.max(maxLng, lng);
-            }
-            
-            const latRange = maxLat - minLat;
-            const lngRange = maxLng - minLng;
-            const slopeAspect = latRange > lngRange ? 90 : 0;
-            const isShaded = isNight ? true : calculateSegmentShade(slopeAspect, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
-            
-            return {
-              type: 'Feature' as const,
-              properties: {
-                id: run.id,
-                name: run.name,
-                difficulty: run.difficulty,
-                status: run.status,
-                isShaded,
-                color: getDifficultyColor(run.difficulty),
-                sunnyColor: getDifficultyColorSunny(run.difficulty),
-                shadedColor: getDifficultyColorShaded(run.difficulty),
-              },
-              geometry: run.geometry,
-            };
-          }),
-      };
-      polygonsSource.setData(polygonRunsGeoJSON);
-    }
+      // Update hillshade
+      if (map.current.getLayer('terrain-hillshade')) {
+        const illuminationDir = isNight ? 315 : sunPos.azimuthDegrees;
+        const exaggeration = isNight ? 0.2 : Math.min(0.5, 0.25 + (90 - sunPos.altitudeDegrees) / 180);
+        
+        map.current.setPaintProperty('terrain-hillshade', 'hillshade-illumination-direction', illuminationDir);
+        map.current.setPaintProperty('terrain-hillshade', 'hillshade-exaggeration', exaggeration);
+      }
 
-    // Hide sunny segments and glow at night, show shaded colors for all runs
-    if (map.current.getLayer('ski-segments-sunny-glow')) {
-      map.current.setPaintProperty('ski-segments-sunny-glow', 'line-opacity', isNight ? 0 : 0.6);
-    }
-    if (map.current.getLayer('ski-segments-sunny')) {
-      map.current.setPaintProperty('ski-segments-sunny', 'line-opacity', isNight ? 0 : 1);
-    }
-    
-    // Hide sunny polygon fills at night
-    if (map.current.getLayer('ski-runs-polygon-fill-sunny')) {
-      map.current.setPaintProperty('ski-runs-polygon-fill-sunny', 'fill-opacity', isNight ? 0 : 0.12);
-    }
-    // Shaded segments always show their difficulty colors (no NIGHT_COLOR override)
+      // Update sun indicator
+      const sunIndicatorSource = map.current.getSource('sun-indicator') as maplibregl.GeoJSONSource | undefined;
+      if (sunIndicatorSource) {
+        sunIndicatorSource.setData(createSunIndicator(area, sunPos.azimuthDegrees, map.current));
+      }
+
+      // Update sun visibility
+      if (map.current.getLayer('sun-rays')) {
+        map.current.setPaintProperty('sun-rays', 'line-opacity', isNight ? 0 : ['get', 'opacity']);
+        map.current.setPaintProperty('sun-icon-glow', 'circle-opacity', isNight ? 0 : 0.7);
+        map.current.setPaintProperty('sun-icon', 'circle-opacity', isNight ? 0 : 1);
+      }
+
+      // Update segments data
+      const segmentsSource = map.current.getSource('ski-segments') as maplibregl.GeoJSONSource | undefined;
+      if (segmentsSource) {
+        segmentsSource.setData(segments);
+      }
+
+      // Update polygon fills
+      if (polygonsSource && polygonRunsGeoJSON) {
+        polygonsSource.setData(polygonRunsGeoJSON);
+      }
+
+      // Hide sunny segments and glow at night, show shaded colors for all runs
+      if (map.current.getLayer('ski-segments-sunny-glow')) {
+        map.current.setPaintProperty('ski-segments-sunny-glow', 'line-opacity', isNight ? 0 : 0.6);
+      }
+      if (map.current.getLayer('ski-segments-sunny')) {
+        map.current.setPaintProperty('ski-segments-sunny', 'line-opacity', isNight ? 0 : 1);
+      }
+      
+      // Hide sunny polygon fills at night
+      if (map.current.getLayer('ski-runs-polygon-fill-sunny')) {
+        map.current.setPaintProperty('ski-runs-polygon-fill-sunny', 'fill-opacity', isNight ? 0 : 0.12);
+      }
+      // Shaded segments always show their difficulty colors (no NIGHT_COLOR override)
+    }); // End of requestAnimationFrame callback
   }, []);
 
   // Setup click handlers
