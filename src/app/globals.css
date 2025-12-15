@@ -1267,6 +1267,7 @@ h5.ant-typography {
   flex: 1;
   min-height: 0; /* Important for flex scrolling */
   overflow-y: auto;
+  overflow-x: visible; /* Allow dropdowns to extend horizontally beyond panel */
 }
 
 /* Fixed action buttons at bottom of nav panel */
@@ -1288,6 +1289,7 @@ h5.ant-typography {
 .nav-search-container {
   position: relative;
   overflow: visible; /* Allow dropdown to extend beyond */
+  z-index: 1; /* Ensure search container has stacking context */
 }
 
 /* Label row with FROM/TO and quick action buttons */
@@ -1429,9 +1431,9 @@ h5.ant-typography {
   background: var(--background-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  max-height: 400px; /* Increased from 300px */
+  max-height: 60vh; /* Use viewport height for better space usage */
   overflow-y: auto;
-  z-index: 1200; /* Increased to ensure it's above everything */
+  z-index: 9999; /* Very high z-index to appear above everything */
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -2045,10 +2047,11 @@ h5.ant-typography {
   
   /* Position the search dropdown to not get cut off on mobile */
   .nav-search-dropdown {
-    left: 0;
-    right: 0;
-    width: 100%;
-    max-height: 300px; /* Increased from 200px */
+    left: -12px;
+    right: -12px;
+    width: calc(100% + 24px);
+    max-height: 50vh; /* Use more viewport height on mobile */
+    z-index: 9999; /* Ensure high z-index on mobile too */
   }
 }
 
