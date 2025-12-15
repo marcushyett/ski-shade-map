@@ -2005,6 +2005,7 @@ h5.ant-typography {
   flex: 1;
   cursor: pointer;
   gap: 4px;
+  padding-right: 12px; /* Space between content and X button */
 }
 
 .nav-mini-instruction {
