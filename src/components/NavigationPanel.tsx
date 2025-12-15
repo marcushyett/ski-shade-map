@@ -1080,7 +1080,7 @@ function NavigationPanelInner({
               onClick={onToggleMinimize}
               title="Expand"
             >
-              <DownOutlined style={{ fontSize: 10 }} />
+              <UpOutlined style={{ fontSize: 10 }} />
             </button>
             <button className="nav-close-btn" onClick={onClose}>
               <CloseOutlined style={{ fontSize: 12 }} />
