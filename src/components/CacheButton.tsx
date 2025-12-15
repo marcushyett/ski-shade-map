@@ -10,6 +10,12 @@ import {
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
 
+// Detect touch device to disable tooltips (they require double-tap on mobile)
+const isTouchDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+};
+
 interface CacheButtonProps {
   skiAreaId: string | null;
   skiAreaName: string | null;
@@ -110,6 +116,28 @@ function CacheButtonInner({ skiAreaId, skiAreaName, latitude, longitude }: Cache
     return date.toLocaleDateString();
   };
 
+  const button = (
+    <button
+      onClick={handleCache}
+      disabled={isLoading}
+      className={`map-control-btn${isCached ? ' is-active' : ''}`}
+      aria-label={isCached ? 'Refresh offline cache' : 'Download for offline use'}
+    >
+      {isLoading ? (
+        <LoadingOutlined spin />
+      ) : isCached ? (
+        <CheckCircleOutlined />
+      ) : (
+        <CloudDownloadOutlined />
+      )}
+    </button>
+  );
+
+  // Skip tooltip on touch devices to avoid double-tap requirement
+  if (isTouchDevice()) {
+    return button;
+  }
+
   return (
     <Tooltip 
       title={
@@ -118,31 +146,7 @@ function CacheButtonInner({ skiAreaId, skiAreaName, latitude, longitude }: Cache
           : 'Download for offline use'
       }
     >
-      <button
-        onClick={handleCache}
-        disabled={isLoading}
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 2,
-          border: `1px solid ${isCached ? '#666' : '#333'}`,
-          background: isCached ? '#2a2a2a' : '#1a1a1a',
-          color: isCached ? '#fff' : '#888',
-          cursor: isLoading ? 'wait' : 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s',
-        }}
-      >
-        {isLoading ? (
-          <LoadingOutlined style={{ fontSize: 14 }} spin />
-        ) : isCached ? (
-          <CheckCircleOutlined style={{ fontSize: 14 }} />
-        ) : (
-          <CloudDownloadOutlined style={{ fontSize: 14 }} />
-        )}
-      </button>
+      {button}
     </Tooltip>
   );
 }

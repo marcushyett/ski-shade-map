@@ -11,6 +11,10 @@
   --primary: #ffffff;
   --accent: #3b82f6;
   --radius: 2px;
+  
+  /* Map control button sizing - consistent across all map overlay buttons */
+  --map-btn-size: 29px;
+  --map-btn-icon-size: 14px;
 }
 
 @theme inline {
@@ -364,7 +368,7 @@ h5.ant-typography {
 .view-toggle-container {
   position: absolute;
   top: 6px;
-  right: 60px; /* Leave room for MapLibre controls */
+  right: 6px;
   z-index: 10;
 }
 
@@ -375,15 +379,49 @@ h5.ant-typography {
   z-index: 10;
 }
 
-/* Make cache/share buttons consistent size */
-.cache-button-container .ant-btn {
-  width: 29px !important;
-  height: 29px !important;
-  min-width: 29px !important;
-  padding: 0 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+/* ============================================================================
+   Map Control Buttons - Unified styling for all map overlay buttons
+   Use .map-control-btn class on any button that should match MapLibre controls
+   ============================================================================ */
+.map-control-btn {
+  width: var(--map-btn-size);
+  height: var(--map-btn-size);
+  min-width: var(--map-btn-size);
+  padding: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--background-secondary);
+  color: var(--foreground-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.map-control-btn:hover {
+  background: var(--background-tertiary);
+  border-color: var(--foreground-muted);
+  color: var(--primary);
+}
+
+.map-control-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.map-control-btn .anticon,
+.map-control-btn svg {
+  font-size: var(--map-btn-icon-size);
+  width: var(--map-btn-icon-size);
+  height: var(--map-btn-icon-size);
+}
+
+/* Active/cached state for buttons like CacheButton */
+.map-control-btn.is-active {
+  border-color: #666;
+  background: #2a2a2a;
+  color: var(--primary);
 }
 
 /* Desktop layout */
@@ -414,12 +452,17 @@ h5.ant-typography {
 
   .view-toggle-container {
     top: 10px;
-    right: 56px;
+    right: 10px;
   }
 
   .cache-button-container {
     top: 10px;
     left: 10px;
+  }
+  
+  /* MapLibre controls get pushed down by view toggle on desktop */
+  .maplibregl-ctrl-top-right {
+    top: 50px;
   }
 }
 
@@ -900,7 +943,7 @@ h5.ant-typography {
 /* Location controls - positioned below zoom controls on right */
 .location-controls-container {
   position: absolute;
-  top: 100px; /* Below MapLibre compass/zoom */
+  top: 148px; /* Below view toggle (40px) + MapLibre compass/zoom (3*29px + gaps) */
   right: 10px;
   z-index: 10;
   pointer-events: none;
@@ -2151,9 +2194,9 @@ h5.ant-typography {
     height: 44px !important;
   }
   
-  /* Location controls - position below MapLibre controls with matching size */
+  /* Location controls - position below view toggle + MapLibre controls */
   .location-controls-container {
-    top: 160px !important; /* Below MapLibre compass + zoom in + zoom out (3 * 44px + margins) */
+    top: 206px !important; /* View toggle (50px) + MapLibre (3 * 44px + gaps) */
     right: 10px !important;
   }
   
@@ -2167,10 +2210,24 @@ h5.ant-typography {
     font-size: 18px !important;
   }
   
-  /* View toggle - position to not overlap with MapLibre controls */
+  /* Mobile map control buttons - larger touch targets */
+  .map-control-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+  }
+  
+  .map-control-btn .anticon,
+  .map-control-btn svg {
+    font-size: 18px !important;
+    width: 18px !important;
+    height: 18px !important;
+  }
+  
+  /* View toggle - position at top right, MapLibre controls below */
   .view-toggle-container {
     top: 6px !important;
-    right: 60px !important; /* Leave room for MapLibre controls */
+    right: 6px !important;
   }
   
   .view-toggle-container .ant-segmented {
@@ -2182,16 +2239,9 @@ h5.ant-typography {
     padding: 0 12px !important;
   }
   
-  /* Cache/share buttons - same size as other buttons */
-  .cache-button-container .ant-btn {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-    padding: 0 !important;
-  }
-  
-  .cache-button-container .ant-btn .anticon {
-    font-size: 18px !important;
+  /* MapLibre controls pushed down by view toggle on mobile */
+  .maplibregl-ctrl-top-right {
+    top: 56px !important;
   }
   
   /* Ant Design buttons - general touch target size */

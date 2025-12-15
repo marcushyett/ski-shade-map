@@ -7,6 +7,12 @@ import { trackEvent } from '@/lib/posthog';
 import { dateToYYYYMMDD } from '@/hooks/useUrlState';
 import { format, isSameDay } from 'date-fns';
 
+// Detect touch device to disable tooltips (they require double-tap on mobile)
+const isTouchDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+};
+
 interface ShareButtonProps {
   skiAreaId: string | null;
   skiAreaName: string | null;
@@ -111,26 +117,24 @@ function ShareButtonInner({
 
   if (!skiAreaId) return null;
 
+  const button = (
+    <button
+      onClick={handleShare}
+      className="map-control-btn"
+      aria-label="Share this view"
+    >
+      <ShareAltOutlined />
+    </button>
+  );
+
+  // Skip tooltip on touch devices to avoid double-tap requirement
+  if (isTouchDevice()) {
+    return button;
+  }
+
   return (
     <Tooltip title="Share this view">
-      <button
-        onClick={handleShare}
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 2,
-          border: '1px solid #333',
-          background: '#1a1a1a',
-          color: '#888',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s',
-        }}
-      >
-        <ShareAltOutlined style={{ fontSize: 14 }} />
-      </button>
+      {button}
     </Tooltip>
   );
 }

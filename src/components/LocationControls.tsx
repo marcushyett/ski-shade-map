@@ -12,6 +12,20 @@ import {
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
 
+// Detect touch device to disable tooltips (they require double-tap on mobile)
+const isTouchDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+};
+
+// Wrapper that only shows tooltip on non-touch devices
+const MobileAwareTooltip = ({ title, children, ...props }: React.ComponentProps<typeof Tooltip>) => {
+  if (isTouchDevice()) {
+    return <>{children}</>;
+  }
+  return <Tooltip title={title} {...props}>{children}</Tooltip>;
+};
+
 export interface MountainHome {
   latitude: number;
   longitude: number;
@@ -287,7 +301,7 @@ function LocationControlsInner({
     <>
       <div className="location-controls">
         {/* Current Location Button */}
-        <Tooltip 
+        <MobileAwareTooltip 
           title={
             isTrackingLocation 
               ? 'Go to my location • Long press to share' 
@@ -303,25 +317,27 @@ function LocationControlsInner({
               handleShareLocation();
             }}
             disabled={isGettingLocation}
+            aria-label={isTrackingLocation ? 'Go to my location' : 'Show my location'}
           >
             <AimOutlined style={{ fontSize: 16 }} />
           </button>
-        </Tooltip>
+        </MobileAwareTooltip>
 
         {/* Share Location Button (visible when tracking) */}
         {isTrackingLocation && (
-          <Tooltip title="Share my location" placement="left">
+          <MobileAwareTooltip title="Share my location" placement="left">
             <button
               className="location-btn"
               onClick={handleShareLocation}
+              aria-label="Share my location"
             >
               <ShareAltOutlined style={{ fontSize: 14 }} />
             </button>
-          </Tooltip>
+          </MobileAwareTooltip>
         )}
 
         {/* Mountain Home Button */}
-        <Tooltip 
+        <MobileAwareTooltip 
           title={
             isEditingHome 
               ? 'Cancel editing' 
@@ -348,6 +364,7 @@ function LocationControlsInner({
                 handleClearHome();
               }
             }}
+            aria-label={isEditingHome ? 'Cancel editing' : mountainHome ? `Go to ${mountainHome.name}` : 'Set Mountain Home'}
           >
             {isEditingHome ? (
               <CloseOutlined style={{ fontSize: 14 }} />
@@ -355,18 +372,19 @@ function LocationControlsInner({
               <HomeOutlined style={{ fontSize: 16 }} />
             )}
           </button>
-        </Tooltip>
+        </MobileAwareTooltip>
 
         {/* Edit/Move Mountain Home Button (visible when home exists) */}
         {mountainHome && !isEditingHome && (
-          <Tooltip title="Move Mountain Home" placement="left">
+          <MobileAwareTooltip title="Move Mountain Home" placement="left">
             <button
               className="location-btn"
               onClick={handleEnterEditMode}
+              aria-label="Move Mountain Home"
             >
               <EditOutlined style={{ fontSize: 14 }} />
             </button>
-          </Tooltip>
+          </MobileAwareTooltip>
         )}
       </div>
 

@@ -20,6 +20,20 @@ import {
   InfoCircleOutlined,
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
+
+// Detect touch device to disable tooltips (they require double-tap on mobile)
+const isTouchDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+};
+
+// Wrapper that only shows tooltip on non-touch devices
+const MobileAwareTooltip = ({ title, children, ...props }: React.ComponentProps<typeof Tooltip>) => {
+  if (isTouchDevice()) {
+    return <>{children}</>;
+  }
+  return <Tooltip title={title} {...props}>{children}</Tooltip>;
+};
 import type { SkiAreaDetails, RunData, LiftData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import {
@@ -287,7 +301,7 @@ function PointSearchInput({
         <div className="flex items-center gap-1">
           {/* Current Location quick-select button */}
           {showCurrentLocation && userLocation && isUserLocationValid && (
-            <Tooltip title="Use current location" placement="top">
+            <MobileAwareTooltip title="Use current location" placement="top">
               <button 
                 className="location-btn nav-location-btn"
                 onClick={() => {
@@ -304,11 +318,11 @@ function PointSearchInput({
               >
                 <AimOutlined style={{ fontSize: 11, color: '#3b82f6' }} />
               </button>
-            </Tooltip>
+            </MobileAwareTooltip>
           )}
           {/* Mountain Home quick-select button */}
           {mountainHome && (
-            <Tooltip title={`Go to ${mountainHome.name}`} placement="top">
+            <MobileAwareTooltip title={`Go to ${mountainHome.name}`} placement="top">
               <button 
                 className="location-btn nav-home-btn"
                 onClick={() => {
@@ -325,11 +339,11 @@ function PointSearchInput({
               >
                 <HomeOutlined style={{ fontSize: 11, color: '#faad14' }} />
               </button>
-            </Tooltip>
+            </MobileAwareTooltip>
           )}
           {/* Pick on map button */}
           {onRequestMapClick && (
-            <Tooltip title={isMapClickActive ? 'Click anywhere on the map' : 'Pick location on map'} placement="top">
+            <MobileAwareTooltip title={isMapClickActive ? 'Click anywhere on the map' : 'Pick location on map'} placement="top">
               <button 
                 className={`location-btn nav-map-pick-btn ${isMapClickActive ? 'active' : ''}`}
                 onClick={onRequestMapClick}
@@ -337,7 +351,7 @@ function PointSearchInput({
               >
                 <EnvironmentOutlined style={{ fontSize: 11 }} />
               </button>
-            </Tooltip>
+            </MobileAwareTooltip>
           )}
         </div>
       </div>
@@ -1025,11 +1039,11 @@ function NavigationPanelInner({
 
         {/* Swap button */}
         <div className="nav-swap-container">
-          <Tooltip title="Swap origin and destination">
+          <MobileAwareTooltip title="Swap origin and destination">
             <button className="nav-swap-btn" onClick={handleSwap}>
               <SwapOutlined style={{ transform: 'rotate(90deg)', fontSize: 12 }} />
             </button>
-          </Tooltip>
+          </MobileAwareTooltip>
         </div>
 
         {/* Destination search */}
@@ -1193,14 +1207,14 @@ export const NavigationButton = memo(function NavigationButton({
   routeSummary,
 }: NavigationButtonProps) {
   return (
-    <Tooltip title={hasRoute ? routeSummary : 'Plan a route'} placement="left">
+    <MobileAwareTooltip title={hasRoute ? routeSummary : 'Plan a route'} placement="left">
       <button 
         className={`nav-trigger-btn ${hasRoute ? 'has-route' : ''}`}
         onClick={onClick}
       >
         <CompassOutlined style={{ fontSize: 16 }} />
       </button>
-    </Tooltip>
+    </MobileAwareTooltip>
   );
 });
 
