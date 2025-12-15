@@ -2075,6 +2075,80 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     map.current.on('mouseleave', 'ski-lifts-touch', () => {
       if (map.current) map.current.getCanvas().style.cursor = '';
     });
+
+    // POI click handler - show popup with basic information
+    const handlePoiClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
+      if (!e.features?.length || !map.current) return;
+      if (isEditingHomeRef.current) return;
+      
+      const feature = e.features[0];
+      const props = feature.properties;
+      const poiType = props.type as string;
+      const poiName = props.name as string;
+      
+      // Get label and color based on POI type
+      const getPoiInfo = (type: string) => {
+        switch (type) {
+          case 'toilet':
+            return { label: 'Restroom', color: '#3b82f6' };
+          case 'restaurant':
+            return { label: 'Restaurant', color: '#f97316' };
+          case 'viewpoint':
+            return { label: 'Viewpoint', color: '#22c55e' };
+          default:
+            return { label: 'Point of Interest', color: '#888888' };
+        }
+      };
+      
+      const poiInfo = getPoiInfo(poiType);
+      
+      // Track POI click
+      trackEvent('poi_clicked', {
+        poi_id: props.id,
+        poi_type: poiType,
+        poi_name: poiName || undefined,
+        ski_area_id: currentSkiAreaId.current || undefined,
+        latitude: e.lngLat.lat,
+        longitude: e.lngLat.lng,
+      });
+      
+      // Create popup content
+      const popupContent = `
+        <div style="padding: 8px; min-width: 100px;">
+          <strong style="font-size: 13px; color: ${poiInfo.color};">${poiInfo.label}</strong>
+          ${poiName ? `<div style="font-size: 12px; color: #e0e0e0; margin-top: 4px;">${poiName}</div>` : ''}
+        </div>
+      `;
+      
+      new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: true,
+        className: 'poi-popup',
+      })
+        .setLngLat(e.lngLat)
+        .setHTML(popupContent)
+        .addTo(map.current);
+    };
+
+    map.current.on('click', 'poi-circles', handlePoiClick);
+    map.current.on('click', 'poi-icons', handlePoiClick);
+
+    // POI hover cursor
+    map.current.on('mouseenter', 'poi-circles', () => {
+      if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+    });
+
+    map.current.on('mouseleave', 'poi-circles', () => {
+      if (map.current) map.current.getCanvas().style.cursor = '';
+    });
+
+    map.current.on('mouseenter', 'poi-icons', () => {
+      if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+    });
+
+    map.current.on('mouseleave', 'poi-icons', () => {
+      if (map.current) map.current.getCanvas().style.cursor = '';
+    });
   }, []);
 
   // Update cursor when nav click mode is active

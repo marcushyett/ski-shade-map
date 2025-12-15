@@ -1164,6 +1164,130 @@ export function findNearestNode(
   return nearestNode;
 }
 
+// Maximum walking distance to a POI (toilet, restaurant, etc.)
+const MAX_POI_WALK_DISTANCE = 300; // meters - more generous for POIs
+const MAX_POI_WALK_ELEVATION = 80; // meters
+
+/**
+ * Add a temporary POI node (toilet, restaurant, etc.) to the graph with walking connections.
+ * This allows routing TO the POI with generous walking tolerances.
+ * Returns the node ID of the created POI node.
+ */
+export function addPoiNodeToGraph(
+  graph: NavigationGraph,
+  poiId: string,
+  lat: number,
+  lng: number,
+  name: string
+): string {
+  const nodeId = `poi-${poiId}`;
+  
+  // Check if already added
+  if (graph.nodes.has(nodeId)) {
+    return nodeId;
+  }
+  
+  // Estimate elevation from nearby nodes
+  let estimatedElevation = 0;
+  let nearestDist = Infinity;
+  for (const node of graph.nodes.values()) {
+    const dist = haversineDistance(lat, lng, node.lat, node.lng);
+    if (dist < nearestDist && node.elevation > 0) {
+      nearestDist = dist;
+      estimatedElevation = node.elevation;
+    }
+  }
+  
+  // Create the POI node
+  const poiNode: NavigationNode = {
+    id: nodeId,
+    lng,
+    lat,
+    elevation: estimatedElevation,
+    type: 'connection',
+    featureId: poiId,
+    featureName: name,
+  };
+  graph.nodes.set(nodeId, poiNode);
+  graph.adjacency.set(nodeId, []);
+  
+  // Create walking connections to all nearby nodes (generous distance)
+  for (const node of graph.nodes.values()) {
+    if (node.id === nodeId) continue;
+    
+    const horizontalDist = haversineDistance(lat, lng, node.lat, node.lng);
+    if (horizontalDist > MAX_POI_WALK_DISTANCE) continue;
+    
+    const elevDiff = node.elevation - estimatedElevation;
+    const absElevDiff = Math.abs(elevDiff);
+    if (absElevDiff > MAX_POI_WALK_ELEVATION) continue;
+    
+    const dist3D = Math.sqrt(horizontalDist * horizontalDist + absElevDiff * absElevDiff);
+    
+    // Determine walk speed
+    let speedToPoi: number;
+    let speedFromPoi: number;
+    
+    if (absElevDiff < 5) {
+      speedToPoi = SPEEDS.walk.flat;
+      speedFromPoi = SPEEDS.walk.flat;
+    } else if (elevDiff > 0) {
+      // Node is higher than POI, walking to POI is downhill
+      speedToPoi = SPEEDS.walk.downhill_gentle;
+      speedFromPoi = SPEEDS.walk.uphill;
+    } else {
+      speedToPoi = SPEEDS.walk.uphill;
+      speedFromPoi = SPEEDS.walk.downhill_gentle;
+    }
+    
+    // Small time penalty for POI walks (less than normal walk penalty)
+    const poiWalkPenalty = 1.2;
+    
+    // Create bidirectional edges
+    const edgeToPoi: NavigationEdge = {
+      id: `walk-${node.id}-${nodeId}`,
+      fromNodeId: node.id,
+      toNodeId: nodeId,
+      type: 'walk',
+      featureId: 'poi-connection',
+      featureName: `Walk to ${name}`,
+      distance: dist3D,
+      elevationChange: -elevDiff,
+      travelTime: (dist3D / speedToPoi) * poiWalkPenalty,
+      speed: speedToPoi,
+      coordinates: [[node.lng, node.lat, node.elevation], [lng, lat, estimatedElevation]],
+    };
+    
+    const edgeFromPoi: NavigationEdge = {
+      id: `walk-${nodeId}-${node.id}`,
+      fromNodeId: nodeId,
+      toNodeId: node.id,
+      type: 'walk',
+      featureId: 'poi-connection',
+      featureName: `Walk from ${name}`,
+      distance: dist3D,
+      elevationChange: elevDiff,
+      travelTime: (dist3D / speedFromPoi) * poiWalkPenalty,
+      speed: speedFromPoi,
+      coordinates: [[lng, lat, estimatedElevation], [node.lng, node.lat, node.elevation]],
+    };
+    
+    graph.edges.set(edgeToPoi.id, edgeToPoi);
+    graph.edges.set(edgeFromPoi.id, edgeFromPoi);
+    
+    // Update adjacency
+    const nodeAdj = graph.adjacency.get(node.id) || [];
+    nodeAdj.push(edgeToPoi.id);
+    graph.adjacency.set(node.id, nodeAdj);
+    
+    const poiAdj = graph.adjacency.get(nodeId) || [];
+    poiAdj.push(edgeFromPoi.id);
+    graph.adjacency.set(nodeId, poiAdj);
+  }
+  
+  return nodeId;
+}
+
 /**
  * Get possible destinations (all runs and lifts with their entry nodes)
  */

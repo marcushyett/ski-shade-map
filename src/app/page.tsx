@@ -33,7 +33,7 @@ import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { RunDetailOverlay } from '@/components/RunDetailPanel';
 import dynamic from 'next/dynamic';
 import { NavigationButton, WCButton, type NavigationState, type SelectedPoint } from '@/components/NavigationPanel';
-import { buildNavigationGraph, findNearestNode, findRoute } from '@/lib/navigation';
+import { buildNavigationGraph, findNearestNode, findRoute, addPoiNodeToGraph } from '@/lib/navigation';
 import NavigationInstructionBar from '@/components/NavigationInstructionBar';
 
 // Lazy load NavigationPanel - only needed when user opens navigation
@@ -956,17 +956,24 @@ export default function Home() {
     }
     
     // Step 3: Calculate actual routes to only the 10 closest toilets
+    // Use addPoiNodeToGraph to create proper walking connections to each toilet
     let nearestToilet = closeToilets[0].toilet;
-    let shortestRouteDistance = Infinity;
+    let shortestRouteTime = Infinity;
     
     for (const { toilet } of closeToilets) {
-      const toiletNode = findNearestNode(graph, toilet.latitude, toilet.longitude);
-      if (!toiletNode) continue;
+      // Add the toilet as a POI node with generous walking connections
+      const toiletNodeId = addPoiNodeToGraph(
+        graph, 
+        toilet.id, 
+        toilet.latitude, 
+        toilet.longitude, 
+        toilet.name || 'Toilet'
+      );
       
-      const route = findRoute(graph, startNode.id, toiletNode.id);
+      const route = findRoute(graph, startNode.id, toiletNodeId);
       
-      if (route && route.totalDistance < shortestRouteDistance) {
-        shortestRouteDistance = route.totalDistance;
+      if (route && route.totalTime < shortestRouteTime) {
+        shortestRouteTime = route.totalTime;
         nearestToilet = toilet;
       }
     }

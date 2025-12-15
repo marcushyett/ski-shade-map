@@ -295,6 +295,13 @@ h5.ant-typography {
   font-size: 12px;
 }
 
+/* POI popup styling */
+.poi-popup .maplibregl-popup-content {
+  background-color: rgba(30, 30, 35, 0.95) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
 .maplibregl-ctrl-scale {
   background-color: var(--background-secondary) !important;
   border: 1px solid var(--border) !important;

@@ -15,6 +15,7 @@ import {
   optimizeRoute,
   formatDuration,
   formatDistance,
+  addPoiNodeToGraph,
   type NavigationGraph,
   type NavigationRoute,
 } from '@/lib/navigation';
@@ -265,43 +266,60 @@ function NavigationPanelInner({
           toiletsWithDistance.sort((a, b) => a.geoDistance - b.geoDistance);
           const closeToilets = toiletsWithDistance.slice(0, Math.min(10, toilets.length));
           
-          // Find start node
+          // Find start node for the origin
           const startNode = findNearestNode(graph, origin.lat, origin.lng);
           if (!startNode) {
-            // Fallback to geographically closest
-            const nearest = closeToilets[0].toilet;
-            resolvedDestination = {
-              type: 'mapPoint',
-              id: nearest.id,
-              name: nearest.name || 'Toilet',
-              lat: nearest.latitude,
-              lng: nearest.longitude,
-            };
-          } else {
-            // Calculate routes to the 10 closest toilets and pick the shortest
-            let nearestToilet = closeToilets[0].toilet;
-            let shortestRouteDistance = Infinity;
-            
-            for (const { toilet } of closeToilets) {
-              const toiletNode = findNearestNode(graph, toilet.latitude, toilet.longitude);
-              if (!toiletNode) continue;
-              
-              const route = findRoute(graph, startNode.id, toiletNode.id);
-              
-              if (route && route.totalDistance < shortestRouteDistance) {
-                shortestRouteDistance = route.totalDistance;
-                nearestToilet = toilet;
-              }
-            }
-            
-            resolvedDestination = {
-              type: 'mapPoint',
-              id: nearestToilet.id,
-              name: nearestToilet.name || 'Toilet',
-              lat: nearestToilet.latitude,
-              lng: nearestToilet.longitude,
-            };
+            console.warn('[Navigation] No start node found near origin:', origin.lat, origin.lng);
+            console.warn('[Navigation] Graph has', graph.nodes.size, 'nodes');
+            setError('Could not find your location in the navigation network. Try moving closer to a run or lift.');
+            setIsCalculating(false);
+            return;
           }
+          
+          // Calculate routes to the 10 closest toilets and pick the shortest
+          // Use addPoiNodeToGraph to create proper walking connections to each toilet
+          let nearestToilet = closeToilets[0].toilet;
+          let shortestRouteTime = Infinity;
+          let foundAnyRoute = false;
+          let bestToiletNodeId: string | null = null;
+          
+          for (const { toilet } of closeToilets) {
+            // Add the toilet as a POI node with generous walking connections
+            const toiletNodeId = addPoiNodeToGraph(
+              graph, 
+              toilet.id, 
+              toilet.latitude, 
+              toilet.longitude, 
+              toilet.name || 'Toilet'
+            );
+            
+            const route = findRoute(graph, startNode.id, toiletNodeId);
+            
+            if (route && route.totalTime < shortestRouteTime) {
+              shortestRouteTime = route.totalTime;
+              nearestToilet = toilet;
+              bestToiletNodeId = toiletNodeId;
+              foundAnyRoute = true;
+            }
+          }
+          
+          // If no route was found to any toilet, show error
+          if (!foundAnyRoute || !bestToiletNodeId) {
+            console.warn('[Navigation] No route found to any of the', closeToilets.length, 'closest toilets');
+            setError('Could not find a route to any nearby toilet. Try moving closer to a run or lift.');
+            setIsCalculating(false);
+            return;
+          }
+          
+          // Use a special nodeId that references the POI node we created
+          resolvedDestination = {
+            type: 'mapPoint',
+            id: nearestToilet.id,
+            name: nearestToilet.name || 'Toilet',
+            lat: nearestToilet.latitude,
+            lng: nearestToilet.longitude,
+            nodeId: bestToiletNodeId, // Store the POI node ID for routing
+          };
           setDestination(resolvedDestination);
         }
 
@@ -309,6 +327,11 @@ function NavigationPanelInner({
           // closestToilet should have been resolved by now
           if (point.type === 'closestToilet') {
             return null;
+          }
+          
+          // If nodeId is already set (e.g., from POI resolution), use it directly
+          if (point.nodeId) {
+            return point.nodeId;
           }
           
           if (point.type === 'location' || point.type === 'mapPoint' || point.type === 'home') {
@@ -324,7 +347,7 @@ function NavigationPanelInner({
             const useBottom = point.position === 'bottom' || !point.position;
             return useBottom ? `lift-${point.id}-start` : `lift-${point.id}-end`;
           }
-          return point.nodeId || null;
+          return null;
         };
 
         const fromNodeId = getNodeId(origin);
@@ -381,7 +404,20 @@ function NavigationPanelInner({
             onRouteChange(null);
           }
         } else {
-          setError('Could not find start or end point in navigation network.');
+          // Provide more specific error message
+          const originMissing = !fromNodeId;
+          const destMissing = !toNodeId;
+          console.warn('[Navigation] Routing failed - fromNodeId:', fromNodeId, 'toNodeId:', toNodeId);
+          console.warn('[Navigation] Origin:', origin);
+          console.warn('[Navigation] Destination:', resolvedDestination);
+          
+          if (originMissing && destMissing) {
+            setError('Both start and end points are outside the ski area network. Try selecting a run or lift.');
+          } else if (originMissing) {
+            setError('Start point is outside the ski area network. Try moving closer to a run or lift.');
+          } else {
+            setError('Destination is outside the ski area network. Try a different destination.');
+          }
           setRoute(null);
           setSunAnalysis(null);
           onRouteChange(null);
