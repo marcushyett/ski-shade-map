@@ -1251,13 +1251,13 @@ h5.ant-typography {
   flex-direction: column;
   gap: 8px;
   /* Make the whole content scrollable with header always visible */
-  max-height: calc(100vh - 180px); /* Fill to top of map, leave room for header/footer */
+  max-height: calc(100vh - 150px); /* Increased from 180px - Fill more of the screen */
   overflow-y: auto;
 }
 
 @media (max-width: 767px) {
   .nav-panel-content {
-    max-height: calc(100vh - 200px); /* Slightly less on mobile due to URL bar */
+    max-height: calc(100vh - 170px); /* Increased from 200px */
   }
 }
 
@@ -1278,6 +1278,7 @@ h5.ant-typography {
 /* Navigation search inputs */
 .nav-search-container {
   position: relative;
+  overflow: visible; /* Allow dropdown to extend beyond */
 }
 
 /* Label row with FROM/TO and quick action buttons */
@@ -1419,9 +1420,9 @@ h5.ant-typography {
   background: var(--background-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  max-height: 300px;
+  max-height: 400px; /* Increased from 300px */
   overflow-y: auto;
-  z-index: 1100;
+  z-index: 1200; /* Increased to ensure it's above everything */
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -2029,7 +2030,7 @@ h5.ant-typography {
     left: 0;
     right: 0;
     width: 100%;
-    max-height: 200px;
+    max-height: 300px; /* Increased from 200px */
   }
 }
 
