@@ -301,31 +301,22 @@ function NavigationInstructionBarInner({
         <div className="nav-footer-buttons">
           {onPreviewRoute && (
             <button 
-              className="nav-action-btn"
+              className="nav-footer-action-btn"
               onClick={onPreviewRoute}
               title="Preview full route"
             >
-              <FullscreenOutlined style={{ fontSize: 10, marginRight: 3 }} />
+              <FullscreenOutlined style={{ fontSize: 10, marginRight: 4 }} />
               Overview
             </button>
           )}
           {onEditRoute && (
             <button 
-              className="nav-action-btn"
+              className="nav-footer-action-btn"
               onClick={onEditRoute}
               title="Edit route"
             >
-              <EditOutlined style={{ fontSize: 10, marginRight: 3 }} />
+              <EditOutlined style={{ fontSize: 10, marginRight: 4 }} />
               Edit
-            </button>
-          )}
-          {onToggleWeather && (
-            <button 
-              className="nav-toggle-weather-btn"
-              onClick={onToggleWeather}
-              title={isWeatherCollapsed ? 'Show weather' : 'Hide weather'}
-            >
-              {isWeatherCollapsed ? 'Show' : 'Hide'} weather
             </button>
           )}
           <button className="nav-end-btn" onClick={onEndNavigation}>

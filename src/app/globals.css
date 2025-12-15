@@ -2395,7 +2395,28 @@ h5.ant-typography {
 .nav-footer-buttons {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+.nav-footer-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.nav-footer-action-btn:hover {
+  background: var(--background-tertiary);
+  border-color: var(--foreground-muted);
+  color: var(--foreground);
 }
 
 .nav-toggle-weather-btn {

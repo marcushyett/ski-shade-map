@@ -43,6 +43,7 @@ import {
   findRouteWithDiagnostics,
   findNearestNode,
   findRouteBetweenFeatures,
+  optimizeRoute,
   formatDuration,
   formatDistance,
   type NavigationGraph,
@@ -155,7 +156,6 @@ interface PointSearchInputProps {
   value: SelectedPoint | null;
   onChange: (point: SelectedPoint | null) => void;
   skiArea: SkiAreaDetails;
-  graph: NavigationGraph;
   showCurrentLocation?: boolean;
   userLocation?: UserLocation | null;
   isUserLocationValid?: boolean;
@@ -173,7 +173,6 @@ function PointSearchInput({
   value,
   onChange,
   skiArea,
-  graph,
   showCurrentLocation = false,
   userLocation,
   isUserLocationValid = false,
@@ -282,32 +281,28 @@ function PointSearchInput({
     
     filteredRuns.forEach((run) => {
       const nodeId = `run-${run.id}-start`;
-      if (graph.nodes.has(nodeId)) {
-        results.push({
-          type: 'run',
-          id: run.id,
-          name: run.name || 'Unnamed Run',
-          nodeId,
-          difficulty: run.difficulty,
-        });
-      }
+      results.push({
+        type: 'run',
+        id: run.id,
+        name: run.name || 'Unnamed Run',
+        nodeId,
+        difficulty: run.difficulty,
+      });
     });
     
     filteredLifts.forEach((lift) => {
       const nodeId = `lift-${lift.id}-start`;
-      if (graph.nodes.has(nodeId)) {
-        results.push({
-          type: 'lift',
-          id: lift.id,
-          name: lift.name || 'Unnamed Lift',
-          nodeId,
-          liftType: lift.liftType,
-        });
-      }
+      results.push({
+        type: 'lift',
+        id: lift.id,
+        name: lift.name || 'Unnamed Lift',
+        nodeId,
+        liftType: lift.liftType,
+      });
     });
     
     return results;
-  }, [filteredRuns, filteredLifts, showCurrentLocation, userLocation, isUserLocationValid, searchText, graph]);
+  }, [filteredRuns, filteredLifts, showCurrentLocation, userLocation, isUserLocationValid, searchText]);
 
   const handleSelect = useCallback((point: SelectedPoint) => {
     onChange(point);
@@ -572,7 +567,6 @@ function PointSearchInput({
                   {filteredRuns.map((run, idx) => {
                     const resultIndex = showCurrentLocation && userLocation ? idx + 1 : idx;
                     const nodeId = `run-${run.id}-start`;
-                    if (!graph.nodes.has(nodeId)) return null;
                     
                     return (
                       <div
@@ -615,7 +609,6 @@ function PointSearchInput({
                   {filteredLifts.map((lift, idx) => {
                     const resultIndex = (showCurrentLocation && userLocation ? 1 : 0) + filteredRuns.length + idx;
                     const nodeId = `lift-${lift.id}-start`;
-                    if (!graph.nodes.has(nodeId)) return null;
                     
                     return (
                       <div
@@ -902,6 +895,61 @@ function NavigationPanelInner({
   const [hasAutoStartedMapClick, setHasAutoStartedMapClick] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [filters, setFilters] = useState<RouteFilters>(DEFAULT_FILTERS);
+  
+  // Cache the graph - only build when needed for route calculation
+  const graphRef = useRef<NavigationGraph | null>(null);
+  const graphSkiAreaIdRef = useRef<string | null>(null);
+  
+  // Function to get or build the graph (lazy initialization)
+  const getGraph = useCallback(() => {
+    // Rebuild if ski area changed
+    if (graphSkiAreaIdRef.current !== skiArea.id) {
+      graphRef.current = null;
+    }
+    
+    if (!graphRef.current) {
+      graphRef.current = buildNavigationGraph(skiArea);
+      graphSkiAreaIdRef.current = skiArea.id;
+    }
+    
+    // Apply filters if needed
+    const allDifficultiesEnabled = Object.values(filters.difficulties).every(v => v);
+    const allLiftTypesEnabled = Object.values(filters.liftTypes).every(v => v);
+    
+    if (allDifficultiesEnabled && allLiftTypesEnabled) {
+      return graphRef.current;
+    }
+    
+    // Create filtered view (this is fast since we just filter edge references)
+    const filteredAdjacency = new Map<string, string[]>();
+    
+    for (const [nodeId, edgeIds] of graphRef.current.adjacency) {
+      const allowedEdgeIds = edgeIds.filter(edgeId => {
+        const edge = graphRef.current!.edges.get(edgeId);
+        if (!edge) return false;
+        
+        if (edge.type === 'run' && edge.difficulty) {
+          const diffKey = edge.difficulty.toLowerCase() as keyof typeof filters.difficulties;
+          if (filters.difficulties[diffKey] === false) return false;
+        }
+        
+        if (edge.type === 'lift' && edge.liftType) {
+          const liftKey = edge.liftType.toLowerCase().replace(/[_\s]/g, '_') as keyof typeof filters.liftTypes;
+          if (filters.liftTypes[liftKey] === false) return false;
+        }
+        
+        return true;
+      });
+      
+      filteredAdjacency.set(nodeId, allowedEdgeIds);
+    }
+    
+    return {
+      nodes: graphRef.current.nodes,
+      edges: graphRef.current.edges,
+      adjacency: filteredAdjacency,
+    };
+  }, [skiArea, filters]);
 
   // Auto-start map click mode for origin when panel opens (if no origin set)
   useEffect(() => {
@@ -914,57 +962,6 @@ function NavigationPanelInner({
       return () => clearTimeout(timer);
     }
   }, [hasAutoStartedMapClick, origin, externalOrigin, onRequestMapClick]);
-
-  // Build navigation graph with filters applied
-  const graph = useMemo(() => {
-    const fullGraph = buildNavigationGraph(skiArea);
-    
-    // Check if any filters are disabled
-    const allDifficultiesEnabled = Object.values(filters.difficulties).every(v => v);
-    const allLiftTypesEnabled = Object.values(filters.liftTypes).every(v => v);
-    
-    if (allDifficultiesEnabled && allLiftTypesEnabled) {
-      return fullGraph; // No filtering needed
-    }
-    
-    // Create a filtered copy of the graph
-    const filteredEdges = new Map(fullGraph.edges);
-    const filteredAdjacency = new Map<string, string[]>();
-    
-    // Copy adjacency and filter edges
-    for (const [nodeId, edgeIds] of fullGraph.adjacency) {
-      const allowedEdgeIds = edgeIds.filter(edgeId => {
-        const edge = fullGraph.edges.get(edgeId);
-        if (!edge) return false;
-        
-        // Filter runs by difficulty
-        if (edge.type === 'run' && edge.difficulty) {
-          const diffKey = edge.difficulty.toLowerCase() as keyof typeof filters.difficulties;
-          if (filters.difficulties[diffKey] === false) {
-            return false;
-          }
-        }
-        
-        // Filter lifts by type
-        if (edge.type === 'lift' && edge.liftType) {
-          const liftKey = edge.liftType.toLowerCase().replace(/[_\s]/g, '_') as keyof typeof filters.liftTypes;
-          if (filters.liftTypes[liftKey] === false) {
-            return false;
-          }
-        }
-        
-        return true;
-      });
-      
-      filteredAdjacency.set(nodeId, allowedEdgeIds);
-    }
-    
-    return {
-      nodes: fullGraph.nodes,
-      edges: filteredEdges,
-      adjacency: filteredAdjacency,
-    };
-  }, [skiArea, filters]);
 
   // Check if user location is close enough to ski area
   const isUserLocationValid = useMemo(() => {
@@ -1028,9 +1025,12 @@ function NavigationPanelInner({
     setError(null);
     setRouteDiagnostics(null);
 
-    // Use setTimeout to allow UI to update
+    // Use setTimeout to allow UI to update and show loading state
     setTimeout(() => {
       try {
+        // Build graph lazily on first route calculation
+        const graph = getGraph();
+        
         // Helper to get node ID based on point type and position
         const getNodeId = (point: SelectedPoint, isOrigin: boolean): string | null => {
           if (point.type === 'location' || point.type === 'mapPoint' || point.type === 'home') {
@@ -1062,17 +1062,20 @@ function NavigationPanelInner({
           const result = findRouteWithDiagnostics(graph, fromNodeId, toNodeId, skiArea);
           
           if (result.route) {
-            setRoute(result.route);
+            // Post-optimization: find midpoint shortcuts to make route more efficient
+            const optimizedRoute = optimizeRoute(result.route, skiArea);
+            
+            setRoute(optimizedRoute);
             setRouteDiagnostics(null);
-            onRouteChange(result.route);
+            onRouteChange(optimizedRoute);
             trackEvent('navigation_route_calculated', {
               origin_type: origin.type,
               origin_name: origin.name,
               destination_type: destination.type,
               destination_name: destination.name,
-              total_time: result.route.totalTime,
-              total_distance: result.route.totalDistance,
-              segment_count: result.route.segments.length,
+              total_time: optimizedRoute.totalTime,
+              total_distance: optimizedRoute.totalDistance,
+              segment_count: optimizedRoute.segments.length,
             });
           } else {
             // Set diagnostics for detailed error display
@@ -1095,7 +1098,7 @@ function NavigationPanelInner({
 
       setIsCalculating(false);
     }, 50);
-  }, [origin, destination, graph, skiArea, onRouteChange]);
+  }, [origin, destination, getGraph, skiArea, onRouteChange]);
 
   // Track if we're actively navigating (turn-by-turn mode)
   const [isActivelyNavigating, setIsActivelyNavigating] = useState(false);
@@ -1216,7 +1219,6 @@ function NavigationPanelInner({
           value={origin}
           onChange={setOrigin}
           skiArea={skiArea}
-          graph={graph}
           showCurrentLocation={true}
           userLocation={userLocation}
           isUserLocationValid={isUserLocationValid}
@@ -1244,7 +1246,6 @@ function NavigationPanelInner({
           value={destination}
           onChange={setDestination}
           skiArea={skiArea}
-          graph={graph}
           mountainHome={mountainHome}
           showCurrentLocation={true}
           userLocation={userLocation}
