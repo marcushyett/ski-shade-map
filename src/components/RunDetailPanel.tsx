@@ -75,9 +75,14 @@ function SunIcon({ level }: { level: 'full' | 'partial' | 'low' | 'none' }) {
 }
 
 // Sun distribution chart - exported for reuse
-export function SunDistributionChart({ hourlyData }: { hourlyData: HourlySunData[] }) {
+export function SunDistributionChart({ hourlyData }: { hourlyData: HourlySunData[] | undefined }) {
   const START_HOUR = 7;
   const END_HOUR = 18;
+  
+  // Handle undefined or empty data
+  if (!hourlyData || hourlyData.length === 0) {
+    return null;
+  }
   
   const hourMap: Record<number, number> = {};
   hourlyData.forEach(data => {
@@ -569,7 +574,7 @@ export const RunDetailPanel = memo(function RunDetailPanel({
       </div>
       
       {/* Sun distribution chart */}
-      {analysis && (
+      {analysis && analysis.hourlyPercentages && analysis.hourlyPercentages.length > 0 && (
         <div className="mb-3">
           <div style={{ color: '#888', marginBottom: 2, fontSize: 9 }}>Sun exposure by hour</div>
           <SunDistributionChart hourlyData={analysis.hourlyPercentages} />
