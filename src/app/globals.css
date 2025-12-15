@@ -1724,6 +1724,43 @@ h5.ant-typography {
   color: #ef4444;
 }
 
+.nav-error-title {
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.nav-error-diagnostics {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.nav-diagnostic-item {
+  display: flex;
+  align-items: center;
+  color: #d1d5db;
+  font-size: 9px;
+  margin-bottom: 4px;
+}
+
+.nav-diagnostic-item:last-child {
+  margin-bottom: 0;
+}
+
+.nav-suggestions {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(220, 38, 38, 0.2);
+  font-size: 9px;
+  color: #f59e0b;
+}
+
+.nav-suggestions span {
+  flex: 1;
+}
+
 /* Loading state */
 .nav-loading {
   padding: 12px;

@@ -18,6 +18,7 @@ import {
   UpOutlined,
   RightOutlined,
   InfoCircleOutlined,
+  BulbOutlined,
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
 
@@ -39,6 +40,7 @@ import { getDifficultyColor } from '@/lib/shade-calculator';
 import {
   buildNavigationGraph,
   findRoute,
+  findRouteWithDiagnostics,
   findNearestNode,
   findRouteBetweenFeatures,
   formatDuration,
@@ -46,6 +48,7 @@ import {
   type NavigationGraph,
   type NavigationRoute,
   type NavigationDestination,
+  type RouteFailureDiagnostics,
 } from '@/lib/navigation';
 import type { UserLocation, MountainHome } from '@/components/LocationControls';
 
@@ -846,6 +849,7 @@ function NavigationPanelInner({
   const [route, setRoute] = useState<NavigationRoute | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [routeDiagnostics, setRouteDiagnostics] = useState<RouteFailureDiagnostics | null>(null);
   const [hasAutoSetOrigin, setHasAutoSetOrigin] = useState(false);
   const [hasAutoStartedMapClick, setHasAutoStartedMapClick] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -967,18 +971,18 @@ function NavigationPanelInner({
   useEffect(() => {
     if (!origin || !destination) {
       setRoute(null);
+      setRouteDiagnostics(null);
       onRouteChange(null);
       return;
     }
 
     setIsCalculating(true);
     setError(null);
+    setRouteDiagnostics(null);
 
     // Use setTimeout to allow UI to update
     setTimeout(() => {
       try {
-        let calculatedRoute: NavigationRoute | null = null;
-
         // Helper to get node ID based on point type and position
         const getNodeId = (point: SelectedPoint, isOrigin: boolean): string | null => {
           if (point.type === 'location' || point.type === 'mapPoint' || point.type === 'home') {
@@ -1006,23 +1010,31 @@ function NavigationPanelInner({
         const toNodeId = getNodeId(destination, false);
 
         if (fromNodeId && toNodeId) {
-          calculatedRoute = findRoute(graph, fromNodeId, toNodeId);
-        }
-
-        if (calculatedRoute) {
-          setRoute(calculatedRoute);
-          onRouteChange(calculatedRoute);
-          trackEvent('navigation_route_calculated', {
-            origin_type: origin.type,
-            origin_name: origin.name,
-            destination_type: destination.type,
-            destination_name: destination.name,
-            total_time: calculatedRoute.totalTime,
-            total_distance: calculatedRoute.totalDistance,
-            segment_count: calculatedRoute.segments.length,
-          });
+          // Use the new diagnostic function
+          const result = findRouteWithDiagnostics(graph, fromNodeId, toNodeId, skiArea);
+          
+          if (result.route) {
+            setRoute(result.route);
+            setRouteDiagnostics(null);
+            onRouteChange(result.route);
+            trackEvent('navigation_route_calculated', {
+              origin_type: origin.type,
+              origin_name: origin.name,
+              destination_type: destination.type,
+              destination_name: destination.name,
+              total_time: result.route.totalTime,
+              total_distance: result.route.totalDistance,
+              segment_count: result.route.segments.length,
+            });
+          } else {
+            // Set diagnostics for detailed error display
+            setRouteDiagnostics(result.diagnostics);
+            setError('No route found. Try a different origin or destination.');
+            setRoute(null);
+            onRouteChange(null);
+          }
         } else {
-          setError('No route found. Try a different origin or destination.');
+          setError('Could not find start or end point in navigation network.');
           setRoute(null);
           onRouteChange(null);
         }
@@ -1035,7 +1047,7 @@ function NavigationPanelInner({
 
       setIsCalculating(false);
     }, 50);
-  }, [origin, destination, graph, onRouteChange]);
+  }, [origin, destination, graph, skiArea, onRouteChange]);
 
   // Track if we're actively navigating (turn-by-turn mode)
   const [isActivelyNavigating, setIsActivelyNavigating] = useState(false);
@@ -1195,13 +1207,60 @@ function NavigationPanelInner({
           isOrigin={false}
         />
 
-        {/* Error message */}
+        {/* Error message with diagnostics */}
         {error && (
           <div className="nav-error">
-            {error}
-            {error.includes('No route found') && (
-              <div style={{ marginTop: 4, fontSize: 9, color: '#f59e0b' }}>
-                💡 Try adjusting route options below to allow more lift types or slope difficulties.
+            <div className="nav-error-title">{error}</div>
+            
+            {/* Show diagnostic details if available */}
+            {routeDiagnostics && (
+              <div className="nav-error-diagnostics">
+                {/* Show specific diagnostic info */}
+                {routeDiagnostics.nearestReachableDistance !== undefined && routeDiagnostics.nearestReachableDistance > 0 && (
+                  <div className="nav-diagnostic-item">
+                    <EnvironmentOutlined style={{ fontSize: 10, marginRight: 4 }} />
+                    <span>Nearest reachable point: {routeDiagnostics.nearestReachableDistance}m away</span>
+                  </div>
+                )}
+                
+                {routeDiagnostics.elevationGap !== undefined && Math.abs(routeDiagnostics.elevationGap) > 10 && (
+                  <div className="nav-diagnostic-item">
+                    {routeDiagnostics.elevationGap > 0 ? (
+                      <ArrowUpOutlined style={{ fontSize: 10, marginRight: 4 }} />
+                    ) : (
+                      <ArrowDownOutlined style={{ fontSize: 10, marginRight: 4 }} />
+                    )}
+                    <span>
+                      Would require {Math.abs(routeDiagnostics.elevationGap)}m {routeDiagnostics.elevationGap > 0 ? 'climb' : 'descent'}
+                    </span>
+                  </div>
+                )}
+                
+                {routeDiagnostics.originRegion && routeDiagnostics.destinationRegion && 
+                 routeDiagnostics.originRegion !== routeDiagnostics.destinationRegion && (
+                  <div className="nav-diagnostic-item">
+                    <InfoCircleOutlined style={{ fontSize: 10, marginRight: 4 }} />
+                    <span>
+                      Crossing from "{routeDiagnostics.originRegion}" to "{routeDiagnostics.destinationRegion}"
+                    </span>
+                  </div>
+                )}
+                
+                {/* Suggestions */}
+                {routeDiagnostics.suggestions.length > 0 && (
+                  <div className="nav-suggestions">
+                    <BulbOutlined style={{ fontSize: 10, marginRight: 4, color: '#f59e0b' }} />
+                    <span>{routeDiagnostics.suggestions[0]}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Fallback suggestion if no diagnostics */}
+            {!routeDiagnostics && error.includes('No route found') && (
+              <div className="nav-suggestions">
+                <BulbOutlined style={{ fontSize: 10, marginRight: 4, color: '#f59e0b' }} />
+                <span>Try adjusting route options below to allow more lift types or slope difficulties.</span>
               </div>
             )}
           </div>

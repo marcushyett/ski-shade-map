@@ -60,6 +60,24 @@ export interface NavigationRoute {
   segments: RouteSegment[];
 }
 
+// Diagnostic info for when routing fails
+export interface RouteFailureDiagnostics {
+  reason: 'no_start_node' | 'no_end_node' | 'unreachable' | 'too_far_to_walk' | 'different_region';
+  startNodeExists: boolean;
+  endNodeExists: boolean;
+  // Distance between nearest reachable node and destination
+  nearestReachableDistance?: number;
+  // Elevation difference that would need to be climbed
+  elevationGap?: number;
+  // Distance to nearest node from start/end point
+  distanceToNearestNode?: number;
+  // The name of the sub-region/area the destination is in
+  destinationRegion?: string;
+  originRegion?: string;
+  // Suggestions for the user
+  suggestions: string[];
+}
+
 export interface RouteSegment {
   type: 'lift' | 'run' | 'walk';
   name: string | null;
@@ -117,10 +135,14 @@ const SPEEDS = {
   },
 };
 
-// Maximum distance to connect endpoints (meters)
+// Maximum distance to connect endpoints (meters) - default for automatic connections
 const MAX_CONNECTION_DISTANCE = 150;
-// Maximum elevation difference for walking connections (meters)
+// Maximum elevation difference for walking connections (meters) - default
 const MAX_WALK_ELEVATION_DIFF = 50;
+
+// Extended walking limits for cross-region connections
+const MAX_EXTENDED_WALK_DISTANCE = 500; // Up to 500m walking as user requested
+const MAX_EXTENDED_WALK_ELEVATION = 100; // Allow more elevation for extended walks
 
 // ============================================================================
 // Graph Building
@@ -396,6 +418,113 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
     }
   }
 
+  // Second pass: Create EXTENDED walking connections (up to 500m)
+  // These have a much higher time penalty but allow cross-region connections
+  // Only create these if no shorter path already exists
+  const EXTENDED_WALKING_TIME_PENALTY = 5.0; // Very slow - discourages but allows
+  
+  for (let i = 0; i < nodeList.length; i++) {
+    for (let j = i + 1; j < nodeList.length; j++) {
+      const nodeA = nodeList[i];
+      const nodeB = nodeList[j];
+
+      // Don't connect start and end of same feature
+      if (nodeA.featureId === nodeB.featureId) continue;
+
+      const horizontalDist = haversineDistance(
+        nodeA.lat, nodeA.lng,
+        nodeB.lat, nodeB.lng
+      );
+
+      // Skip if already connected with regular walk (under 150m)
+      if (horizontalDist <= MAX_CONNECTION_DISTANCE) continue;
+      
+      // Only create extended connections up to 500m
+      if (horizontalDist > MAX_EXTENDED_WALK_DISTANCE) continue;
+
+      const elevDiff = nodeB.elevation - nodeA.elevation;
+      const absElevDiff = Math.abs(elevDiff);
+
+      // Skip if too much elevation change for extended walking
+      if (absElevDiff > MAX_EXTENDED_WALK_ELEVATION) continue;
+      
+      // For extended walks, allow run-to-run connections (needed for cross-region)
+      // But only for meaningful connections (lift ends to run starts, etc.)
+      const validConnection = (
+        // Lift end to run start (getting off lift)
+        (nodeA.type === 'lift_end' && nodeB.type === 'run_start') ||
+        (nodeB.type === 'lift_end' && nodeA.type === 'run_start') ||
+        // Run end to lift start (to take a lift)
+        (nodeA.type === 'run_end' && nodeB.type === 'lift_start') ||
+        (nodeB.type === 'run_end' && nodeA.type === 'lift_start') ||
+        // Lift end to lift start (lift-to-lift transfer)
+        (nodeA.type === 'lift_end' && nodeB.type === 'lift_start') ||
+        (nodeB.type === 'lift_end' && nodeA.type === 'lift_start') ||
+        // Run end to run start (for cross-region routing only)
+        (nodeA.type === 'run_end' && nodeB.type === 'run_start') ||
+        (nodeB.type === 'run_end' && nodeA.type === 'run_start')
+      );
+      
+      if (!validConnection) continue;
+
+      // Calculate 3D distance
+      const dist3D = Math.sqrt(horizontalDist * horizontalDist + absElevDiff * absElevDiff);
+
+      // Determine walk speed based on direction
+      let speedAtoB: number;
+      let speedBtoA: number;
+
+      if (absElevDiff < 5) {
+        speedAtoB = SPEEDS.walk.flat;
+        speedBtoA = SPEEDS.walk.flat;
+      } else if (elevDiff > 0) {
+        speedAtoB = SPEEDS.walk.uphill;
+        speedBtoA = SPEEDS.walk.downhill_gentle;
+      } else {
+        speedAtoB = SPEEDS.walk.downhill_gentle;
+        speedBtoA = SPEEDS.walk.uphill;
+      }
+
+      // Create bidirectional extended walk edges with higher penalty
+      const extWalkEdgeAB: NavigationEdge = {
+        id: `extwalk-${nodeA.id}-${nodeB.id}`,
+        fromNodeId: nodeA.id,
+        toNodeId: nodeB.id,
+        type: 'walk',
+        featureId: `extended-connection`,
+        featureName: 'Extended Walk',
+        distance: dist3D,
+        elevationChange: elevDiff,
+        travelTime: (dist3D / speedAtoB) * EXTENDED_WALKING_TIME_PENALTY,
+        speed: speedAtoB,
+        coordinates: [
+          [nodeA.lng, nodeA.lat, nodeA.elevation],
+          [nodeB.lng, nodeB.lat, nodeB.elevation],
+        ],
+      };
+
+      const extWalkEdgeBA: NavigationEdge = {
+        id: `extwalk-${nodeB.id}-${nodeA.id}`,
+        fromNodeId: nodeB.id,
+        toNodeId: nodeA.id,
+        type: 'walk',
+        featureId: `extended-connection`,
+        featureName: 'Extended Walk',
+        distance: dist3D,
+        elevationChange: -elevDiff,
+        travelTime: (dist3D / speedBtoA) * EXTENDED_WALKING_TIME_PENALTY,
+        speed: speedBtoA,
+        coordinates: [
+          [nodeB.lng, nodeB.lat, nodeB.elevation],
+          [nodeA.lng, nodeA.lat, nodeA.elevation],
+        ],
+      };
+
+      addEdge(extWalkEdgeAB);
+      addEdge(extWalkEdgeBA);
+    }
+  }
+
   return { nodes, edges, adjacency };
 }
 
@@ -478,6 +607,151 @@ export function findRoute(
 
   // No path found
   return null;
+}
+
+/**
+ * Find a route with diagnostics - returns detailed info about why routing failed
+ */
+export function findRouteWithDiagnostics(
+  graph: NavigationGraph,
+  startNodeId: string,
+  endNodeId: string,
+  skiArea: SkiAreaDetails
+): { route: NavigationRoute | null; diagnostics: RouteFailureDiagnostics | null } {
+  const startNode = graph.nodes.get(startNodeId);
+  const endNode = graph.nodes.get(endNodeId);
+  
+  // Check if nodes exist
+  if (!startNode) {
+    return {
+      route: null,
+      diagnostics: {
+        reason: 'no_start_node',
+        startNodeExists: false,
+        endNodeExists: !!endNode,
+        suggestions: ['The starting point could not be found in the navigation network.'],
+      },
+    };
+  }
+  
+  if (!endNode) {
+    return {
+      route: null,
+      diagnostics: {
+        reason: 'no_end_node',
+        startNodeExists: true,
+        endNodeExists: false,
+        suggestions: ['The destination could not be found in the navigation network.'],
+      },
+    };
+  }
+  
+  // Try to find a route
+  const route = findRoute(graph, startNodeId, endNodeId);
+  
+  if (route) {
+    return { route, diagnostics: null };
+  }
+  
+  // Route not found - gather diagnostics
+  const suggestions: string[] = [];
+  
+  // Find how far we can get from the start
+  const reachableNodes = findReachableNodes(graph, startNodeId);
+  
+  // Calculate distance from each reachable node to the end
+  let nearestReachableDistance = Infinity;
+  let nearestReachableNode: NavigationNode | null = null;
+  
+  for (const nodeId of reachableNodes) {
+    const node = graph.nodes.get(nodeId);
+    if (!node) continue;
+    
+    const dist = haversineDistance(node.lat, node.lng, endNode.lat, endNode.lng);
+    if (dist < nearestReachableDistance) {
+      nearestReachableDistance = dist;
+      nearestReachableNode = node;
+    }
+  }
+  
+  // Calculate elevation gap
+  const elevationGap = nearestReachableNode 
+    ? endNode.elevation - nearestReachableNode.elevation 
+    : 0;
+  
+  // Determine the regions
+  const originRun = skiArea.runs.find(r => startNodeId.includes(r.id));
+  const originLift = skiArea.lifts.find(l => startNodeId.includes(l.id));
+  const destRun = skiArea.runs.find(r => endNodeId.includes(r.id));
+  const destLift = skiArea.lifts.find(l => endNodeId.includes(l.id));
+  
+  const originRegion = originRun?.subRegionName || originLift?.name || 'Unknown';
+  const destRegion = destRun?.subRegionName || destLift?.name || 'Unknown';
+  
+  // Determine reason and provide suggestions
+  let reason: RouteFailureDiagnostics['reason'] = 'unreachable';
+  
+  if (nearestReachableDistance > MAX_EXTENDED_WALK_DISTANCE) {
+    reason = 'too_far_to_walk';
+    suggestions.push(`The nearest reachable point is ${Math.round(nearestReachableDistance)}m away - too far to walk.`);
+  }
+  
+  if (originRegion !== destRegion && originRegion !== 'Unknown' && destRegion !== 'Unknown') {
+    reason = 'different_region';
+    suggestions.push(`Destination "${destRegion}" may not be directly connected to "${originRegion}".`);
+  }
+  
+  if (Math.abs(elevationGap) > MAX_EXTENDED_WALK_ELEVATION) {
+    suggestions.push(`Would require ${Math.abs(Math.round(elevationGap))}m ${elevationGap > 0 ? 'climb' : 'descent'} on foot.`);
+  }
+  
+  if (nearestReachableDistance <= MAX_EXTENDED_WALK_DISTANCE && Math.abs(elevationGap) <= MAX_EXTENDED_WALK_ELEVATION) {
+    suggestions.push(`There's a ${Math.round(nearestReachableDistance)}m gap that might require walking.`);
+    suggestions.push('Check if the destination is accessible from a different starting point.');
+  }
+  
+  // General suggestions
+  if (suggestions.length === 0) {
+    suggestions.push('Try adjusting route options to allow more lift types or slope difficulties.');
+  }
+  
+  return {
+    route: null,
+    diagnostics: {
+      reason,
+      startNodeExists: true,
+      endNodeExists: true,
+      nearestReachableDistance: Math.round(nearestReachableDistance),
+      elevationGap: Math.round(elevationGap),
+      originRegion,
+      destinationRegion: destRegion,
+      suggestions,
+    },
+  };
+}
+
+/**
+ * Find all nodes reachable from a starting node using BFS
+ */
+function findReachableNodes(graph: NavigationGraph, startNodeId: string): Set<string> {
+  const reachable = new Set<string>();
+  const queue = [startNodeId];
+  
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    if (reachable.has(nodeId)) continue;
+    reachable.add(nodeId);
+    
+    const edgeIds = graph.adjacency.get(nodeId) || [];
+    for (const edgeId of edgeIds) {
+      const edge = graph.edges.get(edgeId);
+      if (edge && !reachable.has(edge.toNodeId)) {
+        queue.push(edge.toNodeId);
+      }
+    }
+  }
+  
+  return reachable;
 }
 
 /**
