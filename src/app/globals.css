@@ -143,11 +143,27 @@ main {
   height: 2px !important;
 }
 
+/* Slider handle - position the dot ON the line, not above it */
+.ant-slider-handle {
+  /* Reset default positioning */
+  width: 14px !important;
+  height: 14px !important;
+  /* Center vertically on the 2px track: -(handleHeight - trackHeight) / 2 */
+  margin-top: -6px !important;
+}
+
 .ant-slider-handle::after {
   background-color: var(--primary) !important;
   box-shadow: 0 0 0 1px var(--background) !important;
   width: 10px !important;
   height: 10px !important;
+  /* Center the visual dot within the handle */
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  inset-inline-start: unset !important;
+  inset-block-start: unset !important;
 }
 
 .ant-slider-mark-text {

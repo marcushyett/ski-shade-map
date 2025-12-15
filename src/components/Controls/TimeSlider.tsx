@@ -27,6 +27,20 @@ import WeatherTimeline from './WeatherTimeline';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import type { HourlyWeather, UnitPreferences, DailyWeatherDay } from '@/lib/weather-types';
 
+// Helper to detect touch devices for disabling tooltips on mobile
+const isTouchDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+};
+
+// Wrapper that disables tooltips on mobile to avoid double-tap issues
+const MobileAwareTooltip = ({ title, children, ...props }: React.ComponentProps<typeof Tooltip>) => {
+  if (isTouchDevice()) {
+    return <>{children}</>;
+  }
+  return <Tooltip title={title} {...props}>{children}</Tooltip>;
+};
+
 const { Text } = Typography;
 
 // Weather icon component for date picker
@@ -168,13 +182,13 @@ export default function TimeSlider({
 
     return {
       [sunriseMin]: {
-        label: <Tooltip title={`Sunrise ${format(sunTimes.sunrise, 'HH:mm')}`}><ArrowUpOutlined style={{ fontSize: 9, opacity: 0.5 }} /></Tooltip>,
+        label: <MobileAwareTooltip title={`Sunrise ${format(sunTimes.sunrise, 'HH:mm')}`}><ArrowUpOutlined style={{ fontSize: 9, opacity: 0.5 }} /></MobileAwareTooltip>,
       },
       [noonMin]: {
-        label: <Tooltip title={`Noon ${format(sunTimes.solarNoon, 'HH:mm')}`}><SunOutlined style={{ fontSize: 9, opacity: 0.5 }} /></Tooltip>,
+        label: <MobileAwareTooltip title={`Noon ${format(sunTimes.solarNoon, 'HH:mm')}`}><SunOutlined style={{ fontSize: 9, opacity: 0.5 }} /></MobileAwareTooltip>,
       },
       [sunsetMin]: {
-        label: <Tooltip title={`Sunset ${format(sunTimes.sunset, 'HH:mm')}`}><ArrowDownOutlined style={{ fontSize: 9, opacity: 0.5 }} /></Tooltip>,
+        label: <MobileAwareTooltip title={`Sunset ${format(sunTimes.sunset, 'HH:mm')}`}><ArrowDownOutlined style={{ fontSize: 9, opacity: 0.5 }} /></MobileAwareTooltip>,
       },
     };
   }, [sunTimes]);
@@ -301,6 +315,7 @@ export default function TimeSlider({
         className="time-slider time-slider-collapsed"
         onClick={onToggleCollapsed}
         style={{ cursor: 'pointer' }}
+        aria-label="Expand time controls"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -335,13 +350,11 @@ export default function TimeSlider({
             </div>
           </div>
           
-          {/* Expand button */}
-          <Tooltip title="Expand time controls">
-            <div className="flex items-center gap-1" style={{ color: '#666', fontSize: 10 }}>
-              <span>Expand</span>
-              <UpOutlined style={{ fontSize: 8 }} />
-            </div>
-          </Tooltip>
+          {/* Expand button - no tooltip on mobile */}
+          <div className="flex items-center gap-1" style={{ color: '#666', fontSize: 10 }}>
+            <span>Expand</span>
+            <UpOutlined style={{ fontSize: 8 }} />
+          </div>
         </div>
       </div>
     );
@@ -349,33 +362,6 @@ export default function TimeSlider({
 
   return (
     <div className="time-slider">
-      {/* Collapse button at top right */}
-      {onToggleCollapsed && (
-        <div className="flex justify-end mb-1">
-          <Tooltip title="Collapse">
-            <button
-              onClick={onToggleCollapsed}
-              className="time-slider-collapse-btn"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '2px 6px',
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 9,
-                color: '#666',
-              }}
-            >
-              <span>Collapse</span>
-              <DownOutlined style={{ fontSize: 8 }} />
-            </button>
-          </Tooltip>
-        </div>
-      )}
-      
       {/* Date navigation */}
       <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/10">
         <Button
@@ -387,7 +373,7 @@ export default function TimeSlider({
         />
         
         <div className="flex items-center gap-2">
-          <Tooltip title="Pick a date">
+          <MobileAwareTooltip title="Pick a date">
             <Button
               type="text"
               size="small"
@@ -399,7 +385,7 @@ export default function TimeSlider({
                 {mounted ? (isToday ? 'Today' : format(selectedTime, 'EEE, MMM d')) : '---'}
               </Text>
             </Button>
-          </Tooltip>
+          </MobileAwareTooltip>
           
           {/* Weather indicator for selected date */}
           {mounted && (() => {
@@ -409,19 +395,19 @@ export default function TimeSlider({
             const dayWeather = getWeatherForDate(selectedTime);
             if (dayWeather) {
               return (
-                <Tooltip title={`${formatTemp(dayWeather.minTemperature)} - ${formatTemp(dayWeather.maxTemperature)}`}>
+                <MobileAwareTooltip title={`${formatTemp(dayWeather.minTemperature)} - ${formatTemp(dayWeather.maxTemperature)}`}>
                   <span className="flex items-center gap-1" style={{ fontSize: 10 }}>
                     <DayWeatherIcon code={dayWeather.weatherCode} size={12} />
                     <span>{formatTemp(dayWeather.maxTemperature)}</span>
                   </span>
-                </Tooltip>
+                </MobileAwareTooltip>
               );
             }
             return null;
           })()}
         </div>
         
-        <Tooltip title={selectedTime > maxForecastDate ? 'No forecast data beyond 16 days' : 'Next day'}>
+        <MobileAwareTooltip title={selectedTime > maxForecastDate ? 'No forecast data beyond 16 days' : 'Next day'}>
           <Button
             type="text"
             size="small"
@@ -429,7 +415,7 @@ export default function TimeSlider({
             onClick={goToNextDay}
             style={{ padding: '0 4px', height: 24 }}
           />
-        </Tooltip>
+        </MobileAwareTooltip>
       </div>
 
       {/* Date picker dropdown */}
@@ -545,25 +531,51 @@ export default function TimeSlider({
         <span>24</span>
       </div>
 
-      <div className="flex gap-1">
-        <Button size="small" onClick={() => onTimeChange(sunTimes.sunrise)}>
-          Rise
-        </Button>
-        <Button size="small" onClick={() => {
-          const now = new Date();
-          // Set time to now but keep the selected date
-          const newTime = new Date(selectedTime);
-          newTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
-          onTimeChange(newTime);
-        }}>
-          Now
-        </Button>
-        <Button size="small" onClick={() => onTimeChange(sunTimes.solarNoon)}>
-          Noon
-        </Button>
-        <Button size="small" onClick={() => onTimeChange(sunTimes.sunset)}>
-          Set
-        </Button>
+      <div className="flex gap-1 justify-between items-center">
+        <div className="flex gap-1">
+          <Button size="small" onClick={() => onTimeChange(sunTimes.sunrise)}>
+            Rise
+          </Button>
+          <Button size="small" onClick={() => {
+            const now = new Date();
+            // Set time to now but keep the selected date
+            const newTime = new Date(selectedTime);
+            newTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
+            onTimeChange(newTime);
+          }}>
+            Now
+          </Button>
+          <Button size="small" onClick={() => onTimeChange(sunTimes.solarNoon)}>
+            Noon
+          </Button>
+          <Button size="small" onClick={() => onTimeChange(sunTimes.sunset)}>
+            Set
+          </Button>
+        </div>
+        
+        {/* Collapse button - at bottom right, inline with shortcuts */}
+        {onToggleCollapsed && (
+          <button
+            onClick={onToggleCollapsed}
+            className="time-slider-collapse-btn"
+            aria-label="Collapse time controls"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              borderRadius: 4,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 10,
+              color: '#666',
+            }}
+          >
+            <span>Collapse</span>
+            <DownOutlined style={{ fontSize: 8 }} />
+          </button>
+        )}
       </div>
     </div>
   );
