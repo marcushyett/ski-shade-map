@@ -441,7 +441,16 @@ function PointSearchInput({
               setSearchText(e.target.value);
               setSelectedIndex(-1);
             }}
-            onFocus={() => setIsFocused(true)}
+            onFocus={() => {
+              setIsFocused(true);
+              // Scroll the input into view with some extra space for dropdown
+              setTimeout(() => {
+                containerRef.current?.scrollIntoView({ 
+                  behavior: 'smooth', 
+                  block: 'center' 
+                });
+              }, 100);
+            }}
             onKeyDown={handleKeyDown}
             size="small"
             className="nav-search-input"

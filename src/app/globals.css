@@ -1142,14 +1142,14 @@ h5.ant-typography {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   animation: fadeIn 0.15s ease-out;
   /* Constrain max height to prevent header from going off screen */
-  max-height: calc(100vh - 90px); /* Increased from 120px - Leave room for top spacing */
+  max-height: calc(100vh - 40px); /* Increased from 90px - Make taller for better dropdown visibility */
   display: flex;
   flex-direction: column;
 }
 
 @media (max-width: 767px) {
   .nav-panel {
-    max-height: calc(100vh - 110px); /* Increased from 140px */
+    max-height: calc(100vh - 60px); /* Increased from 110px */
   }
 }
 
@@ -2498,15 +2498,15 @@ h5.ant-typography {
     min-height: 36px !important;
   }
   
-  /* Filter checkboxes - larger touch targets */
+  /* Filter checkboxes - compact even on mobile */
   .nav-filter-checkbox {
-    min-height: 36px !important;
-    padding: 8px 4px !important;
+    min-height: 28px !important;
+    padding: 4px 2px !important;
   }
   
   .nav-filter-check {
-    width: 20px !important;
-    height: 20px !important;
+    width: 14px !important;
+    height: 14px !important;
   }
   
   /* Time slider buttons */
