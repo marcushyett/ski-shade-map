@@ -1548,16 +1548,11 @@ export default function Home() {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {weather && (
-              <span style={{ fontSize: 10, color: '#888' }}>
-                <CloudOutlined style={{ marginRight: 2 }} />
-                {weather.current.cloudCover}%
-              </span>
-            )}
             <Button 
               size="small"
               icon={<MenuOutlined style={{ fontSize: 12 }} />}
               onClick={() => setMobileMenuOpen(true)}
+              style={{ width: 32, height: 32, minWidth: 32 }}
             />
           </div>
         </div>
