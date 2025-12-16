@@ -791,7 +791,7 @@ h5.ant-typography {
 /* Edit home mode banner */
 .edit-home-banner {
   position: fixed;
-  top: 60px;
+  top: 155px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(250, 173, 20, 0.95);
@@ -808,6 +808,13 @@ h5.ant-typography {
   white-space: nowrap;
   max-width: calc(100vw - 40px);
   pointer-events: auto;
+}
+
+/* Desktop positioning for home banner */
+@media (min-width: 768px) {
+  .edit-home-banner {
+    top: 60px;
+  }
 }
 
 .edit-home-cancel {

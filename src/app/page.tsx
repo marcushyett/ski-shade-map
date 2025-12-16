@@ -1033,6 +1033,7 @@ export default function Home() {
     if (state.isNavigating) {
       setIsNavigationOpen(false);
       setCurrentNavSegment(0);
+      setNavMapClickMode(null); // Clear map click mode banner
     }
   }, []);
   
