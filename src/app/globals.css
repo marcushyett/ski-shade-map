@@ -28,6 +28,14 @@
   box-sizing: border-box;
 }
 
+/* Re-enable text selection for inputs and editable content */
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -50,6 +58,15 @@ body {
   font-size: 11px;
   letter-spacing: -0.01em;
   line-height: 1.4;
+  /* Prevent overscroll/bounce on mobile */
+  overscroll-behavior: none;
+  /* Prevent text selection on mobile */
+  -webkit-user-select: none;
+  user-select: none;
+  /* Prevent callout on iOS (long-press menu) */
+  -webkit-touch-callout: none;
+  /* Prevent tap highlight on mobile */
+  -webkit-tap-highlight-color: transparent;
 }
 
 #__next,

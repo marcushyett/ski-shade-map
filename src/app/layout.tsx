@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: '/favicon.svg',
-    apple: '/apple-touch-icon.svg',
+    apple: '/apple-touch-icon.png',
   },
   openGraph: {
     title: 'SKISHADE | Live 3D Ski Maps & Real-Time Snow Conditions',
@@ -152,7 +152,7 @@ export default function RootLayout({
         />
         
         {/* PWA and iOS specific meta tags */}
-        <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="SKISHADE" />
