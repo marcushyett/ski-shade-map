@@ -143,11 +143,20 @@ main {
   height: 2px !important;
 }
 
+.ant-slider-handle {
+  /* Ensure handle is centered on track */
+  margin-top: -6px !important;
+}
+
 .ant-slider-handle::after {
   background-color: var(--primary) !important;
-  box-shadow: 0 0 0 1px var(--background) !important;
-  width: 10px !important;
-  height: 10px !important;
+  width: 14px !important;
+  height: 14px !important;
+  /* Center the dot within the handle */
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
 }
 
 .ant-slider-mark-text {
@@ -2620,10 +2629,19 @@ h5.ant-typography {
    ============================================================================ */
 
 @media (max-width: 767px) {
+  /* Slider handle - larger touch target on mobile */
+  .ant-slider-handle {
+    /* Larger touch area without changing visual appearance */
+    width: 44px !important;
+    height: 44px !important;
+    margin-top: -21px !important;
+    margin-left: -22px !important;
+  }
+  
   /* Slider handle - larger visual dot on mobile for better touch */
   .ant-slider-handle::after {
-    width: 16px !important;
-    height: 16px !important;
+    width: 20px !important;
+    height: 20px !important;
   }
   
   /* Location control buttons - larger touch target */

@@ -117,6 +117,10 @@ export default function TimeSlider({
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  
+  // Local state for slider position during drag - prevents expensive recalculations
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragValue, setDragValue] = useState<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -193,7 +197,8 @@ export default function TimeSlider({
     };
   }, [sunTimes]);
 
-  const currentValue = timeToSlider(selectedTime);
+  // Use drag value during dragging, otherwise use actual selected time
+  const currentValue = isDragging && dragValue !== null ? dragValue : timeToSlider(selectedTime);
   const isSunUp = sunPosition.altitudeDegrees > 0;
 
   // Track time changes (debounced to avoid too many events)
@@ -511,9 +516,17 @@ export default function TimeSlider({
         min={0}
         max={24 * 60 - 1}
         marks={marks}
-        onChange={(value) => onTimeChange(sliderToTime(value))}
+        onChange={(value) => {
+          // During drag, only update local state for smooth movement
+          setIsDragging(true);
+          setDragValue(value);
+        }}
         onChangeComplete={(value) => {
+          // When drag ends, update the actual time and clear drag state
+          setIsDragging(false);
+          setDragValue(null);
           const time = sliderToTime(value);
+          onTimeChange(time);
           trackTimeChange(time);
           onTimeChangeComplete?.(time);
         }}
