@@ -2241,7 +2241,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
           <span style={{ fontSize: 12, color: 'white', fontWeight: 500, whiteSpace: 'nowrap' }}>
             {isFakeLocationDropMode 
               ? '📍 Tap to set fake location' 
-              : `Tap anywhere to set ${navMapClickMode === 'origin' ? 'start point' : 'destination'}`
+              : navMapClickMode === 'origin'
+                ? '📍 Tap to set your START location'
+                : '🏁 Tap to set your DESTINATION'
             }
           </span>
         </div>

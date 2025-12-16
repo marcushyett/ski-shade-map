@@ -488,14 +488,17 @@ function NavigationPanelInner({
   }
 
   // Minimized view
-  if (isMinimized && route) {
+  if (isMinimized) {
     return (
       <div className="nav-panel nav-panel-minimized">
         <div className="nav-panel-header">
           <div className="nav-panel-title">
             <CompassOutlined style={{ fontSize: 14, marginRight: 6 }} />
             <span style={{ fontSize: 11 }}>
-              {formatDuration(route.totalTime)} · {formatDistance(route.totalDistance)}
+              {route 
+                ? `${formatDuration(route.totalTime)} · ${formatDistance(route.totalDistance)}`
+                : 'Navigate'
+              }
             </span>
           </div>
           <div className="nav-header-buttons">
@@ -520,7 +523,7 @@ function NavigationPanelInner({
           <span>Navigate</span>
         </div>
         <div className="nav-header-buttons">
-          {route && onToggleMinimize && (
+          {onToggleMinimize && (
             <button className="nav-minimize-btn" onClick={onToggleMinimize} title="Minimize">
               <DownOutlined style={{ fontSize: 10 }} />
             </button>
