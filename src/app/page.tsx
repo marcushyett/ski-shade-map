@@ -1811,8 +1811,8 @@ export default function Home() {
 
         {/* Time slider with optional navigation panel and instruction bar above it */}
         <div className="time-slider-container">
-          {/* Navigation panel - shown as card above weather when route planning, hidden during map pick mode */}
-          {skiAreaDetails && isNavigationOpen && !navMapClickMode && (
+          {/* Navigation panel - shown as card above weather when route planning */}
+          {skiAreaDetails && isNavigationOpen && (
             <div className="nav-panel-inline">
               <NavigationPanel
                 skiArea={skiAreaDetails}
