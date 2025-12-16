@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { SearchOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import debounce from 'lodash.debounce';
 import { trackEvent } from '@/lib/posthog';
@@ -40,8 +40,10 @@ export default function LocationSearch({
   const [results, setResults] = useState<LocationSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isHoveringResults, setIsHoveringResults] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pendingResultRef = useRef<LocationSearchResult | null>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -56,8 +58,8 @@ export default function LocationSearch({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const searchLocations = useCallback(
-    debounce(async (searchQuery: string) => {
+  const searchLocations = useMemo(
+    () => debounce(async (searchQuery: string, shouldUpdateResults: () => boolean) => {
       if (searchQuery.length < 2) {
         setResults([]);
         setLoading(false);
@@ -67,14 +69,19 @@ export default function LocationSearch({
       try {
         const res = await fetch(`/api/locations/search?q=${encodeURIComponent(searchQuery)}&limit=15`);
         const data = await res.json();
-        setResults(data.results || []);
+        // Only update results if user isn't hovering (prevents clicks on wrong items)
+        if (shouldUpdateResults()) {
+          setResults(data.results || []);
+        }
       } catch (error) {
         console.error('Search failed:', error);
-        setResults([]);
+        if (shouldUpdateResults()) {
+          setResults([]);
+        }
       } finally {
         setLoading(false);
       }
-    }, 150), // Reduced from 250ms for snappier feel
+    }, 300), // Increased for better stability and fewer false clicks
     []
   );
 
@@ -83,7 +90,8 @@ export default function LocationSearch({
     setQuery(value);
     setSelectedIndex(0);
     setLoading(true);
-    searchLocations(value);
+    // Pass function that checks if we should update results (not hovering)
+    searchLocations(value, () => !isHoveringResults);
   };
 
   const handleSelect = (result: LocationSearchResult) => {
@@ -97,7 +105,7 @@ export default function LocationSearch({
     if (result.type === 'country') {
       // For country, just filter results - show ski areas from that country
       setQuery(result.name);
-      searchLocations(result.name);
+      searchLocations(result.name, () => true);
       return;
     }
 
@@ -200,7 +208,11 @@ export default function LocationSearch({
 
       {/* Dropdown results */}
       {isSearching && (query.length >= 2 || results.length > 0) && (
-        <div className="location-search-dropdown">
+        <div 
+          className="location-search-dropdown"
+          onMouseEnter={() => setIsHoveringResults(true)}
+          onMouseLeave={() => setIsHoveringResults(false)}
+        >
           {results.length === 0 && !loading && query.length >= 2 && (
             <div className="location-search-empty">
               No locations found for "{query}"
@@ -211,7 +223,16 @@ export default function LocationSearch({
             <button
               key={`${result.type}-${result.id}`}
               className={`location-search-result ${index === selectedIndex ? 'selected' : ''}`}
-              onClick={() => handleSelect(result)}
+              onPointerDown={() => {
+                // Capture result at pointer down to prevent race condition
+                pendingResultRef.current = result;
+              }}
+              onClick={() => {
+                // Use captured result from pointer down, or current if not captured
+                const resultToSelect = pendingResultRef.current || result;
+                pendingResultRef.current = null;
+                handleSelect(resultToSelect);
+              }}
               onMouseEnter={() => setSelectedIndex(index)}
             >
               <EnvironmentOutlined className="location-result-icon" />
