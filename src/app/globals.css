@@ -167,10 +167,6 @@ main {
   height: 2px !important;
 }
 
-.ant-slider-handle::after {
-  background-color: var(--primary) !important;
-}
-
 .ant-slider-mark-text {
   font-size: 10px !important;
   color: var(--foreground-muted) !important;
@@ -2651,14 +2647,6 @@ h5.ant-typography {
    ============================================================================ */
 
 @media (max-width: 767px) {
-  /* Slider handle - larger touch target on mobile (44x44 touch area) */
-  .ant-slider-handle {
-    width: 44px !important;
-    height: 44px !important;
-    margin-top: -22px !important;
-    margin-left: -22px !important;
-  }
-
   /* Location control buttons - larger touch target */
   .location-btn {
     width: 44px !important;
