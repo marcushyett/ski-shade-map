@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, memo } from 'react';
-import { Tooltip, Modal, Input, App } from 'antd';
+import { Tooltip, Modal, Input, App, Button } from 'antd';
 import {
   AimOutlined,
   HomeOutlined,
@@ -435,21 +435,23 @@ function LocationControlsInner({
             This will mark the selected location on the map with a home icon.
           </div>
           <div className="flex gap-2 justify-end">
-            <button
-              className="location-btn"
-              style={{ width: 'auto', padding: '4px 12px' }}
+            <Button
               onClick={() => setShowHomeModal(false)}
             >
               Cancel
-            </button>
-            <button
-              className="location-btn has-home"
-              style={{ width: 'auto', padding: '4px 12px' }}
+            </Button>
+            <Button
+              type="primary"
+              icon={<CheckOutlined />}
               onClick={handleConfirmHome}
+              style={{
+                background: '#faad14',
+                borderColor: '#faad14',
+                color: '#000',
+              }}
             >
-              <CheckOutlined style={{ marginRight: 4 }} />
               Set Home
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

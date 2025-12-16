@@ -795,20 +795,22 @@ h5.ant-typography {
 /* Edit home mode banner */
 .edit-home-banner {
   position: fixed;
-  top: 50px;
+  top: 10px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(250, 173, 20, 0.95);
   color: #000;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 12px;
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 13px;
   font-weight: 500;
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 1000;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1001;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  max-width: calc(100vw - 40px);
 }
 
 .edit-home-cancel {
