@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -11,7 +11,7 @@
   --primary: #ffffff;
   --accent: #3b82f6;
   --radius: 2px;
-  
+
   /* Map control button sizing - consistent across all map overlay buttons */
   --map-btn-size: 29px;
   --map-btn-icon-size: 14px;
@@ -20,7 +20,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
 }
 
 * {
@@ -28,8 +29,14 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 html,
@@ -39,7 +46,7 @@ body {
   padding: 0;
   background-color: var(--background);
   color: var(--foreground);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
   letter-spacing: -0.01em;
   line-height: 1.4;
@@ -143,20 +150,8 @@ main {
   height: 2px !important;
 }
 
-.ant-slider-handle {
-  /* Ensure handle is centered on track */
-  margin-top: -6px !important;
-}
-
 .ant-slider-handle::after {
   background-color: var(--primary) !important;
-  width: 14px !important;
-  height: 14px !important;
-  /* Center the dot within the handle */
-  position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
 }
 
 .ant-slider-mark-text {
@@ -247,7 +242,12 @@ main {
 }
 
 /* Typography overrides */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   margin: 0;
   line-height: 1.3;
 }
@@ -766,7 +766,8 @@ h5.ant-typography {
 }
 
 @keyframes pulse-edit {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(250, 173, 20, 0.4);
   }
   50% {
@@ -1158,7 +1159,9 @@ h5.ant-typography {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   animation: fadeIn 0.15s ease-out;
   /* Constrain max height to prevent header from going off screen */
-  max-height: calc(100vh - 40px); /* Increased from 90px - Make taller for better dropdown visibility */
+  max-height: calc(
+    100vh - 40px
+  ); /* Increased from 90px - Make taller for better dropdown visibility */
   display: flex;
   flex-direction: column;
 }
@@ -1572,7 +1575,6 @@ h5.ant-typography {
   border-color: #3b82f6;
   color: #3b82f6;
 }
-
 
 .nav-position-btn {
   flex: 1;
@@ -2060,7 +2062,7 @@ h5.ant-typography {
 }
 
 .nav-filter-check.checked::after {
-  content: '✓';
+  content: "✓";
   color: white;
   font-size: 8px;
   font-weight: bold;
@@ -2267,22 +2269,22 @@ h5.ant-typography {
     transform: none;
     width: auto;
   }
-  
+
   .nav-route-stats {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .nav-route-segments {
     max-height: 100px;
   }
-  
+
   /* Make pick button more touch-friendly on mobile */
   .nav-map-pick-btn {
     padding: 6px 10px;
     font-size: 11px;
     min-height: 32px;
   }
-  
+
   /* Position the search dropdown to not get cut off on mobile */
   .nav-search-dropdown {
     left: -12px;
@@ -2291,7 +2293,7 @@ h5.ant-typography {
     max-height: 50vh; /* Use more viewport height on mobile */
     z-index: 9999; /* Ensure high z-index on mobile too */
   }
-  
+
   /* Fixed dropdown on mobile */
   .nav-search-dropdown-fixed {
     max-height: 50vh !important;
@@ -2305,7 +2307,7 @@ h5.ant-typography {
 }
 
 .user-location-marker.navigating::after {
-  content: '';
+  content: "";
   position: absolute;
   top: -8px;
   left: 50%;
@@ -2461,11 +2463,11 @@ h5.ant-typography {
   .nav-instruction-bar {
     padding: 8px 10px;
   }
-  
+
   .nav-instruction-action {
     font-size: 12px;
   }
-  
+
   .nav-time-value {
     font-size: 11px;
   }
@@ -2613,7 +2615,8 @@ h5.ant-typography {
 
 /* Return point marker pulse animation */
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     box-shadow: 0 2px 10px rgba(245, 158, 11, 0.5);
   }
@@ -2629,21 +2632,14 @@ h5.ant-typography {
    ============================================================================ */
 
 @media (max-width: 767px) {
-  /* Slider handle - larger touch target on mobile */
+  /* Slider handle - larger touch target on mobile (44x44 touch area) */
   .ant-slider-handle {
-    /* Larger touch area without changing visual appearance */
     width: 44px !important;
     height: 44px !important;
-    margin-top: -21px !important;
+    margin-top: -22px !important;
     margin-left: -22px !important;
   }
-  
-  /* Slider handle - larger visual dot on mobile for better touch */
-  .ant-slider-handle::after {
-    width: 20px !important;
-    height: 20px !important;
-  }
-  
+
   /* Location control buttons - larger touch target */
   .location-btn {
     width: 44px !important;
@@ -2651,62 +2647,62 @@ h5.ant-typography {
     min-width: 44px;
     min-height: 44px;
   }
-  
+
   .location-btn .anticon {
     font-size: 18px !important;
   }
-  
+
   /* Location controls container positioning adjustment */
   /* MapLibre navigation controls - larger touch targets */
   .maplibregl-ctrl-group button {
     width: 44px !important;
     height: 44px !important;
   }
-  
+
   /* Location controls - position below MapLibre controls */
   .location-controls-container {
     top: 150px !important; /* MapLibre (3 * 44px + gaps) */
     right: 10px !important;
   }
-  
+
   .location-controls-container .location-btn {
     width: 44px !important;
     height: 44px !important;
     min-width: 44px !important;
   }
-  
+
   .location-controls-container .location-btn .anticon {
     font-size: 18px !important;
   }
-  
+
   /* Mobile map control buttons - larger touch targets */
   .map-control-btn {
     width: 44px !important;
     height: 44px !important;
     min-width: 44px !important;
   }
-  
+
   .map-control-btn .anticon,
   .map-control-btn svg {
     font-size: 18px !important;
     width: 18px !important;
     height: 18px !important;
   }
-  
+
   /* View toggle - position to the left of MapLibre controls */
   .view-toggle-container {
     top: 10px !important;
     right: 60px !important; /* Leave room for MapLibre controls (44px + margin) */
   }
-  
+
   .view-toggle-container .ant-segmented {
     min-height: 44px !important;
   }
-  
+
   .view-toggle-container .ant-segmented-item {
     min-height: 44px !important;
   }
-  
+
   .view-toggle-container .ant-segmented-item-label {
     min-height: 44px !important;
     line-height: 44px !important;
@@ -2715,179 +2711,179 @@ h5.ant-typography {
     align-items: center !important;
     justify-content: center !important;
   }
-  
+
   /* Ant Design buttons - general touch target size */
   .ant-btn {
     min-height: 36px !important;
     padding: 0 12px !important;
   }
-  
+
   .ant-btn-sm {
     min-height: 32px !important;
     padding: 0 10px !important;
   }
-  
+
   /* Segmented control - larger touch targets */
   .ant-segmented-item-label {
     min-height: 36px !important;
     line-height: 36px !important;
     padding: 0 14px !important;
   }
-  
+
   /* Navigation panel buttons */
   .nav-trigger-btn {
     width: 44px !important;
     height: 44px !important;
   }
-  
+
   .nav-close-btn,
   .nav-minimize-btn {
     width: 36px !important;
     height: 36px !important;
   }
-  
+
   .nav-swap-btn {
     width: 40px !important;
     height: 40px !important;
   }
-  
+
   /* Navigation action buttons */
   .nav-start-btn,
   .nav-stop-btn {
     min-height: 44px !important;
     padding: 0 20px !important;
   }
-  
+
   /* Nav position toggle buttons */
   .nav-position-btn {
     min-height: 36px !important;
     padding: 8px 12px !important;
   }
-  
+
   /* Quick select buttons in nav search */
   .nav-location-btn,
   .nav-home-btn {
     width: 36px !important;
     height: 36px !important;
   }
-  
+
   /* Map pick button */
   .nav-map-pick-btn {
     width: 36px !important;
     height: 36px !important;
     min-height: 36px !important;
   }
-  
+
   /* Filter checkboxes - compact even on mobile */
   .nav-filter-checkbox {
     min-height: 28px !important;
     padding: 4px 2px !important;
   }
-  
+
   .nav-filter-check {
     width: 14px !important;
     height: 14px !important;
   }
-  
+
   /* Time slider buttons */
   .time-slider .ant-btn {
     min-height: 36px !important;
     padding: 0 14px !important;
   }
-  
+
   /* Time slider collapse button */
   .time-slider-collapse-btn {
     min-height: 36px !important;
     padding: 8px 12px !important;
   }
-  
+
   /* Collapsed time slider - easier to tap to expand */
   .time-slider.time-slider-collapsed {
     min-height: 48px !important;
     padding: 12px 16px !important;
   }
-  
+
   /* Date navigation buttons */
   .time-slider .ant-btn[class*="LeftOutlined"],
   .time-slider .ant-btn[class*="RightOutlined"] {
     width: 44px !important;
     height: 36px !important;
   }
-  
+
   /* Play/pause button */
   .time-slider .ant-btn:has(.anticon-play-circle),
   .time-slider .ant-btn:has(.anticon-pause-circle) {
     width: 40px !important;
     height: 32px !important;
   }
-  
+
   /* Run detail panel close button */
   .run-detail-panel button:has(.anticon-close) {
     width: 36px !important;
     height: 36px !important;
     padding: 8px !important;
   }
-  
+
   /* Navigation instruction buttons */
   .nav-end-btn {
     min-height: 40px !important;
     padding: 8px 16px !important;
   }
-  
+
   .nav-end-btn-mini {
     width: 36px !important;
     height: 36px !important;
   }
-  
+
   .nav-collapse-btn {
     width: 36px !important;
     height: 36px !important;
   }
-  
+
   /* Edit home banner cancel button */
   .edit-home-cancel {
     min-height: 32px !important;
     padding: 6px 12px !important;
   }
-  
+
   /* Search dropdown items - easier to tap */
   .search-item,
   .nav-search-item {
     min-height: 44px !important;
     padding: 10px 12px !important;
   }
-  
+
   /* Weather timeline - if it has interactive elements */
   .weather-timeline-item {
     min-height: 44px;
     min-width: 44px;
   }
-  
+
   /* Increase tap target for run/lift list items */
   .run-item,
   .lift-item {
     min-height: 44px !important;
     padding: 10px 8px !important;
   }
-  
+
   /* Expand/collapse toggles */
   .ant-collapse-header {
     min-height: 44px !important;
     padding: 10px 12px !important;
   }
-  
+
   /* Selected point wrapper - easier to tap to clear */
   .nav-selected-point {
     min-height: 40px !important;
     padding: 10px 12px !important;
   }
-  
+
   /* Advanced section header */
   .nav-advanced-header {
     min-height: 40px !important;
     padding: 10px 12px !important;
   }
-  
+
   /* Toggle weather button */
   .nav-toggle-weather-btn {
     min-height: 36px !important;
@@ -3737,7 +3733,7 @@ h5.ant-typography {
 }
 
 .toggle-check.checked::after {
-  content: '✓';
+  content: "✓";
   color: white;
   font-size: 10px;
   font-weight: bold;
