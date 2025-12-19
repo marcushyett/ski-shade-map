@@ -67,15 +67,15 @@ export function LocationPickerModal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Filter runs and lifts by search - deduplicate by name+subregion
+  // Filter runs and lifts by search - deduplicate by name+locality
   const filteredRuns = useMemo(() => {
     if (!searchText) return [];
     const lower = searchText.toLowerCase();
     const matchingRuns = skiArea.runs.filter((r) => r.name && r.name.toLowerCase().includes(lower));
-    
+
     const grouped = new Map<string, typeof matchingRuns[0]>();
     for (const run of matchingRuns) {
-      const key = `${run.name}::${run.subRegionName || ''}`;
+      const key = `${run.name}::${run.locality || ''}`;
       const existing = grouped.get(key);
       if (!existing) {
         grouped.set(key, run);
@@ -299,8 +299,8 @@ export function LocationPickerModal({
                       style={{ backgroundColor: getDifficultyColor(run.difficulty) }}
                     />
                     <span className="location-picker-item-name">{run.name || 'Unnamed'}</span>
-                    {run.subRegionName && (
-                      <span className="location-picker-item-subregion">{run.subRegionName}</span>
+                    {run.locality && (
+                      <span className="location-picker-item-subregion">{run.locality}</span>
                     )}
                   </button>
                 );

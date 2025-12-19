@@ -923,8 +923,8 @@ export function findRouteWithDiagnostics(
   const destRun = skiArea.runs.find(r => endNodeId.includes(r.id));
   const destLift = skiArea.lifts.find(l => endNodeId.includes(l.id));
   
-  const originRegion = originRun?.subRegionName || originLift?.name || 'Unknown';
-  const destRegion = destRun?.subRegionName || destLift?.name || 'Unknown';
+  const originRegion = originRun?.locality || originLift?.name || 'Unknown';
+  const destRegion = destRun?.locality || destLift?.name || 'Unknown';
   
   // Determine reason and provide suggestions
   let reason: RouteFailureDiagnostics['reason'] = 'unreachable';

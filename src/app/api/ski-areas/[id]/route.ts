@@ -15,29 +15,8 @@ export async function GET(
     const skiArea = await prisma.skiArea.findUnique({
       where: { id },
       include: {
-        runs: {
-          include: {
-            subRegion: {
-              select: { id: true, name: true },
-            },
-          },
-        },
-        lifts: {
-          include: {
-            subRegion: {
-              select: { id: true, name: true },
-            },
-          },
-        },
-        subRegions: {
-          select: {
-            id: true,
-            name: true,
-            bounds: true,
-            centroid: true,
-          },
-          orderBy: { name: 'asc' },
-        },
+        runs: true,
+        lifts: true,
         connectedTo: {
           include: {
             toArea: {
@@ -82,119 +61,94 @@ export async function GET(
       ...skiArea.connectedFrom.map(c => c.fromArea),
     ];
 
-    // Transform runs to include subRegionName
+    // Transform runs
     const runs = skiArea.runs.map(run => ({
       id: run.id,
       osmId: run.osmId,
       name: run.name,
       difficulty: run.difficulty,
       status: run.status,
+      locality: run.locality,
       geometry: run.geometry,
       properties: run.properties,
-      subRegionId: run.subRegionId,
-      subRegionName: run.subRegion?.name || null,
     }));
 
-    // Transform lifts to include subRegionName
+    // Transform lifts
     const lifts = skiArea.lifts.map(lift => ({
       id: lift.id,
       osmId: lift.osmId,
       name: lift.name,
       liftType: lift.liftType,
       status: lift.status,
+      locality: lift.locality,
       capacity: lift.capacity,
       geometry: lift.geometry,
       properties: lift.properties,
-      subRegionId: lift.subRegionId,
-      subRegionName: lift.subRegion?.name || null,
     }));
+
+    // Collect unique localities from runs and lifts
+    const localitySet = new Set<string>();
+    runs.forEach(run => {
+      if (run.locality) localitySet.add(run.locality);
+    });
+    lifts.forEach(lift => {
+      if (lift.locality) localitySet.add(lift.locality);
+    });
+    const localities = Array.from(localitySet).sort();
 
     // If includeConnected is true, also fetch runs/lifts from connected areas
     let allRuns = runs;
     let allLifts = lifts;
-    let allSubRegions = skiArea.subRegions;
+    let allLocalities = localities;
 
     if (includeConnected && connectedAreas.length > 0) {
       for (const connectedArea of connectedAreas) {
         const connected = await prisma.skiArea.findUnique({
           where: { id: connectedArea.id },
           include: {
-            runs: {
-              include: {
-                subRegion: {
-                  select: { id: true, name: true },
-                },
-              },
-            },
-            lifts: {
-              include: {
-                subRegion: {
-                  select: { id: true, name: true },
-                },
-              },
-            },
-            subRegions: {
-              select: {
-                id: true,
-                name: true,
-                bounds: true,
-                centroid: true,
-              },
-            },
+            runs: true,
+            lifts: true,
           },
         });
 
         if (connected) {
-          // Add connected runs with subRegionName
-          allRuns = [
-            ...allRuns,
-            ...connected.runs.map(run => ({
-              id: run.id,
-              osmId: run.osmId,
-              name: run.name,
-              difficulty: run.difficulty,
-              status: run.status,
-              geometry: run.geometry,
-              properties: run.properties,
-              subRegionId: run.subRegionId,
-              subRegionName: run.subRegion?.name || connectedArea.name,
-            })),
-          ];
+          // Add connected runs
+          const connectedRuns = connected.runs.map(run => ({
+            id: run.id,
+            osmId: run.osmId,
+            name: run.name,
+            difficulty: run.difficulty,
+            status: run.status,
+            locality: run.locality || connectedArea.name,
+            geometry: run.geometry,
+            properties: run.properties,
+          }));
+          allRuns = [...allRuns, ...connectedRuns];
 
-          // Add connected lifts with subRegionName
-          allLifts = [
-            ...allLifts,
-            ...connected.lifts.map(lift => ({
-              id: lift.id,
-              osmId: lift.osmId,
-              name: lift.name,
-              liftType: lift.liftType,
-              status: lift.status,
-              capacity: lift.capacity,
-              geometry: lift.geometry,
-              properties: lift.properties,
-              subRegionId: lift.subRegionId,
-              subRegionName: lift.subRegion?.name || connectedArea.name,
-            })),
-          ];
+          // Add connected lifts
+          const connectedLifts = connected.lifts.map(lift => ({
+            id: lift.id,
+            osmId: lift.osmId,
+            name: lift.name,
+            liftType: lift.liftType,
+            status: lift.status,
+            locality: lift.locality || connectedArea.name,
+            capacity: lift.capacity,
+            geometry: lift.geometry,
+            properties: lift.properties,
+          }));
+          allLifts = [...allLifts, ...connectedLifts];
 
-          // Add connected sub-regions (or create virtual one from connected area name)
-          if (connected.subRegions.length > 0) {
-            allSubRegions = [...allSubRegions, ...connected.subRegions];
-          } else {
-            // Create a virtual sub-region from the connected area
-            allSubRegions = [
-              ...allSubRegions,
-              {
-                id: `virtual-${connectedArea.id}`,
-                name: connectedArea.name,
-                bounds: null,
-                centroid: { lat: connectedArea.latitude, lng: connectedArea.longitude },
-              },
-            ];
-          }
+          // Add localities from connected areas
+          connectedRuns.forEach(run => {
+            if (run.locality) localitySet.add(run.locality);
+          });
+          connectedLifts.forEach(lift => {
+            if (lift.locality) localitySet.add(lift.locality);
+          });
         }
       }
+      allLocalities = Array.from(localitySet).sort();
     }
 
     const response = {
@@ -210,7 +164,7 @@ export async function GET(
       properties: skiArea.properties,
       runs: allRuns,
       lifts: allLifts,
-      subRegions: allSubRegions,
+      localities: allLocalities,
       connectedAreas: connectedAreas.length > 0 ? connectedAreas : undefined,
     };
 

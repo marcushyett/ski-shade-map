@@ -5,10 +5,10 @@ export const dynamic = 'force-dynamic';
 
 export interface LocationSearchResult {
   id: string;
-  type: 'country' | 'region' | 'subregion';
+  type: 'country' | 'region' | 'locality';
   name: string;
   country?: string;
-  region?: string;       // Parent ski area name for sub-regions
+  region?: string;       // Parent ski area name for localities
   skiAreaId?: string;    // The ski area to load
   latitude?: number;
   longitude?: number;
@@ -23,11 +23,6 @@ function normalizeText(text: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-}
-
-// Check if normalized query matches normalized text
-function matchesNormalized(text: string, query: string): boolean {
-  return normalizeText(text).includes(normalizeText(query));
 }
 
 // In-memory cache for ski areas (refreshed every 5 minutes)
@@ -45,18 +40,18 @@ interface CachedSkiArea {
   liftCount: number;
 }
 
-interface CachedSubRegion {
-  id: string;
-  name: string;
-  nameNormalized: string;
-  centroid: { lat: number; lng: number } | null;
+interface CachedLocality {
+  locality: string;
+  localityNormalized: string;
   skiAreaId: string;
   skiAreaName: string;
   country: string | null;
+  latitude: number;
+  longitude: number;
 }
 
 let skiAreasCache: CachedSkiArea[] | null = null;
-let subRegionsCache: CachedSubRegion[] | null = null;
+let localitiesCache: CachedLocality[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -99,38 +94,53 @@ async function getSkiAreasFromCache(): Promise<CachedSkiArea[]> {
   return skiAreasCache;
 }
 
-async function getSubRegionsFromCache(): Promise<CachedSubRegion[]> {
+async function getLocalitiesFromCache(): Promise<CachedLocality[]> {
   const now = Date.now();
-  if (subRegionsCache && now - cacheTimestamp < CACHE_TTL) {
-    return subRegionsCache;
+  if (localitiesCache && now - cacheTimestamp < CACHE_TTL) {
+    return localitiesCache;
   }
 
-  const subRegions = await prisma.subRegion.findMany({
+  // Get unique localities from runs grouped by ski area
+  const runsWithLocality = await prisma.run.findMany({
+    where: {
+      locality: { not: null },
+    },
     select: {
-      id: true,
-      name: true,
-      centroid: true,
+      locality: true,
       skiArea: {
         select: {
           id: true,
           name: true,
           country: true,
+          latitude: true,
+          longitude: true,
         },
       },
     },
+    distinct: ['locality', 'skiAreaId'],
   });
 
-  subRegionsCache = subRegions.map(sr => ({
-    id: sr.id,
-    name: sr.name,
-    nameNormalized: normalizeText(sr.name),
-    centroid: sr.centroid as { lat: number; lng: number } | null,
-    skiAreaId: sr.skiArea.id,
-    skiAreaName: sr.skiArea.name,
-    country: sr.skiArea.country,
-  }));
+  // Create unique localities map
+  const localityMap = new Map<string, CachedLocality>();
+  for (const run of runsWithLocality) {
+    if (run.locality) {
+      const key = `${run.locality}-${run.skiArea.id}`;
+      if (!localityMap.has(key)) {
+        localityMap.set(key, {
+          locality: run.locality,
+          localityNormalized: normalizeText(run.locality),
+          skiAreaId: run.skiArea.id,
+          skiAreaName: run.skiArea.name,
+          country: run.skiArea.country,
+          latitude: run.skiArea.latitude,
+          longitude: run.skiArea.longitude,
+        });
+      }
+    }
+  }
 
-  return subRegionsCache;
+  localitiesCache = Array.from(localityMap.values());
+  return localitiesCache;
 }
 
 export async function GET(request: NextRequest) {
@@ -147,13 +157,13 @@ export async function GET(request: NextRequest) {
     const normalizedQuery = normalizeText(query);
 
     // Fetch from cache (fast after first load)
-    const [skiAreas, subRegions] = await Promise.all([
+    const [skiAreas, localities] = await Promise.all([
       getSkiAreasFromCache(),
-      getSubRegionsFromCache(),
+      getLocalitiesFromCache(),
     ]);
 
     // Filter ski areas with pre-normalized strings (faster)
-    const matchedSkiAreas = skiAreas.filter(area => 
+    const matchedSkiAreas = skiAreas.filter(area =>
       area.nameNormalized.includes(normalizedQuery) ||
       area.countryNormalized.includes(normalizedQuery) ||
       area.regionNormalized.includes(normalizedQuery)
@@ -174,26 +184,26 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Filter sub-regions with pre-normalized strings
-    const matchedSubRegions = subRegions.filter(sr => 
-      sr.nameNormalized.includes(normalizedQuery)
+    // Filter localities with pre-normalized strings
+    const matchedLocalities = localities.filter(loc =>
+      loc.localityNormalized.includes(normalizedQuery)
     );
 
-    // Add sub-regions
-    for (const subRegion of matchedSubRegions.slice(0, limit)) {
+    // Add localities
+    for (const locality of matchedLocalities.slice(0, limit)) {
       results.push({
-        id: subRegion.id,
-        type: 'subregion',
-        name: subRegion.name,
-        country: subRegion.country || undefined,
-        region: subRegion.skiAreaName,
-        skiAreaId: subRegion.skiAreaId,
-        latitude: subRegion.centroid?.lat,
-        longitude: subRegion.centroid?.lng,
+        id: `locality-${locality.locality}-${locality.skiAreaId}`,
+        type: 'locality',
+        name: locality.locality,
+        country: locality.country || undefined,
+        region: locality.skiAreaName,
+        skiAreaId: locality.skiAreaId,
+        latitude: locality.latitude,
+        longitude: locality.longitude,
       });
     }
 
-    // 3. Search by country name - return top ski areas from that country
+    // Search by country name - return top ski areas from that country
     const matchedCountries = skiAreas
       .filter(area => area.country && area.countryNormalized.includes(normalizedQuery))
       .map(area => area.country)
@@ -216,11 +226,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Sort: exact matches first (normalized), then by type (subregion > region > country)
+    // Sort: exact matches first (normalized), then by type (locality > region > country)
     results.sort((a, b) => {
       const aNorm = normalizeText(a.name);
       const bNorm = normalizeText(b.name);
-      
+
       const aExact = aNorm === normalizedQuery;
       const bExact = bNorm === normalizedQuery;
       if (aExact && !bExact) return -1;
@@ -232,8 +242,8 @@ export async function GET(request: NextRequest) {
       if (aStarts && !bStarts) return -1;
       if (!aStarts && bStarts) return 1;
 
-      // Prefer sub-regions and regions over countries
-      const typeOrder = { subregion: 0, region: 1, country: 2 };
+      // Prefer localities and regions over countries
+      const typeOrder = { locality: 0, region: 1, country: 2 };
       return typeOrder[a.type] - typeOrder[b.type];
     });
 
@@ -249,4 +259,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

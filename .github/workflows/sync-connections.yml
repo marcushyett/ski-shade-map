@@ -45,15 +45,15 @@ jobs:
       - name: Detect ski area connections
         run: |
           echo "🔗 Detecting ski area connections..."
-          
-          CMD="npx tsx scripts/sync-subregions.ts --connections-only"
-          
+
+          CMD="npx tsx scripts/sync-connections.ts"
+
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             CMD="$CMD --dry-run"
           fi
-          
+
           $CMD
-          
+
           echo "✅ Connection detection complete"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

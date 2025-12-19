@@ -23,7 +23,6 @@ model SkiArea {
   properties  Json?    // Additional OSM properties
   runs        Run[]
   lifts       Lift[]
-  subRegions  SubRegion[]
   // Connected ski areas (for loading adjacent areas together)
   connectedTo   SkiAreaConnection[] @relation("SkiAreaFrom")
   connectedFrom SkiAreaConnection[] @relation("SkiAreaTo")
@@ -33,25 +32,6 @@ model SkiArea {
   @@index([country])
   @@index([name])
   @@index([latitude, longitude])
-}
-
-// Sub-regions within a ski area (e.g., Méribel within Les Trois Vallées)
-model SubRegion {
-  id          String   @id @default(cuid())
-  osmId       String?  @unique
-  name        String
-  geometry    Json?    // GeoJSON polygon boundary
-  bounds      Json?    // {minLat, maxLat, minLng, maxLng}
-  centroid    Json?    // {lat, lng} center point
-  skiAreaId   String
-  skiArea     SkiArea  @relation(fields: [skiAreaId], references: [id], onDelete: Cascade)
-  runs        Run[]
-  lifts       Lift[]   @relation("LiftSubRegion")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([skiAreaId])
-  @@index([name])
 }
 
 // Connections between ski areas (for loading adjacent areas together)
@@ -74,17 +54,16 @@ model Run {
   name        String?
   difficulty  String?  // novice, easy, intermediate, advanced, expert
   status      String?  // open, closed, unknown
+  locality    String?  // Village/town name from OpenSkiMap data
   geometry    Json     // GeoJSON LineString or Polygon
   properties  Json?
   skiAreaId   String
   skiArea     SkiArea  @relation(fields: [skiAreaId], references: [id], onDelete: Cascade)
-  subRegionId String?
-  subRegion   SubRegion? @relation(fields: [subRegionId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([skiAreaId])
-  @@index([subRegionId])
+  @@index([locality])
   @@index([difficulty])
 }
 
@@ -94,18 +73,17 @@ model Lift {
   name        String?
   liftType    String?  // chairlift, gondola, drag, cable_car, etc.
   status      String?  // open, closed, unknown
+  locality    String?  // Village/town name from OpenSkiMap data
   capacity    Int?
   geometry    Json     // GeoJSON LineString
   properties  Json?
   skiAreaId   String
   skiArea     SkiArea  @relation(fields: [skiAreaId], references: [id], onDelete: Cascade)
-  subRegionId String?
-  subRegion   SubRegion? @relation("LiftSubRegion", fields: [subRegionId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([skiAreaId])
-  @@index([subRegionId])
+  @@index([locality])
 }
 
 model DataSync {

@@ -1,18 +1,26 @@
 name: Sync Ski Area Data
 
 on:
+  # Run weekly on Sunday at midnight UTC
+  schedule:
+    - cron: '0 0 * * 0'
+
   workflow_dispatch:
     inputs:
       country:
         description: 'Country code (e.g., FR, CH, AT) or "all" for all countries'
         required: true
-        default: 'FR'
+        default: 'all'
       skip_runs:
         description: 'Skip syncing runs (faster for testing)'
         type: boolean
         default: false
       skip_lifts:
         description: 'Skip syncing lifts (faster for testing)'
+        type: boolean
+        default: false
+      skip_connections:
+        description: 'Skip detecting ski area connections'
         type: boolean
         default: false
 
@@ -28,6 +36,9 @@ on:
       skip_lifts:
         type: boolean
         default: false
+      skip_connections:
+        type: boolean
+        default: false
     secrets:
       DATABASE_URL:
         required: true
@@ -39,13 +50,13 @@ jobs:
   sync-country:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    
+
     strategy:
       matrix:
-        # If "all" is specified, run for all countries; otherwise just the specified one
-        country: ${{ inputs.country == 'all' && fromJson('["FR", "CH", "AT", "IT", "DE", "US", "CA", "NZ", "JP", "NO", "SE", "FI", "ES", "AD", "BG", "RO", "SI", "SK", "PL", "CZ"]') || fromJson(format('["{0}"]', inputs.country)) }}
+        # For scheduled runs or 'all', run for all countries; otherwise just the specified one
+        country: ${{ (github.event_name == 'schedule' || inputs.country == 'all') && fromJson('["FR", "CH", "AT", "IT", "DE", "US", "CA", "NZ", "JP", "AU", "NO", "SE", "FI", "ES", "AD", "BG", "RO", "SI", "SK", "PL", "CZ"]') || fromJson(format('["{0}"]', inputs.country)) }}
       fail-fast: false
-      max-parallel: 2  # Be nice to OpenSkiMap API
+      max-parallel: 10  # Run countries in parallel
     
     steps:
       - name: Checkout code
@@ -105,9 +116,9 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     needs: sync-country
-    if: always()
+    if: always() && needs.sync-country.result == 'success'
     timeout-minutes: 10
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -128,4 +139,59 @@ jobs:
         run: npx tsx scripts/validate-data.ts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # Detect connections between ski areas
+  sync-connections:
+    runs-on: ubuntu-latest
+    needs: validate
+    if: |
+      always() &&
+      needs.validate.result == 'success' &&
+      (github.event_name == 'schedule' || inputs.skip_connections != true)
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Detect ski area connections
+        run: |
+          echo "🔗 Detecting ski area connections..."
+          npx tsx scripts/sync-connections.ts
+          echo "✅ Connection detection complete"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # Summary job
+  summary:
+    runs-on: ubuntu-latest
+    needs: [sync-country, validate, sync-connections]
+    if: always()
+
+    steps:
+      - name: Generate Summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # 🎿 Ski Data Sync Results
+
+          | Step | Status |
+          |------|--------|
+          | 🎿 Country Sync | ${{ needs.sync-country.result == 'success' && '✅ Success' || (needs.sync-country.result == 'skipped' && '⏭️ Skipped' || '⚠️ Partial/Failed') }} |
+          | ✅ Validation | ${{ needs.validate.result == 'success' && '✅ Passed' || (needs.validate.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |
+          | 🔗 Connections | ${{ needs.sync-connections.result == 'success' && '✅ Success' || (needs.sync-connections.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |
+
+          **Trigger:** ${{ github.event_name == 'schedule' && '⏰ Scheduled (weekly)' || '🔘 Manual' }}
+          EOF
 

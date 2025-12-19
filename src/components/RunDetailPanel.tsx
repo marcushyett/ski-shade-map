@@ -521,15 +521,15 @@ export const RunDetailPanel = memo(function RunDetailPanel({
               <span style={{ fontSize: 11, color: difficultyColor }}>
                 {run.difficulty || 'Unknown'}
               </span>
-              {run.subRegionName && (
-                <span style={{ 
-                  fontSize: 9, 
+              {run.locality && (
+                <span style={{
+                  fontSize: 9,
                   color: '#60a5fa',
                   background: 'rgba(96, 165, 250, 0.15)',
                   padding: '1px 5px',
                   borderRadius: 3
                 }}>
-                  {run.subRegionName}
+                  {run.locality}
                 </span>
               )}
             </div>
