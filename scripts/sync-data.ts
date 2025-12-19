@@ -409,32 +409,47 @@ async function main() {
   if (!skipRuns) {
     console.log('📥 Downloading runs (large file, may take a minute)...');
     const runsFile = await downloadFile(`${OPENSKIMAP_BASE}/runs.geojson`, 'runs.geojson');
-    
+
     console.log('💾 Processing runs (streaming)...');
     let runsProcessed = 0;
-    
+    let runsWithPlaces = 0;
+    let runsWithLocality = 0;
+    let samplePlacesLogged = false;
+
     const pipeline = chain([
       createReadStream(runsFile),
       parser(),
       pick({ filter: 'features' }),
       streamArray(),
     ]);
-    
+
     await new Promise<void>((resolve, reject) => {
       const processQueue: Promise<void>[] = [];
-      
+
       pipeline
         .on('data', ({ value }: { value: { geometry: any; properties: RunProperties } }) => {
           const props = value.properties;
           const skiAreaRefs = props?.skiAreas || [];
-          
+
           const matchingRef = skiAreaRefs.find(ref => osmIdToDbId.has(ref.properties?.id));
           if (!matchingRef) return;
 
           const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
           if (!skiAreaId) return;
 
+          // Debug logging for locality
+          if (props.places && props.places.length > 0) {
+            runsWithPlaces++;
+            if (!samplePlacesLogged) {
+              console.log(`   📍 Sample run places data: ${JSON.stringify(props.places[0])}`);
+              samplePlacesLogged = true;
+            }
+          }
+
           const locality = extractLocality(props.places);
+          if (locality) {
+            runsWithLocality++;
+          }
 
           const processPromise = prisma.run.upsert({
             where: { osmId: props.id },
@@ -468,6 +483,10 @@ async function main() {
         .on('end', async () => {
           await Promise.all(processQueue);
           console.log(`   ✅ Saved ${runsProcessed} runs                    `);
+          console.log(`   📊 Locality stats: ${runsWithPlaces} runs with places data, ${runsWithLocality} with extracted locality`);
+          if (runsWithPlaces === 0) {
+            console.log(`   ⚠️  WARNING: No runs have places data - locality will be null for all runs`);
+          }
           resolve();
         })
         .on('error', reject);
@@ -479,32 +498,47 @@ async function main() {
   if (!skipLifts) {
     console.log('📥 Downloading lifts...');
     const liftsFile = await downloadFile(`${OPENSKIMAP_BASE}/lifts.geojson`, 'lifts.geojson');
-    
+
     console.log('💾 Processing lifts (streaming)...');
     let liftsProcessed = 0;
-    
+    let liftsWithPlaces = 0;
+    let liftsWithLocality = 0;
+    let sampleLiftPlacesLogged = false;
+
     const liftsPipeline = chain([
       createReadStream(liftsFile),
       parser(),
       pick({ filter: 'features' }),
       streamArray(),
     ]);
-    
+
     await new Promise<void>((resolve, reject) => {
       const processQueue: Promise<void>[] = [];
-      
+
       liftsPipeline
         .on('data', ({ value }: { value: { geometry: any; properties: LiftProperties } }) => {
           const props = value.properties;
           const skiAreaRefs = props?.skiAreas || [];
-          
+
           const matchingRef = skiAreaRefs.find(ref => osmIdToDbId.has(ref.properties?.id));
           if (!matchingRef) return;
 
           const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
           if (!skiAreaId) return;
 
+          // Debug logging for locality
+          if (props.places && props.places.length > 0) {
+            liftsWithPlaces++;
+            if (!sampleLiftPlacesLogged) {
+              console.log(`   📍 Sample lift places data: ${JSON.stringify(props.places[0])}`);
+              sampleLiftPlacesLogged = true;
+            }
+          }
+
           const locality = extractLocality(props.places);
+          if (locality) {
+            liftsWithLocality++;
+          }
 
           const processPromise = prisma.lift.upsert({
             where: { osmId: props.id },
@@ -540,6 +574,10 @@ async function main() {
         .on('end', async () => {
           await Promise.all(processQueue);
           console.log(`   ✅ Saved ${liftsProcessed} lifts                    `);
+          console.log(`   📊 Locality stats: ${liftsWithPlaces} lifts with places data, ${liftsWithLocality} with extracted locality`);
+          if (liftsWithPlaces === 0) {
+            console.log(`   ⚠️  WARNING: No lifts have places data - locality will be null for all lifts`);
+          }
           resolve();
         })
         .on('error', reject);
