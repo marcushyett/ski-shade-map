@@ -62,7 +62,8 @@ interface RunProperties {
   difficulty?: string;
   status?: string;
   uses?: string[];
-  skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>;
+  places?: SkiAreaPlace[];
+  skiAreas?: Array<{ properties: { id: string } }>;
 }
 
 interface LiftProperties {
@@ -71,26 +72,17 @@ interface LiftProperties {
   liftType?: string;
   status?: string;
   capacity?: number;
-  skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>;
+  places?: SkiAreaPlace[];
+  skiAreas?: Array<{ properties: { id: string } }>;
 }
 
-// Extract locality from ski area places
-function extractLocality(
-  skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>
-): string | null {
-  if (!skiAreas || skiAreas.length === 0) return null;
-
-  // Try to get locality from the first ski area's places
-  for (const skiArea of skiAreas) {
-    const places = skiArea.properties?.places;
-    if (!places) continue;
-
-    for (const place of places) {
-      const locality = place.localized?.en?.locality;
-      if (locality) return locality;
-    }
+// Extract locality from places array on the run/lift itself
+function extractLocality(places?: SkiAreaPlace[]): string | null {
+  if (!places || places.length === 0) return null;
+  for (const place of places) {
+    const locality = place.localized?.en?.locality;
+    if (locality) return locality;
   }
-
   return null;
 }
 
@@ -330,7 +322,7 @@ async function syncRunsAndLifts(countryFilter: string | null) {
         const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
         if (!skiAreaId) return;
 
-        const locality = extractLocality(skiAreaRefs);
+        const locality = extractLocality(props.places);
 
         try {
           await prisma.run.upsert({
@@ -394,7 +386,7 @@ async function syncRunsAndLifts(countryFilter: string | null) {
         const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
         if (!skiAreaId) return;
 
-        const locality = extractLocality(skiAreaRefs);
+        const locality = extractLocality(props.places);
 
         try {
           await prisma.lift.upsert({
