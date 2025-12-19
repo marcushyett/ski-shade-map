@@ -86,6 +86,9 @@ export type AnalyticsEvent =
   | 'cache_download_started'
   | 'cache_download_completed'
   
+  // Onboarding
+  | 'onboarding_resort_selected'
+
   // App lifecycle
   | 'app_loaded'
   | 'pwa_installed'
