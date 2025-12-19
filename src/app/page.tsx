@@ -91,10 +91,10 @@ const ControlsContent = memo(function ControlsContent({
   fakeLocation,
   isFakeLocationDropMode,
   onLocationSelect,
-  currentSubRegion,
+  currentLocality,
   onSelectRun,
   onSelectLift,
-  onSelectSubRegion,
+  onSelectLocality,
   onErrorClose,
   onWeatherLoad,
   onRemoveFavourite,
@@ -113,10 +113,10 @@ const ControlsContent = memo(function ControlsContent({
   fakeLocation: { lat: number; lng: number } | null;
   isFakeLocationDropMode: boolean;
   onLocationSelect: (location: LocationSelection) => void;
-  currentSubRegion: { id: string; name: string } | null;
+  currentLocality: string | null;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
-  onSelectSubRegion: (subRegion: { id: string; name: string; centroid?: { lat: number; lng: number } | null }) => void;
+  onSelectLocality: (locality: string) => void;
   onErrorClose: () => void;
   onWeatherLoad: (weather: WeatherData) => void;
   onRemoveFavourite: (runId: string) => void;
@@ -142,12 +142,12 @@ const ControlsContent = memo(function ControlsContent({
         <Text type="secondary" style={{ fontSize: 10, marginBottom: 4, display: 'block' }}>
           LOCATION {isOffline && <span style={{ color: '#ff4d4f' }}>(offline)</span>}
         </Text>
-        <LocationSearch 
+        <LocationSearch
           onSelect={onLocationSelect}
           currentLocation={{
             country: selectedArea?.country || undefined,
             region: selectedArea?.name || undefined,
-            subRegion: currentSubRegion?.name,
+            locality: currentLocality || undefined,
           }}
           disabled={isOffline}
           placeholder="Search ski areas, villages..."
@@ -176,13 +176,13 @@ const ControlsContent = memo(function ControlsContent({
 
           {/* Trails, lifts, and favourites list */}
           <div className="flex-1 overflow-y-auto min-h-0">
-            <TrailsLiftsList 
+            <TrailsLiftsList
               runs={skiAreaDetails.runs}
               lifts={skiAreaDetails.lifts}
-              subRegions={skiAreaDetails.subRegions}
+              localities={skiAreaDetails.localities}
               onSelectRun={onSelectRun}
               onSelectLift={onSelectLift}
-              onSelectSubRegion={onSelectSubRegion}
+              onSelectLocality={onSelectLocality}
             />
           </div>
         </>
@@ -364,9 +364,9 @@ export default function Home() {
   const [isWeatherCardCollapsed, setIsWeatherCardCollapsed] = useState(false);
   const [isNavPanelMinimized, setIsNavPanelMinimized] = useState(false);
   
-  // Location/sub-region tracking
-  const [currentSubRegion, setCurrentSubRegion] = useState<{ id: string; name: string } | null>(null);
-  const [zoomToSubRegion, setZoomToSubRegion] = useState<{ id: string; name: string; lat: number; lng: number } | null>(null);
+  // Location/locality tracking
+  const [currentLocality, setCurrentLocality] = useState<string | null>(null);
+  const [zoomToLocality, setZoomToLocality] = useState<{ locality: string; lat: number; lng: number } | null>(null);
   
   // Points of Interest (toilets, restaurants, viewpoints)
   const [pois, setPois] = useState<POIData[]>([]);
@@ -713,57 +713,49 @@ export default function Home() {
     setWeather(null);
     setMobileMenuOpen(false);
     
-    // If a sub-region was selected, zoom to it after data loads
-    if (location.zoomToSubRegion && location.subRegionId && location.latitude && location.longitude) {
-      setZoomToSubRegion({
-        id: location.subRegionId,
-        name: location.subRegionName || '',
+    // If a locality was selected, zoom to it after data loads
+    if (location.zoomToLocality && location.locality && location.latitude && location.longitude) {
+      setZoomToLocality({
+        locality: location.locality,
         lat: location.latitude,
         lng: location.longitude,
       });
-      setCurrentSubRegion({
-        id: location.subRegionId,
-        name: location.subRegionName || '',
-      });
+      setCurrentLocality(location.locality);
     } else {
-      setZoomToSubRegion(null);
-      setCurrentSubRegion(null);
+      setZoomToLocality(null);
+      setCurrentLocality(null);
     }
-    
+
     trackEvent('location_selected', {
       ski_area_id: location.skiAreaId,
       ski_area_name: location.skiAreaName,
-      sub_region_id: location.subRegionId,
-      sub_region_name: location.subRegionName,
+      locality: location.locality,
       country: location.country,
     });
   }, []);
 
-  // Handle zoom to sub-region after ski area data is loaded
+  // Handle zoom to locality after ski area data is loaded
   useEffect(() => {
-    if (zoomToSubRegion && skiAreaDetails) {
-      // Zoom to the sub-region with a slight delay to ensure map is ready
+    if (zoomToLocality && skiAreaDetails) {
+      // Zoom to the locality with a slight delay to ensure map is ready
       setTimeout(() => {
-        mapRef.current?.flyTo(zoomToSubRegion.lat, zoomToSubRegion.lng, 14);
-        setZoomToSubRegion(null);
+        mapRef.current?.flyTo(zoomToLocality.lat, zoomToLocality.lng, 14);
+        setZoomToLocality(null);
       }, 500);
     }
-  }, [zoomToSubRegion, skiAreaDetails]);
+  }, [zoomToLocality, skiAreaDetails]);
 
   // Navigate to region (zoom out to see whole area)
   const handleNavigateToRegion = useCallback(() => {
     if (skiAreaDetails) {
       mapRef.current?.flyTo(skiAreaDetails.latitude, skiAreaDetails.longitude, 12);
-      setCurrentSubRegion(null);
+      setCurrentLocality(null);
     }
   }, [skiAreaDetails]);
 
-  // Navigate to a specific sub-region
-  const handleNavigateToSubRegion = useCallback((subRegion: { id: string; name: string; centroid?: { lat: number; lng: number } | null }) => {
-    if (subRegion.centroid) {
-      mapRef.current?.flyTo(subRegion.centroid.lat, subRegion.centroid.lng, 14);
-      setCurrentSubRegion({ id: subRegion.id, name: subRegion.name });
-    }
+  // Select a locality (just sets the current locality, doesn't zoom since localities don't have centroids)
+  const handleSelectLocality = useCallback((locality: string) => {
+    setCurrentLocality(locality);
   }, []);
 
   const handleSelectRun = useCallback((run: RunData) => {
@@ -1315,40 +1307,8 @@ export default function Home() {
     [skiAreaDetails]
   );
 
-  // Detect which sub-region the map center is in
-  const detectSubRegion = useCallback((lat: number, lng: number) => {
-    if (!skiAreaDetails?.subRegions?.length) return null;
-    
-    // Find the sub-region whose centroid is closest to the map center
-    let closestSubRegion: { id: string; name: string } | null = null;
-    let closestDistance = Infinity;
-    
-    for (const subRegion of skiAreaDetails.subRegions) {
-      const centroid = subRegion.centroid as { lat: number; lng: number } | null;
-      if (!centroid) continue;
-      
-      // Simple distance calculation
-      const distance = Math.sqrt(
-        Math.pow(lat - centroid.lat, 2) + Math.pow(lng - centroid.lng, 2)
-      );
-      
-      // Only consider if within reasonable distance (~5km = ~0.05 degrees)
-      if (distance < 0.05 && distance < closestDistance) {
-        closestDistance = distance;
-        closestSubRegion = { id: subRegion.id, name: subRegion.name };
-      }
-    }
-    
-    return closestSubRegion;
-  }, [skiAreaDetails?.subRegions]);
-
-  // Update current sub-region when map view changes
-  useEffect(() => {
-    if (mapView) {
-      const detectedSubRegion = detectSubRegion(mapView.lat, mapView.lng);
-      setCurrentSubRegion(detectedSubRegion);
-    }
-  }, [mapView, detectSubRegion]);
+  // Note: Localities don't have centroids, so we don't auto-detect the current locality
+  // The currentLocality is set when the user explicitly selects one from the UI
 
   // Get hourly weather for time slider
   const hourlyWeather = useMemo(() => weather?.hourly || [], [weather]);
@@ -1535,14 +1495,14 @@ export default function Home() {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                   }}
-                  title={`${skiAreaDetails.country ? skiAreaDetails.country + ' · ' : ''}${skiAreaDetails.name}${currentSubRegion ? ' · ' + currentSubRegion.name : ''}`}
+                  title={`${skiAreaDetails.country ? skiAreaDetails.country + ' · ' : ''}${skiAreaDetails.name}${currentLocality ? ' · ' + currentLocality : ''}`}
                 >
                   {skiAreaDetails.country && (
                     <span style={{ color: '#666' }}>{skiAreaDetails.country} · </span>
                   )}
                   {skiAreaDetails.name}
-                  {currentSubRegion && (
-                    <span style={{ color: '#888' }}> · {currentSubRegion.name}</span>
+                  {currentLocality && (
+                    <span style={{ color: '#888' }}> · {currentLocality}</span>
                   )}
                 </span>
               </div>
@@ -1597,10 +1557,10 @@ export default function Home() {
           fakeLocation={fakeLocation}
           isFakeLocationDropMode={isFakeLocationDropMode}
           onLocationSelect={handleLocationSelect}
-          currentSubRegion={currentSubRegion}
+          currentLocality={currentLocality}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
-          onSelectSubRegion={handleNavigateToSubRegion}
+          onSelectLocality={handleSelectLocality}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
           onRemoveFavourite={removeFavourite}
@@ -1611,7 +1571,7 @@ export default function Home() {
 
       {/* Desktop sidebar */}
       <div className="hidden md:flex md:flex-col controls-panel" style={{ marginTop: (isOffline || wasOffline) ? 44 : 0 }}>
-        <ControlsContent 
+        <ControlsContent
           selectedArea={selectedArea}
           skiAreaDetails={skiAreaDetails}
           error={error}
@@ -1624,10 +1584,10 @@ export default function Home() {
           fakeLocation={fakeLocation}
           isFakeLocationDropMode={isFakeLocationDropMode}
           onLocationSelect={handleLocationSelect}
-          currentSubRegion={currentSubRegion}
+          currentLocality={currentLocality}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
-          onSelectSubRegion={handleNavigateToSubRegion}
+          onSelectLocality={handleSelectLocality}
           onErrorClose={handleErrorClose}
           onWeatherLoad={handleWeatherLoad}
           onRemoveFavourite={removeFavourite}

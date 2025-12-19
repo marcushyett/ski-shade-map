@@ -29,7 +29,7 @@ interface SearchResult {
   liftType?: string | null;
   coordinates?: [number, number];
   placeType?: PlaceType;
-  subRegionName?: string | null;
+  locality?: string | null;
 }
 
 interface SearchBarProps {
@@ -172,17 +172,17 @@ function SearchBarInner({
   }, [searchText, debouncedPlaceSearch]);
 
   // Filter runs and lifts by search
-  // Deduplicate runs by name+subregion, keeping highest altitude
+  // Deduplicate runs by name+locality, keeping highest altitude
   // Filter out unnamed runs
   const filteredRuns = useMemo(() => {
     if (!searchText) return [];
     const lower = searchText.toLowerCase();
     const matchingRuns = runs.filter((r) => r.name && r.name.toLowerCase().includes(lower));
-    
-    // Group by name + subregion, keep highest altitude
+
+    // Group by name + locality, keep highest altitude
     const grouped = new Map<string, typeof matchingRuns[0]>();
     for (const run of matchingRuns) {
-      const key = `${run.name}::${run.subRegionName || ''}`;
+      const key = `${run.name}::${run.locality || ''}`;
       const existing = grouped.get(key);
       if (!existing) {
         grouped.set(key, run);
@@ -222,7 +222,7 @@ function SearchBarInner({
         id: run.id,
         name: run.name || 'Unnamed Run',
         difficulty: run.difficulty,
-        subRegionName: run.subRegionName,
+        locality: run.locality,
       });
     });
     
@@ -388,16 +388,16 @@ function SearchBarInner({
                   <div
                     key={run.id}
                     className={`search-item ${isSelected ? 'selected' : ''}`}
-                    onClick={() => handleSelect({ type: 'run', id: run.id, name: run.name || '', difficulty: run.difficulty, subRegionName: run.subRegionName })}
+                    onClick={() => handleSelect({ type: 'run', id: run.id, name: run.name || '', difficulty: run.difficulty, locality: run.locality })}
                   >
                     <span
                       className="search-item-dot"
                       style={{ backgroundColor: getDifficultyColor(run.difficulty) }}
                     />
                     <span className="search-item-name">{run.name || 'Unnamed'}</span>
-                    {run.subRegionName && (
+                    {run.locality && (
                       <span className="search-item-subregion">
-                        {run.subRegionName}
+                        {run.locality}
                       </span>
                     )}
                     {run.difficulty && (

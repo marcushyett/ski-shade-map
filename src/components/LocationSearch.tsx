@@ -10,12 +10,11 @@ import type { LocationSearchResult } from '@/app/api/locations/search/route';
 export interface LocationSelection {
   skiAreaId: string;
   skiAreaName: string;
-  subRegionId?: string;
-  subRegionName?: string;
+  locality?: string;
   country?: string;
   latitude?: number;
   longitude?: number;
-  zoomToSubRegion?: boolean;
+  zoomToLocality?: boolean;
 }
 
 interface LocationSearchProps {
@@ -23,7 +22,7 @@ interface LocationSearchProps {
   currentLocation?: {
     country?: string;
     region?: string;
-    subRegion?: string;
+    locality?: string;
   };
   disabled?: boolean;
   placeholder?: string;
@@ -111,16 +110,15 @@ export default function LocationSearch({
 
     const selection: LocationSelection = {
       skiAreaId: result.skiAreaId!,
-      skiAreaName: result.type === 'subregion' ? result.region! : result.name,
+      skiAreaName: result.type === 'locality' ? result.region! : result.name,
       country: result.country,
       latitude: result.latitude,
       longitude: result.longitude,
     };
 
-    if (result.type === 'subregion') {
-      selection.subRegionId = result.id;
-      selection.subRegionName = result.name;
-      selection.zoomToSubRegion = true;
+    if (result.type === 'locality') {
+      selection.locality = result.name;
+      selection.zoomToLocality = true;
     }
 
     onSelect(selection);
@@ -154,7 +152,7 @@ export default function LocationSearch({
         return 'Country';
       case 'region':
         return 'Ski Area';
-      case 'subregion':
+      case 'locality':
         return 'Village';
     }
   };
@@ -178,7 +176,7 @@ export default function LocationSearch({
             <div className="location-selected-name">{currentLocation.region}</div>
             <div className="location-selected-meta">
               {currentLocation.country}
-              {currentLocation.subRegion && ` · ${currentLocation.subRegion}`}
+              {currentLocation.locality && ` · ${currentLocation.locality}`}
             </div>
           </div>
           <SearchOutlined className="location-selected-search-icon" />
@@ -239,7 +237,7 @@ export default function LocationSearch({
               <div className="location-result-content">
                 <div className="location-result-name">{result.name}</div>
                 <div className="location-result-meta">
-                  {result.type === 'subregion' && result.region && (
+                  {result.type === 'locality' && result.region && (
                     <>
                       {result.region}
                       {result.country && ` · ${result.country}`}

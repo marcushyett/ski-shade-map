@@ -6,19 +6,19 @@ import { GlobalOutlined, EnvironmentOutlined, CompassOutlined, SearchOutlined } 
 interface LocationNavbarProps {
   country?: string;
   region?: string;
-  subRegion?: string;
+  locality?: string;
   onChangeLocation: () => void;
   onNavigateToRegion?: () => void;
-  onNavigateToSubRegion?: () => void;
+  onNavigateToLocality?: () => void;
 }
 
 function LocationNavbar({
   country,
   region,
-  subRegion,
+  locality,
   onChangeLocation,
   onNavigateToRegion,
-  onNavigateToSubRegion,
+  onNavigateToLocality,
 }: LocationNavbarProps) {
   if (!region) {
     return (
@@ -43,9 +43,9 @@ function LocationNavbar({
             <span className="location-navbar-sep">›</span>
           </>
         )}
-        
+
         <button
-          className={`location-navbar-item ${!subRegion ? 'active' : ''}`}
+          className={`location-navbar-item ${!locality ? 'active' : ''}`}
           onClick={onNavigateToRegion}
           title="Zoom to entire ski area"
         >
@@ -53,16 +53,16 @@ function LocationNavbar({
           {region}
         </button>
 
-        {subRegion && (
+        {locality && (
           <>
             <span className="location-navbar-sep">›</span>
             <button
               className="location-navbar-item active"
-              onClick={onNavigateToSubRegion}
+              onClick={onNavigateToLocality}
               title="Zoom to this area"
             >
               <CompassOutlined style={{ fontSize: 10, opacity: 0.6 }} />
-              {subRegion}
+              {locality}
             </button>
           </>
         )}
@@ -76,4 +76,3 @@ function LocationNavbar({
 }
 
 export default memo(LocationNavbar);
-

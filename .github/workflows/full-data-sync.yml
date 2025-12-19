@@ -9,11 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       skip_ski_areas:
-        description: 'Skip syncing ski area data (just do sub-regions/connections)'
-        type: boolean
-        default: false
-      skip_subregions:
-        description: 'Skip syncing sub-regions'
+        description: 'Skip syncing ski area data'
         type: boolean
         default: false
       skip_validation:
@@ -259,94 +255,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
   # ============================================================================
-  # PHASE 2: Sync Sub-Regions (After all ski areas are done)
-  # ============================================================================
-  sync-subregions:
-    name: "🏔️ Sub-Regions"
-    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific]
-    if: |
-      always() && 
-      needs.setup.result == 'success' &&
-      inputs.skip_subregions != true
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npx prisma generate
-      
-      - name: "🏔️ Sync Sub-Regions"
-        run: |
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  SYNCING SUB-REGIONS FROM OVERPASS API                       ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "This fetches administrative boundaries and piste site relations"
-          echo "from OpenStreetMap to identify sub-regions within ski areas."
-          echo ""
-          
-          MAX_RETRIES=3
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "▶ Attempt $i of $MAX_RETRIES"
-            if npx tsx scripts/sync-subregions.ts --skip-connections; then
-              echo "✅ Sub-regions sync complete"
-              exit 0
-            fi
-            [ $i -lt $MAX_RETRIES ] && echo "⏳ Waiting 120s (Overpass rate limit)..." && sleep 120
-          done
-          echo "❌ Sub-region sync failed"
-          exit 1
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-  # ============================================================================
-  # PHASE 3: Detect Connections
-  # ============================================================================
-  sync-connections:
-    name: "🔗 Connections"
-    needs: [setup, sync-subregions]
-    if: |
-      always() && 
-      needs.setup.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npx prisma generate
-      
-      - name: "🔗 Detect Ski Area Connections"
-        run: |
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  DETECTING SKI AREA CONNECTIONS                              ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Finding ski areas within 500m of each other..."
-          echo ""
-          
-          npx tsx scripts/sync-subregions.ts --connections-only
-          echo "✅ Connection detection complete"
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-  # ============================================================================
-  # PHASE 4: Validation
+  # PHASE 2: Validation
   # ============================================================================
   validate:
     name: "✅ Validate"
-    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific, sync-subregions, sync-connections]
+    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific]
     if: |
-      always() && 
+      always() &&
       needs.setup.result == 'success' &&
       inputs.skip_validation != true
     runs-on: ubuntu-latest
@@ -377,10 +292,10 @@ jobs:
   # ============================================================================
   summary:
     name: "📊 Summary"
-    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific, sync-subregions, sync-connections, validate]
+    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific, validate]
     if: always()
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Calculate Duration
         id: duration
@@ -396,11 +311,11 @@ jobs:
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           # 🎿 Full Data Sync Pipeline Results
-          
+
           ## ⏱️ Duration: ${{ steps.duration.outputs.duration }}
-          
+
           ## Phase Results
-          
+
           | Phase | Status |
           |-------|--------|
           | 🔧 Setup & Migration | ${{ needs.setup.result == 'success' && '✅ Success' || '❌ Failed' }} |
@@ -409,12 +324,10 @@ jobs:
           | 🇪🇺 Europe East | ${{ needs.sync-europe-east.result == 'success' && '✅ Success' || (needs.sync-europe-east.result == 'skipped' && '⏭️ Skipped' || '⚠️ Partial/Failed') }} |
           | 🌎 Americas (US/CA) | ${{ needs.sync-americas.result == 'success' && '✅ Success' || (needs.sync-americas.result == 'skipped' && '⏭️ Skipped' || '⚠️ Partial/Failed') }} |
           | 🌏 Pacific (NZ/JP/AU) | ${{ needs.sync-pacific.result == 'success' && '✅ Success' || (needs.sync-pacific.result == 'skipped' && '⏭️ Skipped' || '⚠️ Partial/Failed') }} |
-          | 🏔️ Sub-Regions | ${{ needs.sync-subregions.result == 'success' && '✅ Success' || (needs.sync-subregions.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |
-          | 🔗 Connections | ${{ needs.sync-connections.result == 'success' && '✅ Success' || (needs.sync-connections.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |
           | ✅ Validation | ${{ needs.validate.result == 'success' && '✅ Passed' || (needs.validate.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |
-          
+
           ---
-          
+
           **Completed:** ${{ github.event.repository.updated_at }}
           EOF
 
