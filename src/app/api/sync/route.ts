@@ -62,7 +62,7 @@ interface RunProperties {
   difficulty?: string;
   status?: string;
   uses?: string[];
-  skiAreas?: Array<{ properties: { id: string } }>;
+  skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>;
 }
 
 interface LiftProperties {
@@ -71,7 +71,27 @@ interface LiftProperties {
   liftType?: string;
   status?: string;
   capacity?: number;
-  skiAreas?: Array<{ properties: { id: string } }>;
+  skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>;
+}
+
+// Extract locality from ski area places
+function extractLocality(
+  skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>
+): string | null {
+  if (!skiAreas || skiAreas.length === 0) return null;
+
+  // Try to get locality from the first ski area's places
+  for (const skiArea of skiAreas) {
+    const places = skiArea.properties?.places;
+    if (!places) continue;
+
+    for (const place of places) {
+      const locality = place.localized?.en?.locality;
+      if (locality) return locality;
+    }
+  }
+
+  return null;
 }
 
 export async function POST(request: NextRequest) {
@@ -310,6 +330,8 @@ async function syncRunsAndLifts(countryFilter: string | null) {
         const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
         if (!skiAreaId) return;
 
+        const locality = extractLocality(skiAreaRefs);
+
         try {
           await prisma.run.upsert({
             where: { osmId: props.id },
@@ -318,6 +340,7 @@ async function syncRunsAndLifts(countryFilter: string | null) {
               name: props.name || null,
               difficulty: mapDifficulty(props.difficulty),
               status: props.status || null,
+              locality,
               geometry: JSON.parse(JSON.stringify(run.geometry)),
               properties: JSON.parse(JSON.stringify(props)),
               skiAreaId,
@@ -326,6 +349,7 @@ async function syncRunsAndLifts(countryFilter: string | null) {
               name: props.name || null,
               difficulty: mapDifficulty(props.difficulty),
               status: props.status || null,
+              locality,
               geometry: JSON.parse(JSON.stringify(run.geometry)),
               properties: JSON.parse(JSON.stringify(props)),
             },
@@ -370,6 +394,8 @@ async function syncRunsAndLifts(countryFilter: string | null) {
         const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
         if (!skiAreaId) return;
 
+        const locality = extractLocality(skiAreaRefs);
+
         try {
           await prisma.lift.upsert({
             where: { osmId: props.id },
@@ -378,6 +404,7 @@ async function syncRunsAndLifts(countryFilter: string | null) {
               name: props.name || null,
               liftType: props.liftType || null,
               status: props.status || null,
+              locality,
               capacity: props.capacity || null,
               geometry: JSON.parse(JSON.stringify(lift.geometry)),
               properties: JSON.parse(JSON.stringify(props)),
@@ -387,6 +414,7 @@ async function syncRunsAndLifts(countryFilter: string | null) {
               name: props.name || null,
               liftType: props.liftType || null,
               status: props.status || null,
+              locality,
               capacity: props.capacity || null,
               geometry: JSON.parse(JSON.stringify(lift.geometry)),
               properties: JSON.parse(JSON.stringify(props)),
