@@ -53,6 +53,7 @@ import { getSunPosition } from '@/lib/suncalc';
 import { trackEvent } from '@/lib/posthog';
 import SnowConditionsPanel from '@/components/Controls/SnowConditionsPanel';
 import DonateButton from '@/components/DonateButton';
+import Onboarding from '@/components/Onboarding';
 
 const { Text } = Typography;
 
@@ -1459,26 +1460,31 @@ export default function Home() {
     return { run, analysis, stats, isFavourite, temperatureData };
   }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, weather?.elevation, favourites]);
 
+  // Show onboarding for first-time users (no resort selected)
+  if (initialLoadDone && !selectedArea) {
+    return <Onboarding onSelectLocation={handleLocationSelect} />;
+  }
+
   return (
     <div className="app-container">
       {/* Update available banner */}
       {updateAvailable && (
-        <UpdateBanner 
+        <UpdateBanner
           onUpdate={applyUpdate}
           onDismiss={dismissUpdate}
         />
       )}
-      
+
       {/* Offline banner */}
       {!updateAvailable && (
-        <OfflineBanner 
+        <OfflineBanner
           isOffline={isOffline}
           wasOffline={wasOffline}
           lastOnline={lastOnline}
           onDismiss={clearOfflineWarning}
         />
       )}
-      
+
       {/* Mobile header */}
       <div className="md:hidden controls-panel" style={{ marginTop: (isOffline || wasOffline) ? 44 : 0 }}>
         <div className="flex items-center justify-between">
