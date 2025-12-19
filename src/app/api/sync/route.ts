@@ -260,8 +260,18 @@ async function syncSkiAreas(countryFilter: string | null) {
     console.log(`Processed ${processed}/${areas.length} ski areas`);
   }
 
+  // Build locality map from ski areas for fallback
+  const osmIdToLocality = new Map<string, string>();
+  for (const area of areas) {
+    const locality = extractLocality(area.properties.places);
+    if (locality) {
+      osmIdToLocality.set(area.properties.id, locality);
+    }
+  }
+  console.log(`Have ${osmIdToLocality.size} ski areas with locality data (fallback)`);
+
   // Now sync runs and lifts for the imported ski areas
-  await syncRunsAndLifts(countryFilter);
+  await syncRunsAndLifts(countryFilter, osmIdToLocality);
 
   // Record sync
   await prisma.dataSync.create({
@@ -276,7 +286,7 @@ async function syncSkiAreas(countryFilter: string | null) {
   console.log("Ski areas sync completed");
 }
 
-async function syncRunsAndLifts(countryFilter: string | null) {
+async function syncRunsAndLifts(countryFilter: string | null, osmIdToLocality: Map<string, string>) {
   // Get all ski area OSM IDs we have in DB
   const skiAreas = await prisma.skiArea.findMany({
     select: { id: true, osmId: true },
@@ -319,10 +329,12 @@ async function syncRunsAndLifts(countryFilter: string | null) {
         );
         if (!matchingRef) return;
 
-        const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
+        const skiAreaOsmId = matchingRef.properties?.id;
+        const skiAreaId = osmIdToDbId.get(skiAreaOsmId);
         if (!skiAreaId) return;
 
-        const locality = extractLocality(props.places);
+        // Try run's own locality first, fall back to ski area's locality
+        const locality = extractLocality(props.places) || osmIdToLocality.get(skiAreaOsmId) || null;
 
         try {
           await prisma.run.upsert({
@@ -383,10 +395,12 @@ async function syncRunsAndLifts(countryFilter: string | null) {
         );
         if (!matchingRef) return;
 
-        const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
+        const skiAreaOsmId = matchingRef.properties?.id;
+        const skiAreaId = osmIdToDbId.get(skiAreaOsmId);
         if (!skiAreaId) return;
 
-        const locality = extractLocality(props.places);
+        // Try lift's own locality first, fall back to ski area's locality
+        const locality = extractLocality(props.places) || osmIdToLocality.get(skiAreaOsmId) || null;
 
         try {
           await prisma.lift.upsert({
