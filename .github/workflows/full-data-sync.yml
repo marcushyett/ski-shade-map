@@ -255,11 +255,48 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
   # ============================================================================
-  # PHASE 2: Validation
+  # PHASE 2: Detect Connections
+  # ============================================================================
+  sync-connections:
+    name: "🔗 Connections"
+    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific]
+    if: |
+      always() &&
+      needs.setup.result == 'success' &&
+      (needs.sync-europe-major.result == 'success' || needs.sync-europe-major.result == 'skipped') &&
+      (needs.sync-europe-other.result == 'success' || needs.sync-europe-other.result == 'skipped') &&
+      (needs.sync-europe-east.result == 'success' || needs.sync-europe-east.result == 'skipped') &&
+      (needs.sync-americas.result == 'success' || needs.sync-americas.result == 'skipped') &&
+      (needs.sync-pacific.result == 'success' || needs.sync-pacific.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: "🔗 Detect Connected Ski Areas"
+        run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  DETECTING CONNECTED SKI AREAS                               ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+
+          npx tsx scripts/sync-connections.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # ============================================================================
+  # PHASE 3: Validation
   # ============================================================================
   validate:
     name: "✅ Validate"
-    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific]
+    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific, sync-connections]
     if: |
       always() &&
       needs.setup.result == 'success' &&
@@ -292,7 +329,7 @@ jobs:
   # ============================================================================
   summary:
     name: "📊 Summary"
-    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific, validate]
+    needs: [setup, sync-europe-major, sync-europe-other, sync-europe-east, sync-americas, sync-pacific, sync-connections, validate]
     if: always()
     runs-on: ubuntu-latest
 
@@ -324,6 +361,7 @@ jobs:
           | 🇪🇺 Europe East | ${{ needs.sync-europe-east.result == 'success' && '✅ Success' || (needs.sync-europe-east.result == 'skipped' && '⏭️ Skipped' || '⚠️ Partial/Failed') }} |
           | 🌎 Americas (US/CA) | ${{ needs.sync-americas.result == 'success' && '✅ Success' || (needs.sync-americas.result == 'skipped' && '⏭️ Skipped' || '⚠️ Partial/Failed') }} |
           | 🌏 Pacific (NZ/JP/AU) | ${{ needs.sync-pacific.result == 'success' && '✅ Success' || (needs.sync-pacific.result == 'skipped' && '⏭️ Skipped' || '⚠️ Partial/Failed') }} |
+          | 🔗 Connections | ${{ needs.sync-connections.result == 'success' && '✅ Success' || (needs.sync-connections.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |
           | ✅ Validation | ${{ needs.validate.result == 'success' && '✅ Passed' || (needs.validate.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |
 
           ---
