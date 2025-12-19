@@ -403,6 +403,16 @@ async function main() {
       .map((a: { id: string; osmId: string }) => [a.osmId, a.id])
   );
   console.log(`   Have ${osmIdToDbId.size} ski areas in database`);
+
+  // Build fallback locality map from ski areas (better coverage than runs/lifts)
+  const osmIdToLocality = new Map<string, string>();
+  for (const area of areas) {
+    const locality = extractLocality(area.properties.places);
+    if (locality) {
+      osmIdToLocality.set(area.properties.id, locality);
+    }
+  }
+  console.log(`   Have ${osmIdToLocality.size} ski areas with locality data (fallback)`);
   console.log('');
 
   // Step 3: Process runs (streaming)
@@ -434,21 +444,29 @@ async function main() {
           const matchingRef = skiAreaRefs.find(ref => osmIdToDbId.has(ref.properties?.id));
           if (!matchingRef) return;
 
-          const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
+          const skiAreaOsmId = matchingRef.properties?.id;
+          const skiAreaId = osmIdToDbId.get(skiAreaOsmId);
           if (!skiAreaId) return;
 
           // Debug logging for locality
           if (props.places && props.places.length > 0) {
             runsWithPlaces++;
             if (!samplePlacesLogged) {
+              console.log(`   📍 Sample run props keys: ${Object.keys(props).join(', ')}`);
               console.log(`   📍 Sample run places data: ${JSON.stringify(props.places[0])}`);
               samplePlacesLogged = true;
             }
+          } else if (runsProcessed < 5) {
+            console.log(`   ⚠️ Run "${props.name}" has no places. Keys: ${Object.keys(props).join(', ')}`);
           }
 
-          const locality = extractLocality(props.places);
+          // Try run's own locality first, fall back to ski area's locality
+          const locality = extractLocality(props.places) || osmIdToLocality.get(skiAreaOsmId) || null;
           if (locality) {
             runsWithLocality++;
+            if (runsWithLocality <= 3) {
+              console.log(`   ✓ Extracted locality "${locality}" for run "${props.name}"`);
+            }
           }
 
           const processPromise = prisma.run.upsert({
@@ -523,7 +541,8 @@ async function main() {
           const matchingRef = skiAreaRefs.find(ref => osmIdToDbId.has(ref.properties?.id));
           if (!matchingRef) return;
 
-          const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
+          const skiAreaOsmId = matchingRef.properties?.id;
+          const skiAreaId = osmIdToDbId.get(skiAreaOsmId);
           if (!skiAreaId) return;
 
           // Debug logging for locality
@@ -535,7 +554,8 @@ async function main() {
             }
           }
 
-          const locality = extractLocality(props.places);
+          // Try lift's own locality first, fall back to ski area's locality
+          const locality = extractLocality(props.places) || osmIdToLocality.get(skiAreaOsmId) || null;
           if (locality) {
             liftsWithLocality++;
           }
