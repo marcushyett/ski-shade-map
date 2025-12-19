@@ -452,15 +452,21 @@ async function main() {
           if (props.places && props.places.length > 0) {
             runsWithPlaces++;
             if (!samplePlacesLogged) {
+              console.log(`   📍 Sample run props keys: ${Object.keys(props).join(', ')}`);
               console.log(`   📍 Sample run places data: ${JSON.stringify(props.places[0])}`);
               samplePlacesLogged = true;
             }
+          } else if (runsProcessed < 5) {
+            console.log(`   ⚠️ Run "${props.name}" has no places. Keys: ${Object.keys(props).join(', ')}`);
           }
 
           // Try run's own locality first, fall back to ski area's locality
           const locality = extractLocality(props.places) || osmIdToLocality.get(skiAreaOsmId) || null;
           if (locality) {
             runsWithLocality++;
+            if (runsWithLocality <= 3) {
+              console.log(`   ✓ Extracted locality "${locality}" for run "${props.name}"`);
+            }
           }
 
           const processPromise = prisma.run.upsert({
