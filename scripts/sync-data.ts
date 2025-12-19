@@ -1,6 +1,12 @@
 /**
  * Local sync script - run this against your production database
- * Usage: npx tsx scripts/sync-data.ts [--country=FR] [--skip-runs] [--skip-lifts]
+ * Usage: npx tsx scripts/sync-data.ts [--country=FR] [--skip-runs] [--skip-lifts] [--data-dir=path]
+ *
+ * Options:
+ *   --country=XX    Filter to specific country code (e.g., FR, CH, AT)
+ *   --skip-runs     Skip syncing runs (faster for testing)
+ *   --skip-lifts    Skip syncing lifts (faster for testing)
+ *   --data-dir=path Use pre-downloaded geojson files from this directory
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -15,6 +21,10 @@ const prisma = new PrismaClient();
 
 const OPENSKIMAP_BASE = 'https://tiles.openskimap.org/geojson';
 const TMP_DIR = '/tmp';
+
+// Parse --data-dir argument for pre-downloaded files
+const dataDirArg = process.argv.find(a => a.startsWith('--data-dir='));
+const DATA_DIR = dataDirArg ? dataDirArg.split('=')[1] : null;
 
 interface SkiAreaPlace {
   iso3166_1Alpha2?: string;
@@ -157,8 +167,18 @@ function mapDifficulty(difficulty?: string): string | null {
 }
 
 async function downloadFile(url: string, filename: string, maxRetries: number = 3): Promise<string> {
+  // Check if pre-downloaded file exists in DATA_DIR
+  if (DATA_DIR) {
+    const preDownloadedPath = `${DATA_DIR}/${filename}`;
+    if (existsSync(preDownloadedPath)) {
+      const stats = statSync(preDownloadedPath);
+      console.log(`   Using pre-downloaded file (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
+      return preDownloadedPath;
+    }
+  }
+
   const filepath = `${TMP_DIR}/${filename}`;
-  
+
   // Check if already downloaded recently (within last hour)
   if (existsSync(filepath)) {
     const stats = statSync(filepath);
@@ -168,7 +188,7 @@ async function downloadFile(url: string, filename: string, maxRetries: number = 
       return filepath;
     }
   }
-  
+
   console.log(`   Downloading from ${url}...`);
   
   let lastError: Error | null = null;
@@ -253,6 +273,7 @@ async function main() {
   console.log(`║  🎿 SKI DATA SYNC${countryFilter ? ` - ${countryFilter}`.padEnd(48) : ''.padEnd(48)} ║`);
   console.log('╠══════════════════════════════════════════════════════════════════╣');
   console.log(`║  Started: ${new Date().toISOString()}                   ║`);
+  if (DATA_DIR) console.log(`║  📂 Using pre-downloaded data from: ${DATA_DIR.padEnd(28)} ║`);
   if (skipRuns) console.log('║  ⏭️  Skipping runs                                                ║');
   if (skipLifts) console.log('║  ⏭️  Skipping lifts                                               ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
@@ -531,9 +552,21 @@ async function main() {
     prisma.lift.count(),
   ]);
 
-  console.log('🎉 Sync complete!');
-  console.log(`   📊 Database totals: ${skiAreaCount} ski areas, ${runCount} runs, ${liftCount} lifts`);
-  
+  // Final summary
+  const duration = Math.round((Date.now() - startTime) / 1000);
+  const mins = Math.floor(duration / 60);
+  const secs = duration % 60;
+
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════════════╗');
+  console.log('║  ✅ SYNC COMPLETE                                                ║');
+  console.log('╠══════════════════════════════════════════════════════════════════╣');
+  console.log(`║  Duration: ${mins}m ${secs}s`.padEnd(68) + '║');
+  console.log(`║  Ski Areas: ${areas.length}`.padEnd(68) + '║');
+  console.log(`║  Database: ${skiAreaCount} areas, ${runCount} runs, ${liftCount} lifts`.padEnd(68) + '║');
+  console.log('╚══════════════════════════════════════════════════════════════════╝');
+  console.log('');
+
   await prisma.$disconnect();
 }
 
@@ -607,22 +640,6 @@ async function recalculateBoundsFromRunsLifts() {
   }
 
   console.log(`   Updated bounds for ${updated} ski areas`);
-  
-  // Final summary
-  const duration = Math.round((Date.now() - startTime) / 1000);
-  const mins = Math.floor(duration / 60);
-  const secs = duration % 60;
-  
-  console.log('');
-  console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log('║  ✅ SYNC COMPLETE                                                ║');
-  console.log('╠══════════════════════════════════════════════════════════════════╣');
-  console.log(`║  Duration: ${mins}m ${secs}s`.padEnd(68) + '║');
-  console.log(`║  Ski Areas: ${areas.length}`.padEnd(68) + '║');
-  console.log('╚══════════════════════════════════════════════════════════════════╝');
-  console.log('');
-  
-  await prisma.$disconnect();
 }
 
 main().catch(async (e) => {
