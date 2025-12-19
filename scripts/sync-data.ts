@@ -552,9 +552,21 @@ async function main() {
     prisma.lift.count(),
   ]);
 
-  console.log('🎉 Sync complete!');
-  console.log(`   📊 Database totals: ${skiAreaCount} ski areas, ${runCount} runs, ${liftCount} lifts`);
-  
+  // Final summary
+  const duration = Math.round((Date.now() - startTime) / 1000);
+  const mins = Math.floor(duration / 60);
+  const secs = duration % 60;
+
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════════════╗');
+  console.log('║  ✅ SYNC COMPLETE                                                ║');
+  console.log('╠══════════════════════════════════════════════════════════════════╣');
+  console.log(`║  Duration: ${mins}m ${secs}s`.padEnd(68) + '║');
+  console.log(`║  Ski Areas: ${areas.length}`.padEnd(68) + '║');
+  console.log(`║  Database: ${skiAreaCount} areas, ${runCount} runs, ${liftCount} lifts`.padEnd(68) + '║');
+  console.log('╚══════════════════════════════════════════════════════════════════╝');
+  console.log('');
+
   await prisma.$disconnect();
 }
 
@@ -628,22 +640,6 @@ async function recalculateBoundsFromRunsLifts() {
   }
 
   console.log(`   Updated bounds for ${updated} ski areas`);
-  
-  // Final summary
-  const duration = Math.round((Date.now() - startTime) / 1000);
-  const mins = Math.floor(duration / 60);
-  const secs = duration % 60;
-  
-  console.log('');
-  console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log('║  ✅ SYNC COMPLETE                                                ║');
-  console.log('╠══════════════════════════════════════════════════════════════════╣');
-  console.log(`║  Duration: ${mins}m ${secs}s`.padEnd(68) + '║');
-  console.log(`║  Ski Areas: ${areas.length}`.padEnd(68) + '║');
-  console.log('╚══════════════════════════════════════════════════════════════════╝');
-  console.log('');
-  
-  await prisma.$disconnect();
 }
 
 main().catch(async (e) => {
