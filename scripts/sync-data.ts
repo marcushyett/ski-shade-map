@@ -259,15 +259,20 @@ async function main() {
   const args = process.argv.slice(2);
   const countryArg = args.find(a => a.startsWith('--country='));
   const countryFilter = countryArg ? countryArg.split('=')[1].toUpperCase() : null;
+  const resortArg = args.find(a => a.startsWith('--resort='));
+  const resortFilter = resortArg ? resortArg.split('=')[1].replace(/^"|"$/g, '') : null;
   const skipRuns = args.includes('--skip-runs');
   const skipLifts = args.includes('--skip-lifts');
-  
+
+  const filterLabel = resortFilter ? ` - ${resortFilter}` : (countryFilter ? ` - ${countryFilter}` : '');
+
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log(`║  🎿 SKI DATA SYNC${countryFilter ? ` - ${countryFilter}`.padEnd(48) : ''.padEnd(48)} ║`);
+  console.log(`║  🎿 SKI DATA SYNC${filterLabel.padEnd(48)} ║`);
   console.log('╠══════════════════════════════════════════════════════════════════╣');
   console.log(`║  Started: ${new Date().toISOString()}                   ║`);
   if (DATA_DIR) console.log(`║  📂 Using pre-downloaded data from: ${DATA_DIR.padEnd(28)} ║`);
+  if (resortFilter) console.log(`║  🏔️  Resort filter: ${resortFilter.padEnd(44)} ║`);
   if (skipRuns) console.log('║  ⏭️  Skipping runs                                                ║');
   if (skipLifts) console.log('║  ⏭️  Skipping lifts                                               ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
@@ -284,8 +289,8 @@ async function main() {
   
   console.log(`   Found ${areas.length} total ski areas`);
   
-  // Filter by country
-  if (countryFilter) {
+  // Filter by country (skip if resort filter is active)
+  if (countryFilter && countryFilter !== 'ALL' && !resortFilter) {
     areas = areas.filter(area => {
       const props = area.properties;
       if (props?.places?.length) {
@@ -295,7 +300,24 @@ async function main() {
     });
     console.log(`   Filtered to ${areas.length} areas in ${countryFilter}`);
   }
-  
+
+  // Filter by resort name (case-insensitive partial match)
+  if (resortFilter) {
+    const searchTerm = resortFilter.toLowerCase();
+    areas = areas.filter(area => {
+      const name = area.properties?.name?.toLowerCase() || '';
+      return name.includes(searchTerm);
+    });
+    console.log(`   Filtered to ${areas.length} areas matching "${resortFilter}"`);
+    if (areas.length === 0) {
+      console.error(`   ❌ No ski areas found matching "${resortFilter}"`);
+      process.exit(1);
+    }
+    if (areas.length > 5) {
+      console.warn(`   ⚠️  Found ${areas.length} matching areas - consider a more specific name`);
+    }
+  }
+
   // Filter to downhill ski areas with names
   areas = areas.filter(area => {
     const props = area.properties;
