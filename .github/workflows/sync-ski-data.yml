@@ -11,6 +11,10 @@ on:
         description: 'Country code (e.g., FR, CH, AT) or "all" for all countries'
         required: true
         default: 'all'
+      resort:
+        description: 'Single resort name to sync (for testing). Overrides country filter.'
+        required: false
+        default: ''
       skip_runs:
         description: 'Skip syncing runs (faster for testing)'
         type: boolean
@@ -30,6 +34,10 @@ on:
       country:
         type: string
         required: true
+      resort:
+        type: string
+        required: false
+        default: ''
       skip_runs:
         type: boolean
         default: false
@@ -91,8 +99,8 @@ jobs:
 
     strategy:
       matrix:
-        # For scheduled runs or 'all', run for all countries; otherwise just the specified one
-        country: ${{ (github.event_name == 'schedule' || inputs.country == 'all') && fromJson('["FR", "CH", "AT", "IT", "DE", "US", "CA", "NZ", "JP", "AU", "NO", "SE", "FI", "ES", "AD", "BG", "RO", "SI", "SK", "PL", "CZ"]') || fromJson(format('["{0}"]', inputs.country)) }}
+        # If resort specified, run single job; for scheduled runs or 'all', run for all countries; otherwise just the specified one
+        country: ${{ inputs.resort != '' && fromJson('["all"]') || (github.event_name == 'schedule' || inputs.country == 'all') && fromJson('["FR", "CH", "AT", "IT", "DE", "US", "CA", "NZ", "JP", "AU", "NO", "SE", "FI", "ES", "AD", "BG", "RO", "SI", "SK", "PL", "CZ"]') || fromJson(format('["{0}"]', inputs.country)) }}
       fail-fast: false
       max-parallel: 10  # Run countries in parallel
     
@@ -118,17 +126,21 @@ jobs:
           name: openskimap-data
           path: openskimap-data
 
-      - name: Sync ski area data for ${{ matrix.country }}
+      - name: Sync ski area data ${{ inputs.resort != '' && format('for {0}', inputs.resort) || format('for {0}', matrix.country) }}
         run: |
-          echo "🎿 Syncing ski area data for ${{ matrix.country }}..."
+          echo "🎿 Syncing ski area data..."
 
           # Build command with optional flags and data directory
           CMD="npx tsx scripts/sync-data.ts --country=${{ matrix.country }} --data-dir=openskimap-data"
-          
+
+          if [ -n "${{ inputs.resort }}" ]; then
+            CMD="$CMD --resort=\"${{ inputs.resort }}\""
+          fi
+
           if [ "${{ inputs.skip_runs }}" = "true" ]; then
             CMD="$CMD --skip-runs"
           fi
-          
+
           if [ "${{ inputs.skip_lifts }}" = "true" ]; then
             CMD="$CMD --skip-lifts"
           fi

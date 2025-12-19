@@ -64,7 +64,8 @@ interface RunProperties {
   name?: string;
   difficulty?: string;
   status?: string;
-  skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>;
+  places?: SkiAreaPlace[];
+  skiAreas?: Array<{ properties: { id: string } }>;
 }
 
 interface LiftProperties {
@@ -73,24 +74,17 @@ interface LiftProperties {
   liftType?: string;
   status?: string;
   capacity?: number;
-  skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>;
+  places?: SkiAreaPlace[];
+  skiAreas?: Array<{ properties: { id: string } }>;
 }
 
-// Extract locality from ski area places
-function extractLocality(skiAreas?: Array<{ properties: { id: string; places?: SkiAreaPlace[] } }>): string | null {
-  if (!skiAreas || skiAreas.length === 0) return null;
-
-  // Try to get locality from the first ski area's places
-  for (const skiArea of skiAreas) {
-    const places = skiArea.properties?.places;
-    if (!places) continue;
-
-    for (const place of places) {
-      const locality = place.localized?.en?.locality;
-      if (locality) return locality;
-    }
+// Extract locality from places array on the run/lift itself
+function extractLocality(places?: SkiAreaPlace[]): string | null {
+  if (!places || places.length === 0) return null;
+  for (const place of places) {
+    const locality = place.localized?.en?.locality;
+    if (locality) return locality;
   }
-
   return null;
 }
 
@@ -265,15 +259,20 @@ async function main() {
   const args = process.argv.slice(2);
   const countryArg = args.find(a => a.startsWith('--country='));
   const countryFilter = countryArg ? countryArg.split('=')[1].toUpperCase() : null;
+  const resortArg = args.find(a => a.startsWith('--resort='));
+  const resortFilter = resortArg ? resortArg.split('=')[1].replace(/^"|"$/g, '') : null;
   const skipRuns = args.includes('--skip-runs');
   const skipLifts = args.includes('--skip-lifts');
-  
+
+  const filterLabel = resortFilter ? ` - ${resortFilter}` : (countryFilter ? ` - ${countryFilter}` : '');
+
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log(`║  🎿 SKI DATA SYNC${countryFilter ? ` - ${countryFilter}`.padEnd(48) : ''.padEnd(48)} ║`);
+  console.log(`║  🎿 SKI DATA SYNC${filterLabel.padEnd(48)} ║`);
   console.log('╠══════════════════════════════════════════════════════════════════╣');
   console.log(`║  Started: ${new Date().toISOString()}                   ║`);
   if (DATA_DIR) console.log(`║  📂 Using pre-downloaded data from: ${DATA_DIR.padEnd(28)} ║`);
+  if (resortFilter) console.log(`║  🏔️  Resort filter: ${resortFilter.padEnd(44)} ║`);
   if (skipRuns) console.log('║  ⏭️  Skipping runs                                                ║');
   if (skipLifts) console.log('║  ⏭️  Skipping lifts                                               ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
@@ -290,8 +289,8 @@ async function main() {
   
   console.log(`   Found ${areas.length} total ski areas`);
   
-  // Filter by country
-  if (countryFilter) {
+  // Filter by country (skip if resort filter is active)
+  if (countryFilter && countryFilter !== 'ALL' && !resortFilter) {
     areas = areas.filter(area => {
       const props = area.properties;
       if (props?.places?.length) {
@@ -301,7 +300,24 @@ async function main() {
     });
     console.log(`   Filtered to ${areas.length} areas in ${countryFilter}`);
   }
-  
+
+  // Filter by resort name (case-insensitive partial match)
+  if (resortFilter) {
+    const searchTerm = resortFilter.toLowerCase();
+    areas = areas.filter(area => {
+      const name = area.properties?.name?.toLowerCase() || '';
+      return name.includes(searchTerm);
+    });
+    console.log(`   Filtered to ${areas.length} areas matching "${resortFilter}"`);
+    if (areas.length === 0) {
+      console.error(`   ❌ No ski areas found matching "${resortFilter}"`);
+      process.exit(1);
+    }
+    if (areas.length > 5) {
+      console.warn(`   ⚠️  Found ${areas.length} matching areas - consider a more specific name`);
+    }
+  }
+
   // Filter to downhill ski areas with names
   areas = areas.filter(area => {
     const props = area.properties;
@@ -393,32 +409,47 @@ async function main() {
   if (!skipRuns) {
     console.log('📥 Downloading runs (large file, may take a minute)...');
     const runsFile = await downloadFile(`${OPENSKIMAP_BASE}/runs.geojson`, 'runs.geojson');
-    
+
     console.log('💾 Processing runs (streaming)...');
     let runsProcessed = 0;
-    
+    let runsWithPlaces = 0;
+    let runsWithLocality = 0;
+    let samplePlacesLogged = false;
+
     const pipeline = chain([
       createReadStream(runsFile),
       parser(),
       pick({ filter: 'features' }),
       streamArray(),
     ]);
-    
+
     await new Promise<void>((resolve, reject) => {
       const processQueue: Promise<void>[] = [];
-      
+
       pipeline
         .on('data', ({ value }: { value: { geometry: any; properties: RunProperties } }) => {
           const props = value.properties;
           const skiAreaRefs = props?.skiAreas || [];
-          
+
           const matchingRef = skiAreaRefs.find(ref => osmIdToDbId.has(ref.properties?.id));
           if (!matchingRef) return;
-          
+
           const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
           if (!skiAreaId) return;
-          
-          const locality = extractLocality(skiAreaRefs);
+
+          // Debug logging for locality
+          if (props.places && props.places.length > 0) {
+            runsWithPlaces++;
+            if (!samplePlacesLogged) {
+              console.log(`   📍 Sample run places data: ${JSON.stringify(props.places[0])}`);
+              samplePlacesLogged = true;
+            }
+          }
+
+          const locality = extractLocality(props.places);
+          if (locality) {
+            runsWithLocality++;
+          }
 
           const processPromise = prisma.run.upsert({
             where: { osmId: props.id },
@@ -452,6 +483,10 @@ async function main() {
         .on('end', async () => {
           await Promise.all(processQueue);
           console.log(`   ✅ Saved ${runsProcessed} runs                    `);
+          console.log(`   📊 Locality stats: ${runsWithPlaces} runs with places data, ${runsWithLocality} with extracted locality`);
+          if (runsWithPlaces === 0) {
+            console.log(`   ⚠️  WARNING: No runs have places data - locality will be null for all runs`);
+          }
           resolve();
         })
         .on('error', reject);
@@ -463,32 +498,47 @@ async function main() {
   if (!skipLifts) {
     console.log('📥 Downloading lifts...');
     const liftsFile = await downloadFile(`${OPENSKIMAP_BASE}/lifts.geojson`, 'lifts.geojson');
-    
+
     console.log('💾 Processing lifts (streaming)...');
     let liftsProcessed = 0;
-    
+    let liftsWithPlaces = 0;
+    let liftsWithLocality = 0;
+    let sampleLiftPlacesLogged = false;
+
     const liftsPipeline = chain([
       createReadStream(liftsFile),
       parser(),
       pick({ filter: 'features' }),
       streamArray(),
     ]);
-    
+
     await new Promise<void>((resolve, reject) => {
       const processQueue: Promise<void>[] = [];
-      
+
       liftsPipeline
         .on('data', ({ value }: { value: { geometry: any; properties: LiftProperties } }) => {
           const props = value.properties;
           const skiAreaRefs = props?.skiAreas || [];
-          
+
           const matchingRef = skiAreaRefs.find(ref => osmIdToDbId.has(ref.properties?.id));
           if (!matchingRef) return;
-          
+
           const skiAreaId = osmIdToDbId.get(matchingRef.properties?.id);
           if (!skiAreaId) return;
-          
-          const locality = extractLocality(skiAreaRefs);
+
+          // Debug logging for locality
+          if (props.places && props.places.length > 0) {
+            liftsWithPlaces++;
+            if (!sampleLiftPlacesLogged) {
+              console.log(`   📍 Sample lift places data: ${JSON.stringify(props.places[0])}`);
+              sampleLiftPlacesLogged = true;
+            }
+          }
+
+          const locality = extractLocality(props.places);
+          if (locality) {
+            liftsWithLocality++;
+          }
 
           const processPromise = prisma.lift.upsert({
             where: { osmId: props.id },
@@ -524,6 +574,10 @@ async function main() {
         .on('end', async () => {
           await Promise.all(processQueue);
           console.log(`   ✅ Saved ${liftsProcessed} lifts                    `);
+          console.log(`   📊 Locality stats: ${liftsWithPlaces} lifts with places data, ${liftsWithLocality} with extracted locality`);
+          if (liftsWithPlaces === 0) {
+            console.log(`   ⚠️  WARNING: No lifts have places data - locality will be null for all lifts`);
+          }
           resolve();
         })
         .on('error', reject);
