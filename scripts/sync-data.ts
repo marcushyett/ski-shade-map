@@ -494,7 +494,9 @@ async function main() {
             if (runsProcessed % 500 === 0) {
               process.stdout.write(`   Processed ${runsProcessed} runs\r`);
             }
-          }).catch(() => {});
+          }).catch((err) => {
+            console.error(`   ❌ Failed to upsert run ${props.id}: ${err.message}`);
+          });
           
           processQueue.push(processPromise);
         })
@@ -587,7 +589,9 @@ async function main() {
             if (liftsProcessed % 100 === 0) {
               process.stdout.write(`   Processed ${liftsProcessed} lifts\r`);
             }
-          }).catch(() => {});
+          }).catch((err) => {
+            console.error(`   ❌ Failed to upsert lift ${props.id}: ${err.message}`);
+          });
           
           processQueue.push(processPromise);
         })
@@ -619,12 +623,17 @@ async function main() {
   console.log('\n📐 Recalculating ski area bounds from runs and lifts...');
   await recalculateBoundsFromRunsLifts();
 
-  // Get final counts
-  const [skiAreaCount, runCount, liftCount] = await Promise.all([
+  // Get final counts including locality statistics
+  const [skiAreaCount, runCount, liftCount, runsWithLocality, liftsWithLocality] = await Promise.all([
     prisma.skiArea.count(),
     prisma.run.count(),
     prisma.lift.count(),
+    prisma.run.count({ where: { locality: { not: null } } }),
+    prisma.lift.count({ where: { locality: { not: null } } }),
   ]);
+
+  const runLocalityPct = runCount > 0 ? ((runsWithLocality / runCount) * 100).toFixed(1) : '0';
+  const liftLocalityPct = liftCount > 0 ? ((liftsWithLocality / liftCount) * 100).toFixed(1) : '0';
 
   // Final summary
   const duration = Math.round((Date.now() - startTime) / 1000);
@@ -638,6 +647,8 @@ async function main() {
   console.log(`║  Duration: ${mins}m ${secs}s`.padEnd(68) + '║');
   console.log(`║  Ski Areas: ${areas.length}`.padEnd(68) + '║');
   console.log(`║  Database: ${skiAreaCount} areas, ${runCount} runs, ${liftCount} lifts`.padEnd(68) + '║');
+  console.log(`║  Runs with locality: ${runsWithLocality}/${runCount} (${runLocalityPct}%)`.padEnd(68) + '║');
+  console.log(`║  Lifts with locality: ${liftsWithLocality}/${liftCount} (${liftLocalityPct}%)`.padEnd(68) + '║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
   console.log('');
 
