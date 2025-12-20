@@ -10,12 +10,13 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { createReadStream, existsSync, statSync } from 'fs';
+import { createReadStream, existsSync, statSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { parser } from 'stream-json';
 import { pick } from 'stream-json/filters/Pick';
 import { streamArray } from 'stream-json/streamers/StreamArray';
 import { chain } from 'stream-chain';
+import * as readline from 'readline';
 
 const prisma = new PrismaClient();
 
@@ -86,6 +87,56 @@ function extractLocality(places?: SkiAreaPlace[]): string | null {
     if (locality) return locality;
   }
   return null;
+}
+
+// Parse CSV file and build a map of id -> locality
+async function buildLocalityMapFromCsv(csvPath: string): Promise<Map<string, string>> {
+  const localityMap = new Map<string, string>();
+
+  if (!existsSync(csvPath)) {
+    console.log(`   ⚠️ CSV file not found: ${csvPath}`);
+    return localityMap;
+  }
+
+  const fileStream = createReadStream(csvPath);
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity
+  });
+
+  let isFirstLine = true;
+  let idIndex = -1;
+  let localitiesIndex = -1;
+
+  for await (const line of rl) {
+    if (isFirstLine) {
+      // Parse header to find column indices
+      const headers = line.split(',');
+      idIndex = headers.indexOf('id');
+      localitiesIndex = headers.indexOf('localities');
+      isFirstLine = false;
+      continue;
+    }
+
+    if (idIndex === -1 || localitiesIndex === -1) continue;
+
+    // Simple CSV parsing (handles most cases)
+    const columns = line.split(',');
+    if (columns.length > Math.max(idIndex, localitiesIndex)) {
+      const id = columns[idIndex];
+      const localities = columns[localitiesIndex];
+
+      if (id && localities && localities.trim() !== '') {
+        // Take first locality if multiple (semicolon-separated)
+        const firstLocality = localities.split(';')[0].trim();
+        if (firstLocality) {
+          localityMap.set(id, firstLocality);
+        }
+      }
+    }
+  }
+
+  return localityMap;
 }
 
 function getGeometryCenter(geometry: any): { lat: number; lng: number } | null {
@@ -403,16 +454,23 @@ async function main() {
       .map((a: { id: string; osmId: string }) => [a.osmId, a.id])
   );
   console.log(`   Have ${osmIdToDbId.size} ski areas in database`);
+  console.log('');
 
-  // Build fallback locality map from ski areas (better coverage than runs/lifts)
-  const osmIdToLocality = new Map<string, string>();
-  for (const area of areas) {
-    const locality = extractLocality(area.properties.places);
-    if (locality) {
-      osmIdToLocality.set(area.properties.id, locality);
-    }
+  // Load locality data from CSV files (more reliable than GeoJSON places)
+  console.log('📥 Loading locality data from CSV files...');
+  const runsCsvPath = DATA_DIR ? `${DATA_DIR}/runs.csv` : `${TMP_DIR}/runs.csv`;
+  const liftsCsvPath = DATA_DIR ? `${DATA_DIR}/lifts.csv` : `${TMP_DIR}/lifts.csv`;
+
+  // Download CSVs if not using pre-downloaded data
+  if (!DATA_DIR) {
+    await downloadFile('https://tiles.openskimap.org/csv/runs.csv', 'runs.csv');
+    await downloadFile('https://tiles.openskimap.org/csv/lifts.csv', 'lifts.csv');
   }
-  console.log(`   Have ${osmIdToLocality.size} ski areas with locality data (fallback)`);
+
+  const runsLocalityMap = await buildLocalityMapFromCsv(runsCsvPath);
+  const liftsLocalityMap = await buildLocalityMapFromCsv(liftsCsvPath);
+  console.log(`   Loaded ${runsLocalityMap.size} run localities from CSV`);
+  console.log(`   Loaded ${liftsLocalityMap.size} lift localities from CSV`);
   console.log('');
 
   // Step 3: Process runs (streaming)
@@ -422,9 +480,7 @@ async function main() {
 
     console.log('💾 Processing runs (streaming)...');
     let runsProcessed = 0;
-    let runsWithPlaces = 0;
     let runsWithLocality = 0;
-    let samplePlacesLogged = false;
 
     const pipeline = chain([
       createReadStream(runsFile),
@@ -448,24 +504,12 @@ async function main() {
           const skiAreaId = osmIdToDbId.get(skiAreaOsmId);
           if (!skiAreaId) return;
 
-          // Debug logging for locality
-          if (props.places && props.places.length > 0) {
-            runsWithPlaces++;
-            if (!samplePlacesLogged) {
-              console.log(`   📍 Sample run props keys: ${Object.keys(props).join(', ')}`);
-              console.log(`   📍 Sample run places data: ${JSON.stringify(props.places[0])}`);
-              samplePlacesLogged = true;
-            }
-          } else if (runsProcessed < 5) {
-            console.log(`   ⚠️ Run "${props.name}" has no places. Keys: ${Object.keys(props).join(', ')}`);
-          }
-
-          // Try run's own locality first, fall back to ski area's locality
-          const locality = extractLocality(props.places) || osmIdToLocality.get(skiAreaOsmId) || null;
+          // Get locality from CSV map (more reliable than GeoJSON places)
+          const locality = runsLocalityMap.get(props.id) || null;
           if (locality) {
             runsWithLocality++;
             if (runsWithLocality <= 3) {
-              console.log(`   ✓ Extracted locality "${locality}" for run "${props.name}"`);
+              console.log(`   ✓ Got locality "${locality}" from CSV for run "${props.name}"`);
             }
           }
 
@@ -501,10 +545,7 @@ async function main() {
         .on('end', async () => {
           await Promise.all(processQueue);
           console.log(`   ✅ Saved ${runsProcessed} runs                    `);
-          console.log(`   📊 Locality stats: ${runsWithPlaces} runs with places data, ${runsWithLocality} with extracted locality`);
-          if (runsWithPlaces === 0) {
-            console.log(`   ⚠️  WARNING: No runs have places data - locality will be null for all runs`);
-          }
+          console.log(`   📊 Locality: ${runsWithLocality} runs have locality from CSV (map has ${runsLocalityMap.size} entries)`);
           resolve();
         })
         .on('error', reject);
@@ -519,9 +560,7 @@ async function main() {
 
     console.log('💾 Processing lifts (streaming)...');
     let liftsProcessed = 0;
-    let liftsWithPlaces = 0;
     let liftsWithLocality = 0;
-    let sampleLiftPlacesLogged = false;
 
     const liftsPipeline = chain([
       createReadStream(liftsFile),
@@ -545,19 +584,13 @@ async function main() {
           const skiAreaId = osmIdToDbId.get(skiAreaOsmId);
           if (!skiAreaId) return;
 
-          // Debug logging for locality
-          if (props.places && props.places.length > 0) {
-            liftsWithPlaces++;
-            if (!sampleLiftPlacesLogged) {
-              console.log(`   📍 Sample lift places data: ${JSON.stringify(props.places[0])}`);
-              sampleLiftPlacesLogged = true;
-            }
-          }
-
-          // Try lift's own locality first, fall back to ski area's locality
-          const locality = extractLocality(props.places) || osmIdToLocality.get(skiAreaOsmId) || null;
+          // Get locality from CSV map (more reliable than GeoJSON places)
+          const locality = liftsLocalityMap.get(props.id) || null;
           if (locality) {
             liftsWithLocality++;
+            if (liftsWithLocality <= 3) {
+              console.log(`   ✓ Got locality "${locality}" from CSV for lift "${props.name}"`);
+            }
           }
 
           const processPromise = prisma.lift.upsert({
@@ -594,10 +627,7 @@ async function main() {
         .on('end', async () => {
           await Promise.all(processQueue);
           console.log(`   ✅ Saved ${liftsProcessed} lifts                    `);
-          console.log(`   📊 Locality stats: ${liftsWithPlaces} lifts with places data, ${liftsWithLocality} with extracted locality`);
-          if (liftsWithPlaces === 0) {
-            console.log(`   ⚠️  WARNING: No lifts have places data - locality will be null for all lifts`);
-          }
+          console.log(`   📊 Locality: ${liftsWithLocality} lifts have locality from CSV (map has ${liftsLocalityMap.size} entries)`);
           resolve();
         })
         .on('error', reject);

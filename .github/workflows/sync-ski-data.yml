@@ -83,6 +83,23 @@ jobs:
             fi
           done
 
+          # Download CSV files for locality data
+          echo "📥 Downloading OpenSkiMap CSV files..."
+          for file in runs.csv lifts.csv; do
+            echo "Downloading $file..."
+            curl -s --retry 5 --retry-delay 10 --connect-timeout 30 --max-time 300 \
+              "https://tiles.openskimap.org/csv/$file" \
+              -o "openskimap-data/$file"
+
+            size=$(stat -c%s "openskimap-data/$file")
+            echo "  Downloaded $file ($(numfmt --to=iec-i --suffix=B $size))"
+
+            if [ "$size" -lt 1000 ]; then
+              echo "❌ Error: $file is too small, download may have failed"
+              exit 1
+            fi
+          done
+
           echo "✅ All files downloaded successfully"
 
       - name: Upload geojson data as artifact
