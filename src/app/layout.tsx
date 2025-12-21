@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { ConfigProvider, theme, App } from 'antd';
 import PostHogProvider from '@/components/PostHogProvider';
+import LocationSearchPreloader from '@/components/LocationSearchPreloader';
 import "./globals.css";
 import { BASE_URL, SKI_KEYWORDS } from '@/lib/seo-utils';
 
@@ -158,6 +159,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="SKISHADE" />
       </head>
       <body>
+        <LocationSearchPreloader />
         <PostHogProvider>
           <AntdRegistry>
             <ConfigProvider

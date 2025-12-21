@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { SearchOutlined, EnvironmentOutlined } from '@ant-design/icons';
-import debounce from 'lodash.debounce';
 import { trackEvent } from '@/lib/posthog';
 import LoadingSpinner from './LoadingSpinner';
-import type { LocationSearchResult } from '@/app/api/locations/search/route';
+import { useLocationSearch, LocationSearchResult } from '@/hooks/useLocationSearch';
 
 export interface LocationSelection {
   skiAreaId: string;
@@ -36,13 +35,21 @@ export default function LocationSearch({
 }: LocationSearchProps) {
   const [isSearching, setIsSearching] = useState(false);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<LocationSearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [isHoveringResults, setIsHoveringResults] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingResultRef = useRef<LocationSearchResult | null>(null);
+
+  // Client-side search - instant results, no network calls
+  const { search, isLoading: isLoadingIndex, isReady } = useLocationSearch();
+
+  // Compute results synchronously - no network calls, instant (<1ms)
+  const results = useMemo(() => {
+    if (!isReady || !isSearching || query.length < 2) {
+      return [];
+    }
+    return search(query, 15);
+  }, [query, isReady, isSearching, search]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -50,47 +57,15 @@ export default function LocationSearch({
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsSearching(false);
         setQuery('');
-        setResults([]);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const searchLocations = useMemo(
-    () => debounce(async (searchQuery: string, shouldUpdateResults: () => boolean) => {
-      if (searchQuery.length < 2) {
-        setResults([]);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const res = await fetch(`/api/locations/search?q=${encodeURIComponent(searchQuery)}&limit=15`);
-        const data = await res.json();
-        // Only update results if user isn't hovering (prevents clicks on wrong items)
-        if (shouldUpdateResults()) {
-          setResults(data.results || []);
-        }
-      } catch (error) {
-        console.error('Search failed:', error);
-        if (shouldUpdateResults()) {
-          setResults([]);
-        }
-      } finally {
-        setLoading(false);
-      }
-    }, 300), // Increased for better stability and fewer false clicks
-    []
-  );
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setQuery(value);
+    setQuery(e.target.value);
     setSelectedIndex(0);
-    setLoading(true);
-    // Pass function that checks if we should update results (not hovering)
-    searchLocations(value, () => !isHoveringResults);
   };
 
   const handleSelect = (result: LocationSearchResult) => {
@@ -101,15 +76,8 @@ export default function LocationSearch({
       skiAreaId: result.skiAreaId,
     });
 
-    if (result.type === 'country') {
-      // For country, just filter results - show ski areas from that country
-      setQuery(result.name);
-      searchLocations(result.name, () => true);
-      return;
-    }
-
     const selection: LocationSelection = {
-      skiAreaId: result.skiAreaId!,
+      skiAreaId: result.skiAreaId,
       skiAreaName: result.type === 'locality' ? result.region! : result.name,
       country: result.country,
       latitude: result.latitude,
@@ -124,7 +92,6 @@ export default function LocationSearch({
     onSelect(selection);
     setIsSearching(false);
     setQuery('');
-    setResults([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -142,14 +109,11 @@ export default function LocationSearch({
     } else if (e.key === 'Escape') {
       setIsSearching(false);
       setQuery('');
-      setResults([]);
     }
   };
 
   const getTypeLabel = (type: LocationSearchResult['type']) => {
     switch (type) {
-      case 'country':
-        return 'Country';
       case 'region':
         return 'Ski Area';
       case 'locality':
@@ -197,23 +161,19 @@ export default function LocationSearch({
           onFocus={() => setIsSearching(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          disabled={disabled}
+          disabled={disabled || isLoadingIndex}
           className="location-search-input"
           autoFocus={isSearching}
         />
-        {loading && <div className="location-search-spinner"><LoadingSpinner size={18} /></div>}
+        {isLoadingIndex && <div className="location-search-spinner"><LoadingSpinner size={18} /></div>}
       </div>
 
       {/* Dropdown results */}
       {isSearching && (query.length >= 2 || results.length > 0) && (
-        <div 
-          className="location-search-dropdown"
-          onMouseEnter={() => setIsHoveringResults(true)}
-          onMouseLeave={() => setIsHoveringResults(false)}
-        >
-          {results.length === 0 && !loading && query.length >= 2 && (
+        <div className="location-search-dropdown">
+          {results.length === 0 && !isLoadingIndex && query.length >= 2 && (
             <div className="location-search-empty">
-              No locations found for "{query}"
+              No locations found for &ldquo;{query}&rdquo;
             </div>
           )}
 
@@ -222,11 +182,9 @@ export default function LocationSearch({
               key={`${result.type}-${result.id}`}
               className={`location-search-result ${index === selectedIndex ? 'selected' : ''}`}
               onPointerDown={() => {
-                // Capture result at pointer down to prevent race condition
                 pendingResultRef.current = result;
               }}
               onClick={() => {
-                // Use captured result from pointer down, or current if not captured
                 const resultToSelect = pendingResultRef.current || result;
                 pendingResultRef.current = null;
                 handleSelect(resultToSelect);
@@ -246,10 +204,7 @@ export default function LocationSearch({
                   {result.type === 'region' && result.country && (
                     <>{result.country}</>
                   )}
-                  {result.type === 'country' && result.runCount && (
-                    <>{result.runCount} ski areas</>
-                  )}
-                  {result.type !== 'country' && result.runCount && (
+                  {result.runCount && (
                     <> · {result.runCount} runs</>
                   )}
                 </div>
