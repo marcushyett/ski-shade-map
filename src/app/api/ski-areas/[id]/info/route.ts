@@ -4,8 +4,13 @@ import prisma from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 
 /**
- * Fast endpoint that returns basic ski area info without runs/lifts.
+ * Optimized endpoint that returns basic ski area info without runs/lifts.
  * Used for immediate map centering while runs load progressively.
+ *
+ * Optimizations:
+ * - All queries run in parallel from the start
+ * - Minimal data fetched - only what's needed for the UI
+ * - Localities are skipped for initial load (can be fetched with runs)
  */
 export async function GET(
   request: NextRequest,
@@ -14,53 +19,48 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const skiArea = await prisma.skiArea.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        osmId: true,
-        name: true,
-        country: true,
-        region: true,
-        latitude: true,
-        longitude: true,
-        bounds: true,
-        geometry: true,
-        properties: true,
-        // Just count runs/lifts for stats display
-        _count: {
-          select: {
-            runs: true,
-            lifts: true,
-          },
-        },
-        // Get connected areas info (lightweight)
-        connectedTo: {
-          select: {
-            toArea: {
-              select: {
-                id: true,
-                name: true,
-                latitude: true,
-                longitude: true,
-              },
+    // Run the main query and connection queries in parallel
+    const [skiArea, connectedTo, connectedFrom] = await Promise.all([
+      // Main ski area - minimal fields for instant display
+      prisma.skiArea.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          osmId: true,
+          name: true,
+          country: true,
+          region: true,
+          latitude: true,
+          longitude: true,
+          bounds: true,
+          geometry: true,
+          properties: true,
+          _count: {
+            select: {
+              runs: true,
+              lifts: true,
             },
           },
         },
-        connectedFrom: {
-          select: {
-            fromArea: {
-              select: {
-                id: true,
-                name: true,
-                latitude: true,
-                longitude: true,
-              },
-            },
+      }),
+      // Connected areas - fetch in parallel
+      prisma.skiAreaConnection.findMany({
+        where: { fromAreaId: id },
+        select: {
+          toArea: {
+            select: { id: true, name: true, latitude: true, longitude: true },
           },
         },
-      },
-    });
+      }),
+      prisma.skiAreaConnection.findMany({
+        where: { toAreaId: id },
+        select: {
+          fromArea: {
+            select: { id: true, name: true, latitude: true, longitude: true },
+          },
+        },
+      }),
+    ]);
 
     if (!skiArea) {
       return NextResponse.json(
@@ -71,25 +71,42 @@ export async function GET(
 
     // Build connected areas list
     const connectedAreas = [
-      ...skiArea.connectedTo.map(c => c.toArea),
-      ...skiArea.connectedFrom.map(c => c.fromArea),
+      ...connectedTo.map(c => c.toArea),
+      ...connectedFrom.map(c => c.fromArea),
     ];
 
     // Get all ski area IDs for counting total runs/lifts
     const allAreaIds = [skiArea.id, ...connectedAreas.map(a => a.id)];
 
-    // Count total runs and lifts across all connected areas
-    const [totalRuns, totalLifts] = await Promise.all([
-      prisma.run.count({ where: { skiAreaId: { in: allAreaIds } } }),
-      prisma.lift.count({ where: { skiAreaId: { in: allAreaIds } } }),
-    ]);
+    // Only fetch counts and localities if there are connected areas
+    // Otherwise use the counts we already have from the main query
+    let runCount = skiArea._count.runs;
+    let liftCount = skiArea._count.lifts;
+    let localities: string[] = [];
 
-    // Get unique localities from runs (for quick reference)
-    const localities = await prisma.run.findMany({
-      where: { skiAreaId: { in: allAreaIds }, locality: { not: null } },
-      select: { locality: true },
-      distinct: ['locality'],
-    });
+    if (connectedAreas.length > 0) {
+      // Fetch counts and localities in parallel
+      const [totalRuns, totalLifts, localityResults] = await Promise.all([
+        prisma.run.count({ where: { skiAreaId: { in: allAreaIds } } }),
+        prisma.lift.count({ where: { skiAreaId: { in: allAreaIds } } }),
+        prisma.run.findMany({
+          where: { skiAreaId: { in: allAreaIds }, locality: { not: null } },
+          select: { locality: true },
+          distinct: ['locality'],
+        }),
+      ]);
+      runCount = totalRuns;
+      liftCount = totalLifts;
+      localities = localityResults.map(l => l.locality).filter(Boolean).sort() as string[];
+    } else {
+      // Just get localities for the single area
+      const localityResults = await prisma.run.findMany({
+        where: { skiAreaId: id, locality: { not: null } },
+        select: { locality: true },
+        distinct: ['locality'],
+      });
+      localities = localityResults.map(l => l.locality).filter(Boolean).sort() as string[];
+    }
 
     const response = {
       id: skiArea.id,
@@ -103,9 +120,9 @@ export async function GET(
       geometry: skiArea.geometry,
       properties: skiArea.properties,
       // Stats for UI
-      runCount: totalRuns,
-      liftCount: totalLifts,
-      localities: localities.map(l => l.locality).filter(Boolean).sort() as string[],
+      runCount,
+      liftCount,
+      localities,
       connectedAreas: connectedAreas.length > 0 ? connectedAreas : undefined,
       // Empty arrays - runs/lifts will be loaded progressively
       runs: [],
