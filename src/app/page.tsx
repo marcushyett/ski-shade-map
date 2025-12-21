@@ -146,6 +146,8 @@ const ControlsContent = memo(function ControlsContent({
   fakeLocation,
   isFakeLocationDropMode,
   onLocationSelect,
+  onUseCurrentLocation,
+  isGettingCurrentLocation,
   currentLocality,
   onSelectRun,
   onSelectLift,
@@ -168,6 +170,8 @@ const ControlsContent = memo(function ControlsContent({
   fakeLocation: { lat: number; lng: number } | null;
   isFakeLocationDropMode: boolean;
   onLocationSelect: (location: LocationSelection) => void;
+  onUseCurrentLocation: () => void;
+  isGettingCurrentLocation: boolean;
   currentLocality: string | null;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
@@ -199,6 +203,8 @@ const ControlsContent = memo(function ControlsContent({
         </Text>
         <LocationSearch
           onSelect={onLocationSelect}
+          onUseCurrentLocation={onUseCurrentLocation}
+          isGettingLocation={isGettingCurrentLocation}
           currentLocation={{
             country: selectedArea?.country || undefined,
             region: selectedArea?.name || undefined,
@@ -404,6 +410,7 @@ export default function Home() {
   const [sharedLocations, setSharedLocations] = useState<SharedLocation[]>([]);
   const [isEditingHome, setIsEditingHome] = useState(false);
   const [pendingHomeLocation, setPendingHomeLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isGettingCurrentLocation, setIsGettingCurrentLocation] = useState(false);
   const mapRef = useRef<MapRef | null>(null);
   const previousSkiAreaIdRef = useRef<string | null>(null);
   
@@ -1056,9 +1063,86 @@ export default function Home() {
     }, 3000);
   }, []);
 
+  // Ref for debouncing bounds-based ski area loading
+  const boundsLoadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastLoadedBoundsRef = useRef<string | null>(null);
+
+  // Fetch ski areas by map bounds and auto-select nearest one
+  const loadSkiAreasByBounds = useCallback(async (view: { lat: number; lng: number; zoom: number }) => {
+    // Only load by bounds if no area is selected or at appropriate zoom level
+    // At zoom 10+, we can reasonably expect ski areas to be visible
+    if (view.zoom < 8) return;
+
+    // Calculate bounds from center and zoom
+    // Rough approximation: at zoom 10, about 50km visible
+    const latDelta = 180 / Math.pow(2, view.zoom) * 2;
+    const lngDelta = 360 / Math.pow(2, view.zoom) * 2;
+
+    const minLat = view.lat - latDelta;
+    const maxLat = view.lat + latDelta;
+    const minLng = view.lng - lngDelta;
+    const maxLng = view.lng + lngDelta;
+
+    // Create a bounds key to avoid duplicate fetches
+    const boundsKey = `${minLat.toFixed(2)},${maxLat.toFixed(2)},${minLng.toFixed(2)},${maxLng.toFixed(2)}`;
+    if (boundsKey === lastLoadedBoundsRef.current) return;
+    lastLoadedBoundsRef.current = boundsKey;
+
+    try {
+      const params = new URLSearchParams({
+        minLat: minLat.toString(),
+        maxLat: maxLat.toString(),
+        minLng: minLng.toString(),
+        maxLng: maxLng.toString(),
+        limit: '10',
+      });
+
+      const res = await fetch(`/api/ski-areas?${params}`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const areas = data.areas as SkiAreaSummary[];
+
+      if (areas.length === 0) return;
+
+      // If no area is currently selected, auto-select the nearest one
+      if (!selectedArea) {
+        // Find the nearest ski area to the center of the view
+        let nearest = areas[0];
+        let nearestDist = Infinity;
+
+        for (const area of areas) {
+          const dist = Math.pow(area.latitude - view.lat, 2) + Math.pow(area.longitude - view.lng, 2);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearest = area;
+          }
+        }
+
+        trackEvent('ski_area_auto_loaded', {
+          ski_area_id: nearest.id,
+          ski_area_name: nearest.name,
+          source: 'bounds_navigation',
+        });
+
+        setSelectedArea(nearest);
+      }
+    } catch (error) {
+      console.error('Failed to load ski areas by bounds:', error);
+    }
+  }, [selectedArea]);
+
   const handleViewChange = useCallback((view: { lat: number; lng: number; zoom: number }) => {
     setMapView(view);
-  }, []);
+
+    // Debounce bounds-based ski area loading (500ms after map stops moving)
+    if (boundsLoadTimeoutRef.current) {
+      clearTimeout(boundsLoadTimeoutRef.current);
+    }
+    boundsLoadTimeoutRef.current = setTimeout(() => {
+      loadSkiAreasByBounds(view);
+    }, 500);
+  }, [loadSkiAreasByBounds]);
 
   const handleToggleFavourite = useCallback((runId: string) => {
     if (!skiAreaDetails) return;
@@ -1110,6 +1194,76 @@ export default function Home() {
 
   const handleUserLocationChange = useCallback((location: UserLocation | null) => {
     setUserLocation(location);
+  }, []);
+
+  // Handler for "Use Current Location" in location search
+  const handleUseCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setIsGettingCurrentLocation(true);
+    trackEvent('current_location_requested', { source: 'location_search' });
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+
+        trackEvent('current_location_granted', {
+          latitude,
+          longitude,
+          accuracy,
+          source: 'location_search',
+        });
+
+        // Update user location state
+        const location: UserLocation = {
+          latitude,
+          longitude,
+          accuracy,
+          timestamp: position.timestamp,
+        };
+        setUserLocation(location);
+        setIsTrackingLocation(true);
+
+        // Clear any selected area so the bounds-based loading will pick up nearby resorts
+        setSelectedArea(null);
+
+        // Fly to the user's location at zoom level 11 to see nearby ski areas
+        mapRef.current?.flyTo(latitude, longitude, 11);
+
+        setIsGettingCurrentLocation(false);
+        setMobileMenuOpen(false);
+      },
+      (error) => {
+        setIsGettingCurrentLocation(false);
+        trackEvent('current_location_denied', {
+          error_code: error.code,
+          error_message: error.message,
+          source: 'location_search',
+        });
+
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setError('Location permission denied');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setError('Location information unavailable');
+            break;
+          case error.TIMEOUT:
+            setError('Location request timed out');
+            break;
+          default:
+            setError('Unable to get your location');
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
+      }
+    );
   }, []);
 
   // Handler to remove a shared location
@@ -1743,7 +1897,7 @@ export default function Home() {
           body: { padding: 12, display: 'flex', flexDirection: 'column' } 
         }}
       >
-        <ControlsContent 
+        <ControlsContent
           selectedArea={selectedArea}
           skiAreaDetails={skiAreaDetails}
           error={error}
@@ -1756,6 +1910,8 @@ export default function Home() {
           fakeLocation={fakeLocation}
           isFakeLocationDropMode={isFakeLocationDropMode}
           onLocationSelect={handleLocationSelect}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          isGettingCurrentLocation={isGettingCurrentLocation}
           currentLocality={currentLocality}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
@@ -1783,6 +1939,8 @@ export default function Home() {
           fakeLocation={fakeLocation}
           isFakeLocationDropMode={isFakeLocationDropMode}
           onLocationSelect={handleLocationSelect}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          isGettingCurrentLocation={isGettingCurrentLocation}
           currentLocality={currentLocality}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}

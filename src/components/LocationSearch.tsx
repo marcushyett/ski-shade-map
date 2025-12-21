@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { SearchOutlined, EnvironmentOutlined } from '@ant-design/icons';
+import { SearchOutlined, EnvironmentOutlined, AimOutlined } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
 import LoadingSpinner from './LoadingSpinner';
 import { useLocationSearch, LocationSearchResult } from '@/hooks/useLocationSearch';
@@ -18,6 +18,8 @@ export interface LocationSelection {
 
 interface LocationSearchProps {
   onSelect: (location: LocationSelection) => void;
+  onUseCurrentLocation?: () => void;
+  isGettingLocation?: boolean;
   currentLocation?: {
     country?: string;
     region?: string;
@@ -29,6 +31,8 @@ interface LocationSearchProps {
 
 export default function LocationSearch({
   onSelect,
+  onUseCurrentLocation,
+  isGettingLocation = false,
   currentLocation,
   disabled,
   placeholder = 'Search ski areas, regions, villages...',
@@ -95,17 +99,35 @@ export default function LocationSearch({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!isSearching || results.length === 0) return;
+    if (!isSearching) return;
+
+    // Calculate total items including current location button if present
+    const hasCurrentLocationOption = !!onUseCurrentLocation;
+    const totalItems = results.length + (hasCurrentLocationOption ? 1 : 0);
+
+    if (totalItems === 0) return;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(i => Math.min(i + 1, results.length - 1));
+      setSelectedIndex(i => Math.min(i + 1, totalItems - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex(i => Math.max(i - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      handleSelect(results[selectedIndex]);
+      // If current location button is selected (index 0 when hasCurrentLocationOption)
+      if (hasCurrentLocationOption && selectedIndex === 0) {
+        trackEvent('use_current_location_clicked', { source: 'keyboard' });
+        onUseCurrentLocation();
+        setIsSearching(false);
+        setQuery('');
+      } else {
+        // Adjust index for results array
+        const resultIndex = hasCurrentLocationOption ? selectedIndex - 1 : selectedIndex;
+        if (resultIndex >= 0 && resultIndex < results.length) {
+          handleSelect(results[resultIndex]);
+        }
+      }
     } else if (e.key === 'Escape') {
       setIsSearching(false);
       setQuery('');
@@ -169,51 +191,85 @@ export default function LocationSearch({
       </div>
 
       {/* Dropdown results */}
-      {isSearching && (query.length >= 2 || results.length > 0) && (
+      {isSearching && (
         <div className="location-search-dropdown">
+          {/* Current Location option - show when dropdown opens and handler is available */}
+          {onUseCurrentLocation && (
+            <button
+              className={`location-search-result current-location-btn ${query.length < 2 && selectedIndex === 0 ? 'selected' : ''}`}
+              onClick={() => {
+                trackEvent('use_current_location_clicked');
+                onUseCurrentLocation();
+                setIsSearching(false);
+                setQuery('');
+              }}
+              onMouseEnter={() => query.length < 2 && setSelectedIndex(0)}
+              disabled={isGettingLocation}
+            >
+              <AimOutlined className="location-result-icon" style={{ color: isGettingLocation ? '#666' : '#3b82f6' }} />
+              <div className="location-result-content">
+                <div className="location-result-name" style={{ color: isGettingLocation ? '#666' : undefined }}>
+                  {isGettingLocation ? 'Getting location...' : 'Use Current Location'}
+                </div>
+                <div className="location-result-meta">
+                  Navigate to your current position
+                </div>
+              </div>
+              {isGettingLocation && (
+                <div className="location-search-spinner" style={{ position: 'static', marginLeft: 'auto' }}>
+                  <LoadingSpinner size={16} />
+                </div>
+              )}
+            </button>
+          )}
+
           {results.length === 0 && !isLoadingIndex && query.length >= 2 && (
             <div className="location-search-empty">
               No locations found for &ldquo;{query}&rdquo;
             </div>
           )}
 
-          {results.map((result, index) => (
-            <button
-              key={`${result.type}-${result.id}`}
-              className={`location-search-result ${index === selectedIndex ? 'selected' : ''}`}
-              onPointerDown={() => {
-                pendingResultRef.current = result;
-              }}
-              onClick={() => {
-                const resultToSelect = pendingResultRef.current || result;
-                pendingResultRef.current = null;
-                handleSelect(resultToSelect);
-              }}
-              onMouseEnter={() => setSelectedIndex(index)}
-            >
-              <EnvironmentOutlined className="location-result-icon" />
-              <div className="location-result-content">
-                <div className="location-result-name">{result.name}</div>
-                <div className="location-result-meta">
-                  {result.type === 'locality' && result.region && (
-                    <>
-                      {result.region}
-                      {result.country && ` · ${result.country}`}
-                    </>
-                  )}
-                  {result.type === 'region' && result.country && (
-                    <>{result.country}</>
-                  )}
-                  {result.runCount && (
-                    <> · {result.runCount} runs</>
-                  )}
+          {results.map((result, index) => {
+            // Offset index by 1 if current location button is shown
+            const adjustedIndex = onUseCurrentLocation ? index + 1 : index;
+            return (
+              <button
+                key={`${result.type}-${result.id}`}
+                className={`location-search-result ${adjustedIndex === selectedIndex ? 'selected' : ''}`}
+                onPointerDown={() => {
+                  pendingResultRef.current = result;
+                }}
+                onClick={() => {
+                  const resultToSelect = pendingResultRef.current || result;
+                  pendingResultRef.current = null;
+                  handleSelect(resultToSelect);
+                }}
+                onMouseEnter={() => setSelectedIndex(adjustedIndex)}
+              >
+                <EnvironmentOutlined className="location-result-icon" />
+                <div className="location-result-content">
+                  <div className="location-result-name">{result.name}</div>
+                  <div className="location-result-meta">
+                    {result.type === 'locality' && result.region && (
+                      <>
+                        {result.region}
+                        {result.country && ` · ${result.country}`}
+                      </>
+                    )}
+                    {result.type === 'region' && result.country && (
+                      <>{result.country}</>
+                    )}
+                    {result.runCount && (
+                      <> · {result.runCount} runs</>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="location-result-type">
-                {getTypeLabel(result.type)}
-              </div>
-            </button>
-          ))}
+                <div className="location-result-type">
+                  {getTypeLabel(result.type)}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

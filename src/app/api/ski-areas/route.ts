@@ -10,20 +10,38 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(searchParams.get('limit') || '50');
   const offset = parseInt(searchParams.get('offset') || '0');
 
+  // Bounds-based query parameters
+  const minLat = searchParams.get('minLat');
+  const maxLat = searchParams.get('maxLat');
+  const minLng = searchParams.get('minLng');
+  const maxLng = searchParams.get('maxLng');
+
   try {
     const where: Record<string, unknown> = {};
-    
+
     if (search) {
       where.name = {
         contains: search,
         mode: 'insensitive',
       };
     }
-    
+
     if (country) {
       where.country = {
         equals: country,
         mode: 'insensitive',
+      };
+    }
+
+    // Add bounds filtering if all bounds parameters are provided
+    if (minLat && maxLat && minLng && maxLng) {
+      where.latitude = {
+        gte: parseFloat(minLat),
+        lte: parseFloat(maxLat),
+      };
+      where.longitude = {
+        gte: parseFloat(minLng),
+        lte: parseFloat(maxLng),
       };
     }
 
