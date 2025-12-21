@@ -77,6 +77,18 @@ function getDatabaseUrl(): string {
 async function bulkUpsertRuns(runs: RunData[]): Promise<number> {
   if (runs.length === 0) return 0;
 
+  // Deduplicate by osmId to prevent "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+  // Keep the last occurrence of each osmId (most recent data)
+  const deduped = new Map<string, RunData>();
+  for (const run of runs) {
+    deduped.set(run.osmId, run);
+  }
+  const uniqueRuns = Array.from(deduped.values());
+
+  if (uniqueRuns.length < runs.length) {
+    console.log(`   ⚠️ Deduplicated ${runs.length - uniqueRuns.length} duplicate runs in batch`);
+  }
+
   const timestamp = Date.now();
   const stagingTable = `_runs_staging_${timestamp}`;
   const csvFile = `${TMP_DIR}/runs_${timestamp}.csv`;
@@ -98,7 +110,7 @@ async function bulkUpsertRuns(runs: RunData[]): Promise<number> {
     `);
 
     // Write CSV file
-    const csvLines = runs.map(run => {
+    const csvLines = uniqueRuns.map(run => {
       const id = generateId();
       return [
         escapeCsvValue(id),
@@ -136,7 +148,7 @@ async function bulkUpsertRuns(runs: RunData[]): Promise<number> {
         "updatedAt" = NOW()
     `);
 
-    return runs.length;
+    return uniqueRuns.length;
   } finally {
     // Always clean up
     await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${stagingTable}"`);
@@ -147,6 +159,18 @@ async function bulkUpsertRuns(runs: RunData[]): Promise<number> {
 // Bulk upsert lifts using PostgreSQL COPY for maximum performance
 async function bulkUpsertLifts(lifts: LiftData[]): Promise<number> {
   if (lifts.length === 0) return 0;
+
+  // Deduplicate by osmId to prevent "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+  // Keep the last occurrence of each osmId (most recent data)
+  const deduped = new Map<string, LiftData>();
+  for (const lift of lifts) {
+    deduped.set(lift.osmId, lift);
+  }
+  const uniqueLifts = Array.from(deduped.values());
+
+  if (uniqueLifts.length < lifts.length) {
+    console.log(`   ⚠️ Deduplicated ${lifts.length - uniqueLifts.length} duplicate lifts in batch`);
+  }
 
   const timestamp = Date.now();
   const stagingTable = `_lifts_staging_${timestamp}`;
@@ -170,7 +194,7 @@ async function bulkUpsertLifts(lifts: LiftData[]): Promise<number> {
     `);
 
     // Write CSV file
-    const csvLines = lifts.map(lift => {
+    const csvLines = uniqueLifts.map(lift => {
       const id = generateId();
       return [
         escapeCsvValue(id),
@@ -211,7 +235,7 @@ async function bulkUpsertLifts(lifts: LiftData[]): Promise<number> {
         "updatedAt" = NOW()
     `);
 
-    return lifts.length;
+    return uniqueLifts.length;
   } finally {
     // Always clean up
     await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${stagingTable}"`);
