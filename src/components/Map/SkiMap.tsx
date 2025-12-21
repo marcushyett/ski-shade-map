@@ -1989,8 +1989,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       // Prepare segment data first (outside of map updates)
       const cache = getGeometryCache(area.id);
       let segments: GeoJSON.FeatureCollection;
-      
-      if (cache && cache.isComplete) {
+
+      if (cache && cache.isComplete && cache.segments.size > 0) {
         // Use precomputed geometry - much faster, only calculates isShaded
         segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
       } else {

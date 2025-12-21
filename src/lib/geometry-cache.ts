@@ -151,28 +151,46 @@ export function startGeometryPrecomputation(
   runs: RunData[],
   onProgress?: (processed: number, total: number) => void
 ): GeometryCache {
-  // Check if already cached and complete
+  const lineStringCount = runs.filter(r => r.geometry.type === 'LineString').length;
+
+  // Check if already cached and complete WITH the same number of runs
   const existing = cacheBySkiArea.get(skiAreaId);
-  if (existing?.isComplete) {
+  if (existing?.isComplete && existing.totalCount === lineStringCount && lineStringCount > 0) {
     return existing;
   }
-  
+
+  // If runs count changed (e.g., empty -> loaded), clear and recreate
+  if (existing && existing.totalCount !== lineStringCount) {
+    cacheBySkiArea.delete(skiAreaId);
+  }
+
   // Abort any active computation for a different ski area
   if (activeComputationId && activeComputationId !== skiAreaId) {
     computationAborted = true;
   }
-  
-  // If already computing for this ski area, return the in-progress cache
-  if (existing && activeComputationId === skiAreaId) {
-    return existing;
+
+  // If already computing for this ski area with same count, return the in-progress cache
+  const currentCache = cacheBySkiArea.get(skiAreaId);
+  if (currentCache && activeComputationId === skiAreaId) {
+    return currentCache;
   }
-  
+
+  // Skip cache creation for empty runs - no point caching nothing
+  if (lineStringCount === 0) {
+    return {
+      segments: new Map(),
+      isComplete: false,
+      processedCount: 0,
+      totalCount: 0,
+    };
+  }
+
   // Create new cache
   const cache: GeometryCache = {
     segments: new Map(),
     isComplete: false,
     processedCount: 0,
-    totalCount: runs.filter(r => r.geometry.type === 'LineString').length,
+    totalCount: lineStringCount,
   };
   
   cacheBySkiArea.set(skiAreaId, cache);
