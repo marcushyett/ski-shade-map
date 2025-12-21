@@ -10,9 +10,11 @@ const { Text } = Typography;
 
 interface OnboardingProps {
   onSelectLocation: (location: LocationSelection) => void;
+  onUseCurrentLocation?: () => void;
+  isGettingLocation?: boolean;
 }
 
-export default function Onboarding({ onSelectLocation }: OnboardingProps) {
+export default function Onboarding({ onSelectLocation, onUseCurrentLocation, isGettingLocation = false }: OnboardingProps) {
   const handleLocationSelect = (location: LocationSelection) => {
     trackEvent('onboarding_resort_selected', {
       skiAreaId: location.skiAreaId,
@@ -52,6 +54,8 @@ export default function Onboarding({ onSelectLocation }: OnboardingProps) {
           </Text>
           <LocationSearch
             onSelect={handleLocationSelect}
+            onUseCurrentLocation={onUseCurrentLocation}
+            isGettingLocation={isGettingLocation}
             placeholder="Search ski areas..."
           />
         </div>

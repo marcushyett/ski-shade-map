@@ -1207,7 +1207,7 @@ export default function Home() {
     trackEvent('current_location_requested', { source: 'location_search' });
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude, accuracy } = position.coords;
 
         trackEvent('current_location_granted', {
@@ -1227,11 +1227,65 @@ export default function Home() {
         setUserLocation(location);
         setIsTrackingLocation(true);
 
-        // Clear any selected area so the bounds-based loading will pick up nearby resorts
-        setSelectedArea(null);
+        // Set initial map view so the map starts at the user's location
+        // This is important for onboarding when the map hasn't rendered yet
+        const targetZoom = 11;
+        setInitialMapView({ lat: latitude, lng: longitude, zoom: targetZoom });
 
-        // Fly to the user's location at zoom level 11 to see nearby ski areas
-        mapRef.current?.flyTo(latitude, longitude, 11);
+        // If map exists (not on onboarding), fly to the location
+        if (mapRef.current) {
+          mapRef.current.flyTo(latitude, longitude, targetZoom);
+        }
+
+        // Directly trigger bounds-based loading to find nearby ski areas
+        // This handles onboarding case where map isn't rendered yet
+        // Calculate bounds from user location
+        const latDelta = 180 / Math.pow(2, targetZoom) * 2;
+        const lngDelta = 360 / Math.pow(2, targetZoom) * 2;
+        const minLat = latitude - latDelta;
+        const maxLat = latitude + latDelta;
+        const minLng = longitude - lngDelta;
+        const maxLng = longitude + lngDelta;
+
+        try {
+          const params = new URLSearchParams({
+            minLat: minLat.toString(),
+            maxLat: maxLat.toString(),
+            minLng: minLng.toString(),
+            maxLng: maxLng.toString(),
+            limit: '10',
+          });
+
+          const res = await fetch(`/api/ski-areas?${params}`);
+          if (res.ok) {
+            const data = await res.json();
+            const areas = data.areas as SkiAreaSummary[];
+
+            if (areas.length > 0) {
+              // Find the nearest ski area
+              let nearest = areas[0];
+              let nearestDist = Infinity;
+              for (const area of areas) {
+                const dist = Math.pow(area.latitude - latitude, 2) + Math.pow(area.longitude - longitude, 2);
+                if (dist < nearestDist) {
+                  nearestDist = dist;
+                  nearest = area;
+                }
+              }
+
+              trackEvent('ski_area_auto_loaded', {
+                ski_area_id: nearest.id,
+                ski_area_name: nearest.name,
+                source: 'current_location',
+              });
+
+              // This will dismiss onboarding and render the map
+              setSelectedArea(nearest);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to load ski areas near current location:', error);
+        }
 
         setIsGettingCurrentLocation(false);
         setMobileMenuOpen(false);
@@ -1809,7 +1863,13 @@ export default function Home() {
 
   // Show onboarding for first-time users (no resort selected)
   if (initialLoadDone && !selectedArea) {
-    return <Onboarding onSelectLocation={handleLocationSelect} />;
+    return (
+      <Onboarding
+        onSelectLocation={handleLocationSelect}
+        onUseCurrentLocation={handleUseCurrentLocation}
+        isGettingLocation={isGettingCurrentLocation}
+      />
+    );
   }
 
   return (
