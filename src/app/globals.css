@@ -487,6 +487,47 @@ h5.ant-typography {
   z-index: 20;
 }
 
+/* Progressive loading indicator - shows when map is visible but trails still loading */
+.runs-loading-indicator {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  pointer-events: none;
+}
+
+.runs-loading-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  border-radius: 20px;
+  font-size: 12px;
+  color: #a3a3a3;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .runs-loading-indicator {
+    top: 60px; /* Below mobile header */
+  }
+}
+
 .ant-spin-dot-item {
   background-color: var(--foreground) !important;
 }
