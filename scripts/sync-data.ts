@@ -10,7 +10,7 @@
  */
 
 import { PrismaClient, Prisma } from '@prisma/client';
-import { createReadStream, existsSync, statSync } from 'fs';
+import { createReadStream, existsSync, statSync, writeFileSync, unlinkSync } from 'fs';
 import { execSync } from 'child_process';
 import { parser } from 'stream-json';
 import { pick } from 'stream-json/filters/Pick';
@@ -22,8 +22,8 @@ const prisma = new PrismaClient();
 const OPENSKIMAP_BASE = 'https://tiles.openskimap.org/geojson';
 const TMP_DIR = '/tmp';
 
-// Batch size for bulk upserts
-const BULK_UPSERT_SIZE = 500;
+// Batch size for COPY-based bulk upserts - can be very large since COPY is efficient
+const BULK_UPSERT_SIZE = 50000;
 
 // Generate a CUID-like ID
 function generateId(): string {
@@ -32,24 +32,18 @@ function generateId(): string {
   return `c${timestamp}${randomPart}`;
 }
 
-// Escape a string value for SQL (handle quotes and special chars)
-function escapeString(val: string | null): string {
-  if (val === null) return 'NULL';
-  // Replace backslashes first, then single quotes
-  const escaped = val.replace(/\\/g, '\\\\').replace(/'/g, "''");
-  return `'${escaped}'`;
+// Escape a value for CSV format (RFC 4180)
+function escapeCsvValue(val: string | null): string {
+  if (val === null) return '';
+  // If contains comma, quote, or newline, wrap in quotes and escape quotes
+  if (val.includes(',') || val.includes('"') || val.includes('\n') || val.includes('\r')) {
+    return '"' + val.replace(/"/g, '""') + '"';
+  }
+  return val;
 }
 
-// Escape JSON for SQL - only escape single quotes, leave JSON backslashes intact
-function escapeJson(val: any): string {
-  const jsonStr = JSON.stringify(val);
-  // Only escape single quotes for PostgreSQL string literal
-  const escaped = jsonStr.replace(/'/g, "''");
-  return `'${escaped}'::jsonb`;
-}
-
-// Bulk upsert runs using raw SQL for performance
-async function bulkUpsertRuns(runs: Array<{
+// Run data type for bulk upserts
+type RunData = {
   osmId: string;
   name: string | null;
   difficulty: string | null;
@@ -58,45 +52,10 @@ async function bulkUpsertRuns(runs: Array<{
   geometry: any;
   properties: any;
   skiAreaId: string;
-}>): Promise<number> {
-  if (runs.length === 0) return 0;
+};
 
-  const values = runs.map(run => {
-    const id = generateId();
-    return `(
-      ${escapeString(id)},
-      ${escapeString(run.osmId)},
-      ${escapeString(run.name)},
-      ${escapeString(run.difficulty)},
-      ${escapeString(run.status)},
-      ${escapeString(run.locality)},
-      ${escapeJson(run.geometry)},
-      ${escapeJson(run.properties)},
-      ${escapeString(run.skiAreaId)},
-      NOW(),
-      NOW()
-    )`;
-  }).join(',\n');
-
-  const sql = `
-    INSERT INTO "Run" ("id", "osmId", "name", "difficulty", "status", "locality", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
-    VALUES ${values}
-    ON CONFLICT ("osmId") DO UPDATE SET
-      "name" = EXCLUDED."name",
-      "difficulty" = EXCLUDED."difficulty",
-      "status" = EXCLUDED."status",
-      "locality" = EXCLUDED."locality",
-      "geometry" = EXCLUDED."geometry",
-      "properties" = EXCLUDED."properties",
-      "updatedAt" = NOW()
-  `;
-
-  await prisma.$executeRawUnsafe(sql);
-  return runs.length;
-}
-
-// Bulk upsert lifts using raw SQL for performance
-async function bulkUpsertLifts(lifts: Array<{
+// Lift data type for bulk upserts
+type LiftData = {
   osmId: string;
   name: string | null;
   liftType: string | null;
@@ -106,43 +65,158 @@ async function bulkUpsertLifts(lifts: Array<{
   geometry: any;
   properties: any;
   skiAreaId: string;
-}>): Promise<number> {
+};
+
+// Get DATABASE_URL for psql commands
+function getDatabaseUrl(): string {
+  return process.env.DATABASE_URL || '';
+}
+
+// Bulk upsert runs using PostgreSQL COPY for maximum performance
+// Strategy: write CSV file, COPY into staging table, upsert to real table
+async function bulkUpsertRuns(runs: RunData[]): Promise<number> {
+  if (runs.length === 0) return 0;
+
+  const timestamp = Date.now();
+  const stagingTable = `_runs_staging_${timestamp}`;
+  const csvFile = `${TMP_DIR}/runs_${timestamp}.csv`;
+
+  try {
+    // Create staging table (unlogged for speed - no WAL overhead)
+    await prisma.$executeRawUnsafe(`
+      CREATE UNLOGGED TABLE "${stagingTable}" (
+        "id" TEXT NOT NULL,
+        "osmId" TEXT NOT NULL,
+        "name" TEXT,
+        "difficulty" TEXT,
+        "status" TEXT,
+        "locality" TEXT,
+        "geometry" TEXT,
+        "properties" TEXT,
+        "skiAreaId" TEXT NOT NULL
+      )
+    `);
+
+    // Write CSV file
+    const csvLines = runs.map(run => {
+      const id = generateId();
+      return [
+        escapeCsvValue(id),
+        escapeCsvValue(run.osmId),
+        escapeCsvValue(run.name),
+        escapeCsvValue(run.difficulty),
+        escapeCsvValue(run.status),
+        escapeCsvValue(run.locality),
+        escapeCsvValue(JSON.stringify(run.geometry)),
+        escapeCsvValue(JSON.stringify(run.properties)),
+        escapeCsvValue(run.skiAreaId),
+      ].join(',');
+    });
+    writeFileSync(csvFile, csvLines.join('\n'));
+
+    // Use psql to COPY from CSV file (fastest possible import)
+    const dbUrl = getDatabaseUrl();
+    execSync(
+      `psql "${dbUrl}" -c "\\COPY \\"${stagingTable}\\" FROM '${csvFile}' WITH (FORMAT csv)"`,
+      { stdio: 'pipe' }
+    );
+
+    // Upsert from staging table to real table with JSON casting
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "Run" ("id", "osmId", "name", "difficulty", "status", "locality", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
+      SELECT "id", "osmId", "name", "difficulty", "status", "locality", "geometry"::jsonb, "properties"::jsonb, "skiAreaId", NOW(), NOW()
+      FROM "${stagingTable}"
+      ON CONFLICT ("osmId") DO UPDATE SET
+        "name" = EXCLUDED."name",
+        "difficulty" = EXCLUDED."difficulty",
+        "status" = EXCLUDED."status",
+        "locality" = EXCLUDED."locality",
+        "geometry" = EXCLUDED."geometry",
+        "properties" = EXCLUDED."properties",
+        "updatedAt" = NOW()
+    `);
+
+    return runs.length;
+  } finally {
+    // Always clean up
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${stagingTable}"`);
+    try { unlinkSync(csvFile); } catch {}
+  }
+}
+
+// Bulk upsert lifts using PostgreSQL COPY for maximum performance
+async function bulkUpsertLifts(lifts: LiftData[]): Promise<number> {
   if (lifts.length === 0) return 0;
 
-  const values = lifts.map(lift => {
-    const id = generateId();
-    return `(
-      ${escapeString(id)},
-      ${escapeString(lift.osmId)},
-      ${escapeString(lift.name)},
-      ${escapeString(lift.liftType)},
-      ${escapeString(lift.status)},
-      ${escapeString(lift.locality)},
-      ${lift.capacity !== null ? lift.capacity : 'NULL'},
-      ${escapeJson(lift.geometry)},
-      ${escapeJson(lift.properties)},
-      ${escapeString(lift.skiAreaId)},
-      NOW(),
-      NOW()
-    )`;
-  }).join(',\n');
+  const timestamp = Date.now();
+  const stagingTable = `_lifts_staging_${timestamp}`;
+  const csvFile = `${TMP_DIR}/lifts_${timestamp}.csv`;
 
-  const sql = `
-    INSERT INTO "Lift" ("id", "osmId", "name", "liftType", "status", "locality", "capacity", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
-    VALUES ${values}
-    ON CONFLICT ("osmId") DO UPDATE SET
-      "name" = EXCLUDED."name",
-      "liftType" = EXCLUDED."liftType",
-      "status" = EXCLUDED."status",
-      "locality" = EXCLUDED."locality",
-      "capacity" = EXCLUDED."capacity",
-      "geometry" = EXCLUDED."geometry",
-      "properties" = EXCLUDED."properties",
-      "updatedAt" = NOW()
-  `;
+  try {
+    // Create staging table (unlogged for speed - no WAL overhead)
+    await prisma.$executeRawUnsafe(`
+      CREATE UNLOGGED TABLE "${stagingTable}" (
+        "id" TEXT NOT NULL,
+        "osmId" TEXT NOT NULL,
+        "name" TEXT,
+        "liftType" TEXT,
+        "status" TEXT,
+        "locality" TEXT,
+        "capacity" TEXT,
+        "geometry" TEXT,
+        "properties" TEXT,
+        "skiAreaId" TEXT NOT NULL
+      )
+    `);
 
-  await prisma.$executeRawUnsafe(sql);
-  return lifts.length;
+    // Write CSV file
+    const csvLines = lifts.map(lift => {
+      const id = generateId();
+      return [
+        escapeCsvValue(id),
+        escapeCsvValue(lift.osmId),
+        escapeCsvValue(lift.name),
+        escapeCsvValue(lift.liftType),
+        escapeCsvValue(lift.status),
+        escapeCsvValue(lift.locality),
+        escapeCsvValue(lift.capacity?.toString() ?? null),
+        escapeCsvValue(JSON.stringify(lift.geometry)),
+        escapeCsvValue(JSON.stringify(lift.properties)),
+        escapeCsvValue(lift.skiAreaId),
+      ].join(',');
+    });
+    writeFileSync(csvFile, csvLines.join('\n'));
+
+    // Use psql to COPY from CSV file
+    const dbUrl = getDatabaseUrl();
+    execSync(
+      `psql "${dbUrl}" -c "\\COPY \\"${stagingTable}\\" FROM '${csvFile}' WITH (FORMAT csv)"`,
+      { stdio: 'pipe' }
+    );
+
+    // Upsert from staging table to real table with type casting
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "Lift" ("id", "osmId", "name", "liftType", "status", "locality", "capacity", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
+      SELECT "id", "osmId", "name", "liftType", "status", "locality",
+             NULLIF("capacity", '')::integer, "geometry"::jsonb, "properties"::jsonb, "skiAreaId", NOW(), NOW()
+      FROM "${stagingTable}"
+      ON CONFLICT ("osmId") DO UPDATE SET
+        "name" = EXCLUDED."name",
+        "liftType" = EXCLUDED."liftType",
+        "status" = EXCLUDED."status",
+        "locality" = EXCLUDED."locality",
+        "capacity" = EXCLUDED."capacity",
+        "geometry" = EXCLUDED."geometry",
+        "properties" = EXCLUDED."properties",
+        "updatedAt" = NOW()
+    `);
+
+    return lifts.length;
+  } finally {
+    // Always clean up
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${stagingTable}"`);
+    try { unlinkSync(csvFile); } catch {}
+  }
 }
 
 // Parse --data-dir argument for pre-downloaded files
@@ -558,17 +632,6 @@ async function main() {
     ]);
 
     // Collect runs into batches for bulk upsert
-    interface RunData {
-      osmId: string;
-      name: string | null;
-      difficulty: string | null;
-      status: string | null;
-      locality: string | null;
-      geometry: any;
-      properties: any;
-      skiAreaId: string;
-    }
-
     let pendingBatch: RunData[] = [];
 
     const processPendingBatch = async () => {
@@ -674,18 +737,6 @@ async function main() {
     ]);
 
     // Collect lifts into batches for bulk upsert
-    interface LiftData {
-      osmId: string;
-      name: string | null;
-      liftType: string | null;
-      status: string | null;
-      locality: string | null;
-      capacity: number | null;
-      geometry: any;
-      properties: any;
-      skiAreaId: string;
-    }
-
     let pendingLiftBatch: LiftData[] = [];
 
     const processPendingLiftBatch = async () => {
