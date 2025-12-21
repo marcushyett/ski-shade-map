@@ -432,6 +432,9 @@ export default function Home() {
   // Location/locality tracking
   const [currentLocality, setCurrentLocality] = useState<string | null>(null);
   const [zoomToLocality, setZoomToLocality] = useState<{ locality: string; lat: number; lng: number } | null>(null);
+
+  // Allow showing map without a selected ski area (e.g., when using current location with no nearby resorts)
+  const [showMapWithoutArea, setShowMapWithoutArea] = useState(false);
   
   // Points of Interest (toilets, restaurants, viewpoints)
   const [pois, setPois] = useState<POIData[]>([]);
@@ -1232,6 +1235,10 @@ export default function Home() {
         const targetZoom = 11;
         setInitialMapView({ lat: latitude, lng: longitude, zoom: targetZoom });
 
+        // Show the map even if no ski areas are found nearby
+        // This allows the user to navigate to their location and explore
+        setShowMapWithoutArea(true);
+
         // If map exists (not on onboarding), fly to the location
         if (mapRef.current) {
           mapRef.current.flyTo(latitude, longitude, targetZoom);
@@ -1862,7 +1869,8 @@ export default function Home() {
   }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, weather?.elevation, favourites]);
 
   // Show onboarding for first-time users (no resort selected)
-  if (initialLoadDone && !selectedArea) {
+  // Skip onboarding if user used current location (showMapWithoutArea is true)
+  if (initialLoadDone && !selectedArea && !showMapWithoutArea) {
     return (
       <Onboarding
         onSelectLocation={handleLocationSelect}
