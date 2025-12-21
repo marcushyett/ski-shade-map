@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,22 +19,53 @@ export interface SearchableLocation {
   lifts?: number;
 }
 
-// In-memory cache (refreshed every 10 minutes)
+// In-memory cache for dynamic fallback (refreshed every 10 minutes)
 let cachedData: SearchableLocation[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 10 * 60 * 1000;
 
+// Try to load from pre-generated static file (fastest path)
+let staticData: SearchableLocation[] | null = null;
+let staticDataLoaded = false;
+
+function loadStaticData(): SearchableLocation[] | null {
+  if (staticDataLoaded) return staticData;
+
+  try {
+    const filePath = path.join(process.cwd(), 'public', 'data', 'locations.json');
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      staticData = JSON.parse(content);
+      console.log(`Loaded ${staticData?.length || 0} locations from static file`);
+    }
+  } catch (error) {
+    console.warn('Could not load static locations file:', error);
+    staticData = null;
+  }
+
+  staticDataLoaded = true;
+  return staticData;
+}
+
 export async function GET() {
+  // Long cache headers - data is static and updated only on build
+  const cacheHeaders = {
+    'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+  };
+
+  // Try static file first (instant response)
+  const staticLocations = loadStaticData();
+  if (staticLocations) {
+    return NextResponse.json(staticLocations, { headers: cacheHeaders });
+  }
+
+  // Fallback to database query (for development or if static file missing)
   try {
     const now = Date.now();
 
     // Return cached data if still valid
     if (cachedData && now - cacheTimestamp < CACHE_TTL) {
-      return NextResponse.json(cachedData, {
-        headers: {
-          'Cache-Control': 'public, max-age=600, stale-while-revalidate=60',
-        },
-      });
+      return NextResponse.json(cachedData, { headers: cacheHeaders });
     }
 
     // Fetch all data in parallel
@@ -98,11 +131,7 @@ export async function GET() {
     cachedData = items;
     cacheTimestamp = now;
 
-    return NextResponse.json(items, {
-      headers: {
-        'Cache-Control': 'public, max-age=600, stale-while-revalidate=60',
-      },
-    });
+    return NextResponse.json(items, { headers: cacheHeaders });
   } catch (error) {
     console.error('Error fetching locations:', error);
     return NextResponse.json(

@@ -405,6 +405,7 @@ export default function Home() {
   const [isEditingHome, setIsEditingHome] = useState(false);
   const [pendingHomeLocation, setPendingHomeLocation] = useState<{ lat: number; lng: number } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+  const previousSkiAreaIdRef = useRef<string | null>(null);
   
   // Navigation state
   const [isNavigationOpen, setIsNavigationOpen] = useState(false);
@@ -673,11 +674,26 @@ export default function Home() {
     }
 
     // Progressive loading strategy:
-    // 1. First, quickly fetch basic ski area info (bounds, coords, etc.) - instant map display
-    // 2. Then fetch runs and lifts in parallel - progressive loading
-    // 3. Weather loads in parallel with everything
+    // 1. Map has already navigated to the location (instant via handleLocationSelect)
+    // 2. Fetch basic ski area info in background (for bounds, geometry, etc.)
+    // 3. Fetch runs and lifts progressively - they appear on the map as they load
+    // 4. Weather loads in parallel
 
-    setLoading(true);
+    // Only show full loading overlay on initial load (no resort loaded before)
+    // When switching resorts, the map is already showing so we just use progressive loading
+    const isInitialLoad = previousSkiAreaIdRef.current === null;
+    const isSwitchingResorts = previousSkiAreaIdRef.current !== null && previousSkiAreaIdRef.current !== selectedArea.id;
+
+    // Update the ref to track this resort
+    previousSkiAreaIdRef.current = selectedArea.id;
+
+    if (isInitialLoad) {
+      setLoading(true);
+    } else if (isSwitchingResorts) {
+      // Switching resorts: clear old runs/lifts immediately but keep map visible
+      // This prevents old runs from showing at the new location
+      setSkiAreaDetails(prev => prev ? { ...prev, runs: [], lifts: [] } : null);
+    }
     setWeatherLoading(true);
     setRunsLoading(true);
     setRunsLoadProgress(null);
@@ -875,7 +891,14 @@ export default function Home() {
 
   // Handle location selection from unified search
   const handleLocationSelect = useCallback((location: LocationSelection) => {
-    // Set the selected area (this will trigger data loading)
+    // INSTANT: Fly to the location IMMEDIATELY before any API calls
+    // This gives instant visual feedback while data loads in the background
+    if (location.latitude && location.longitude) {
+      const targetZoom = location.zoomToLocality ? 14 : 13;
+      mapRef.current?.flyTo(location.latitude, location.longitude, targetZoom);
+    }
+
+    // Set the selected area (this will trigger data loading in the background)
     setSelectedArea({
       id: location.skiAreaId,
       name: location.skiAreaName,
@@ -886,15 +909,12 @@ export default function Home() {
     });
     setWeather(null);
     setMobileMenuOpen(false);
-    
-    // If a locality was selected, zoom to it after data loads
-    if (location.zoomToLocality && location.locality && location.latitude && location.longitude) {
-      setZoomToLocality({
-        locality: location.locality,
-        lat: location.latitude,
-        lng: location.longitude,
-      });
+
+    // If a locality was selected, set the locality (no need to zoom again - already done)
+    if (location.zoomToLocality && location.locality) {
       setCurrentLocality(location.locality);
+      // Clear any pending zoom since we already flew there
+      setZoomToLocality(null);
     } else {
       setZoomToLocality(null);
       setCurrentLocality(null);

@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "prebuild": "prisma generate && prisma migrate deploy && tsx scripts/generate-locations.ts",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
@@ -13,6 +14,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx scripts/seed.ts",
+    "generate:locations": "tsx scripts/generate-locations.ts",
     "sync": "curl -X POST http://localhost:3000/api/sync?type=all\\&force=true -H 'Authorization: Bearer dev-sync-key'",
     "sync:france": "curl -X POST http://localhost:3000/api/sync?type=all\\&country=FR\\&force=true -H 'Authorization: Bearer dev-sync-key'"
   },
