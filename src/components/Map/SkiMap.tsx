@@ -1501,11 +1501,133 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     if (!map.current || !mapLoaded || !layersInitialized.current) return;
 
     if (map.current.getLayer('ski-runs-favourite')) {
-      map.current.setFilter('ski-runs-favourite', 
+      map.current.setFilter('ski-runs-favourite',
         ['in', ['get', 'id'], ['literal', favouriteIds]]
       );
     }
   }, [favouriteIds, mapLoaded]);
+
+  // Track runs count to detect progressive loading updates
+  const runsCountRef = useRef(0);
+  const liftsCountRef = useRef(0);
+
+  // Update map sources when runs/lifts are progressively loaded
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !layersInitialized.current || !skiArea) return;
+
+    // Only update if runs or lifts have been added (not on initial load)
+    const runsChanged = skiArea.runs.length !== runsCountRef.current && runsCountRef.current >= 0;
+    const liftsChanged = skiArea.lifts.length !== liftsCountRef.current && liftsCountRef.current >= 0;
+
+    if (!runsChanged && !liftsChanged) return;
+
+    // Update the counts
+    runsCountRef.current = skiArea.runs.length;
+    liftsCountRef.current = skiArea.lifts.length;
+
+    // Skip the first update (initial empty state)
+    if (skiArea.runs.length === 0 && skiArea.lifts.length === 0) return;
+
+    // Start geometry precomputation for new runs
+    if (runsChanged && skiArea.runs.length > 0) {
+      geometryCacheRef.current = startGeometryPrecomputation(
+        skiArea.id,
+        skiArea.runs
+      );
+    }
+
+    const sunPos = getSunPosition(selectedTime, skiArea.latitude, skiArea.longitude);
+
+    // Update runs source (LineString runs for click detection)
+    if (runsChanged) {
+      const runsSource = map.current.getSource('ski-runs') as maplibregl.GeoJSONSource | undefined;
+      if (runsSource) {
+        const runsGeoJSON = {
+          type: 'FeatureCollection' as const,
+          features: skiArea.runs
+            .filter(run => run.geometry.type === 'LineString')
+            .map(run => ({
+              type: 'Feature' as const,
+              properties: {
+                id: run.id,
+                name: run.name,
+                difficulty: run.difficulty,
+                status: run.status,
+                color: getDifficultyColor(run.difficulty),
+              },
+              geometry: run.geometry,
+            })),
+        };
+        runsSource.setData(runsGeoJSON);
+      }
+
+      // Update segments source
+      const segmentsSource = map.current.getSource('ski-segments') as maplibregl.GeoJSONSource | undefined;
+      if (segmentsSource) {
+        const segments = createRunSegments(skiArea, selectedTime, skiArea.latitude, skiArea.longitude);
+        segmentsSource.setData(segments);
+      }
+
+      // Update polygon runs source
+      const polygonSource = map.current.getSource('ski-runs-polygons') as maplibregl.GeoJSONSource | undefined;
+      if (polygonSource) {
+        const polygonRunsGeoJSON = {
+          type: 'FeatureCollection' as const,
+          features: skiArea.runs
+            .filter(run => run.geometry.type === 'Polygon')
+            .map(run => {
+              const ring = run.geometry.coordinates[0] as number[][];
+              let minLat = Infinity, maxLat = -Infinity;
+              for (const [, lat] of ring) {
+                minLat = Math.min(minLat, lat);
+                maxLat = Math.max(maxLat, lat);
+              }
+              const latRange = maxLat - minLat;
+              const slopeAspect = latRange > 0 ? 90 : 0;
+              const isShaded = sunPos.altitudeDegrees <= 0 ? true :
+                calculateSegmentShade(slopeAspect, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+
+              return {
+                type: 'Feature' as const,
+                properties: {
+                  id: run.id,
+                  name: run.name,
+                  difficulty: run.difficulty,
+                  status: run.status,
+                  isShaded,
+                  color: getDifficultyColor(run.difficulty),
+                  sunnyColor: getDifficultyColorSunny(run.difficulty),
+                  shadedColor: getDifficultyColorShaded(run.difficulty),
+                },
+                geometry: run.geometry,
+              };
+            }),
+        };
+        polygonSource.setData(polygonRunsGeoJSON);
+      }
+    }
+
+    // Update lifts source
+    if (liftsChanged) {
+      const liftsSource = map.current.getSource('ski-lifts') as maplibregl.GeoJSONSource | undefined;
+      if (liftsSource) {
+        const liftsGeoJSON = {
+          type: 'FeatureCollection' as const,
+          features: skiArea.lifts.map(lift => ({
+            type: 'Feature' as const,
+            properties: {
+              id: lift.id,
+              name: lift.name,
+              liftType: lift.liftType,
+              status: lift.status,
+            },
+            geometry: lift.geometry,
+          })),
+        };
+        liftsSource.setData(liftsGeoJSON);
+      }
+    }
+  }, [skiArea?.runs.length, skiArea?.lifts.length, mapLoaded, selectedTime]);
 
   // Update POI source when pois change
   useEffect(() => {

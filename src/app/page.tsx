@@ -324,6 +324,8 @@ export default function Home() {
   
   const [is3D, setIs3D] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [runsLoadProgress, setRunsLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -611,55 +613,134 @@ export default function Home() {
       setSkiAreaDetails(null);
       setWeather(null);
       setWeatherLoading(false);
+      setRunsLoading(false);
+      setRunsLoadProgress(null);
       return;
     }
 
-    // Fetch ski area details AND weather in parallel for faster initial load
+    // Progressive loading strategy:
+    // 1. First, quickly fetch basic ski area info (bounds, coords, etc.) - instant map display
+    // 2. Then fetch runs and lifts in parallel - progressive loading
+    // 3. Weather loads in parallel with everything
+
     setLoading(true);
     setWeatherLoading(true);
+    setRunsLoading(true);
+    setRunsLoadProgress(null);
     setError(null);
 
-    const fetchSkiArea = async () => {
-      const res = await fetch(`/api/ski-areas/${selectedArea.id}?includeConnected=true`);
-      if (!res.ok) throw new Error('Failed to load ski area details');
+    // AbortController for cleanup
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
+    const fetchBasicInfo = async () => {
+      const res = await fetch(`/api/ski-areas/${selectedArea.id}/info`, { signal });
+      if (!res.ok) throw new Error('Failed to load ski area');
+      return res.json();
+    };
+
+    const fetchRuns = async () => {
+      const res = await fetch(`/api/ski-areas/${selectedArea.id}/runs?includeConnected=true`, { signal });
+      if (!res.ok) throw new Error('Failed to load runs');
+      return res.json();
+    };
+
+    const fetchLifts = async () => {
+      const res = await fetch(`/api/ski-areas/${selectedArea.id}/lifts?includeConnected=true`, { signal });
+      if (!res.ok) throw new Error('Failed to load lifts');
       return res.json();
     };
 
     const fetchWeatherData = async () => {
-      const res = await fetch(`/api/weather?lat=${selectedArea.latitude}&lng=${selectedArea.longitude}`);
+      const res = await fetch(`/api/weather?lat=${selectedArea.latitude}&lng=${selectedArea.longitude}`, { signal });
       if (!res.ok) throw new Error('Failed to fetch weather');
       return res.json();
     };
 
-    // Run both fetches in parallel
-    Promise.all([
-      fetchSkiArea(),
-      fetchWeatherData().catch(() => null), // Weather errors shouldn't block the app
-    ])
-      .then(([skiAreaData, weatherData]) => {
+    // Phase 1: Fetch basic info immediately - allows map to show instantly
+    fetchBasicInfo()
+      .then((basicInfo) => {
+        if (signal.aborted) return;
+
+        // Set ski area with empty runs/lifts - map will show immediately!
         setSkiAreaDetails({
-          ...skiAreaData,
-          runs: skiAreaData.runs || [],
-          lifts: skiAreaData.lifts || [],
+          ...basicInfo,
+          runs: [],
+          lifts: [],
         });
-        
+
         // Update selectedArea name if it was empty (from URL state)
-        if (!selectedArea.name && skiAreaData.name) {
-          setSelectedArea(prev => prev ? { ...prev, name: skiAreaData.name } : prev);
+        if (!selectedArea.name && basicInfo.name) {
+          setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
         }
-        
-        // Set weather if fetched successfully
+
+        // Loading complete - map is showing
+        setLoading(false);
+
+        // Show run count for progress indicator
+        if (basicInfo.runCount) {
+          setRunsLoadProgress({ loaded: 0, total: basicInfo.runCount });
+        }
+      })
+      .catch((err) => {
+        if (signal.aborted) return;
+        setError(err instanceof Error ? err.message : 'Failed to load ski area');
+        setLoading(false);
+        setRunsLoading(false);
+      });
+
+    // Phase 2: Fetch runs and lifts in parallel (progressive loading)
+    Promise.all([
+      fetchRuns().catch((err) => {
+        if (!signal.aborted) console.error('Failed to load runs:', err);
+        return { runs: [] };
+      }),
+      fetchLifts().catch((err) => {
+        if (!signal.aborted) console.error('Failed to load lifts:', err);
+        return { lifts: [] };
+      }),
+    ])
+      .then(([runsData, liftsData]) => {
+        if (signal.aborted) return;
+
+        // Update ski area details with runs and lifts
+        setSkiAreaDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            runs: runsData.runs || [],
+            lifts: liftsData.lifts || [],
+          };
+        });
+
+        setRunsLoadProgress({ loaded: runsData.runs?.length || 0, total: runsData.total || runsData.runs?.length || 0 });
+      })
+      .finally(() => {
+        if (!signal.aborted) {
+          setRunsLoading(false);
+        }
+      });
+
+    // Phase 3: Weather loads independently
+    fetchWeatherData()
+      .then((weatherData) => {
+        if (signal.aborted) return;
         if (weatherData) {
           setWeather(weatherData);
         }
       })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to load ski area');
+      .catch(() => {
+        // Weather errors are non-critical
       })
       .finally(() => {
-        setLoading(false);
-        setWeatherLoading(false);
+        if (!signal.aborted) {
+          setWeatherLoading(false);
+        }
       });
+
+    return () => {
+      abortController.abort();
+    };
   }, [selectedArea]);
 
   // Fetch POIs when ski area details (and bounds) are available
@@ -1607,6 +1688,16 @@ export default function Home() {
         {loading && (
           <div className="loading-overlay">
             <LoadingSpinner size={48} />
+          </div>
+        )}
+
+        {/* Progressive loading indicator - shows when map is visible but trails are still loading */}
+        {!loading && runsLoading && (
+          <div className="runs-loading-indicator">
+            <div className="runs-loading-content">
+              <LoadingSpinner size={16} />
+              <span>Loading trails{runsLoadProgress ? ` (${runsLoadProgress.total})` : ''}...</span>
+            </div>
           </div>
         )}
 
