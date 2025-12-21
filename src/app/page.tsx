@@ -58,6 +58,60 @@ import Onboarding from '@/components/Onboarding';
 const { Text } = Typography;
 
 const STORAGE_KEY = 'ski-shade-map-state';
+
+/**
+ * Calculate approximate distance from center for a run (for sorting closest first)
+ * Uses the first coordinate of the run geometry as an approximation
+ */
+function getRunDistanceFromCenter(run: RunData, centerLat: number, centerLng: number): number {
+  const coords = run.geometry.type === 'LineString'
+    ? run.geometry.coordinates
+    : run.geometry.type === 'Polygon'
+      ? run.geometry.coordinates[0]
+      : null;
+
+  if (!coords || coords.length === 0) return Infinity;
+
+  // Use the first point of the run as approximation
+  const [lng, lat] = coords[0] as [number, number];
+
+  // Simple Euclidean distance (good enough for sorting)
+  const dlat = lat - centerLat;
+  const dlng = (lng - centerLng) * Math.cos(centerLat * Math.PI / 180);
+  return dlat * dlat + dlng * dlng;
+}
+
+/**
+ * Sort runs by distance from center (closest first)
+ */
+function sortRunsByDistanceFromCenter(runs: RunData[], centerLat: number, centerLng: number): RunData[] {
+  return [...runs].sort((a, b) => {
+    const distA = getRunDistanceFromCenter(a, centerLat, centerLng);
+    const distB = getRunDistanceFromCenter(b, centerLat, centerLng);
+    return distA - distB;
+  });
+}
+
+/**
+ * Similarly for lifts
+ */
+function getLiftDistanceFromCenter(lift: LiftData, centerLat: number, centerLng: number): number {
+  const coords = lift.geometry.coordinates;
+  if (!coords || coords.length === 0) return Infinity;
+
+  const [lng, lat] = coords[0] as [number, number];
+  const dlat = lat - centerLat;
+  const dlng = (lng - centerLng) * Math.cos(centerLat * Math.PI / 180);
+  return dlat * dlat + dlng * dlng;
+}
+
+function sortLiftsByDistanceFromCenter(lifts: LiftData[], centerLat: number, centerLng: number): LiftData[] {
+  return [...lifts].sort((a, b) => {
+    const distA = getLiftDistanceFromCenter(a, centerLat, centerLng);
+    const distB = getLiftDistanceFromCenter(b, centerLat, centerLng);
+    return distA - distB;
+  });
+}
 const UNITS_STORAGE_KEY = 'ski-shade-units';
 const SHARED_LOCATIONS_STORAGE_KEY = 'ski-shade-shared-locations';
 const NAVIGATION_STORAGE_KEY = 'ski-shade-navigation';
@@ -689,7 +743,7 @@ export default function Home() {
         setRunsLoading(false);
       });
 
-    // Phase 2: Fetch runs and lifts in parallel (progressive loading)
+    // Phase 2: Fetch runs and lifts in parallel, then add progressively from center outward
     Promise.all([
       fetchRuns().catch((err) => {
         if (!signal.aborted) console.error('Failed to load runs:', err);
@@ -703,19 +757,57 @@ export default function Home() {
       .then(([runsData, liftsData]) => {
         if (signal.aborted) return;
 
-        // Update ski area details with runs and lifts
-        setSkiAreaDetails(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            runs: runsData.runs || [],
-            lifts: liftsData.lifts || [],
-          };
-        });
+        const allRuns = runsData.runs || [];
+        const allLifts = liftsData.lifts || [];
+        const totalRuns = allRuns.length;
+        const totalLifts = allLifts.length;
 
-        setRunsLoadProgress({ loaded: runsData.runs?.length || 0, total: runsData.total || runsData.runs?.length || 0 });
+        // Sort runs and lifts by distance from center (closest first)
+        const centerLat = selectedArea.latitude;
+        const centerLng = selectedArea.longitude;
+        const sortedRuns = sortRunsByDistanceFromCenter(allRuns, centerLat, centerLng);
+        const sortedLifts = sortLiftsByDistanceFromCenter(allLifts, centerLat, centerLng);
+
+        // Progressive rendering: add runs/lifts in batches
+        const BATCH_SIZE = 30; // runs per batch
+        const BATCH_DELAY = 16; // ms between batches (~60fps)
+        let runIndex = 0;
+        let liftIndex = 0;
+
+        const addNextBatch = () => {
+          if (signal.aborted) return;
+
+          // Add next batch of runs
+          const runsToAdd = sortedRuns.slice(runIndex, runIndex + BATCH_SIZE);
+          const liftsToAdd = sortedLifts.slice(liftIndex, liftIndex + Math.ceil(BATCH_SIZE / 3));
+
+          runIndex += BATCH_SIZE;
+          liftIndex += Math.ceil(BATCH_SIZE / 3);
+
+          setSkiAreaDetails(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              runs: [...prev.runs, ...runsToAdd],
+              lifts: [...prev.lifts, ...liftsToAdd],
+            };
+          });
+
+          setRunsLoadProgress({ loaded: Math.min(runIndex, totalRuns), total: totalRuns });
+
+          // Continue if more to add
+          if (runIndex < totalRuns || liftIndex < totalLifts) {
+            setTimeout(addNextBatch, BATCH_DELAY);
+          } else {
+            // All done
+            setRunsLoading(false);
+          }
+        };
+
+        // Start progressive loading immediately
+        addNextBatch();
       })
-      .finally(() => {
+      .catch(() => {
         if (!signal.aborted) {
           setRunsLoading(false);
         }
