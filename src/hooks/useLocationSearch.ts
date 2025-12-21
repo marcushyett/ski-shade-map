@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Fuse, { IFuseOptions } from 'fuse.js';
-import type { SearchableLocation } from '@/app/api/locations/all/route';
 import { getRelatedSearchTerms } from '@/lib/resort-synonyms';
 
 export interface LocationSearchResult {
@@ -18,23 +17,25 @@ export interface LocationSearchResult {
   liftCount?: number;
 }
 
-// Normalize text for matching
-function normalizeText(text: string): string {
-  return text
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
-
-// Searchable item with pre-normalized fields
-interface IndexedLocation extends SearchableLocation {
+// Processed location from worker
+interface IndexedLocation {
+  id: string;
+  type: 'region' | 'locality';
+  name: string;
   nameNorm: string;
+  country: string | null;
   countryNorm: string;
+  region?: string;
   regionNorm: string;
+  skiAreaId: string;
+  lat?: number;
+  lng?: number;
+  runs?: number;
+  lifts?: number;
   searchText: string;
 }
 
-// Fuse.js options for fast fuzzy matching
+// Fuse.js options
 const fuseOptions: IFuseOptions<IndexedLocation> = {
   keys: [
     { name: 'nameNorm', weight: 2 },
@@ -48,81 +49,108 @@ const fuseOptions: IFuseOptions<IndexedLocation> = {
   ignoreLocation: true,
 };
 
-// Global cache for locations data
+// Global state for preloaded data
 let locationsCache: IndexedLocation[] | null = null;
 let fuseIndexCache: Fuse<IndexedLocation> | null = null;
-let fetchPromise: Promise<void> | null = null;
+let preloadPromise: Promise<void> | null = null;
+let preloadStatus: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
+const preloadListeners: Set<() => void> = new Set();
 
-async function fetchAndIndexLocations(): Promise<void> {
-  if (locationsCache && fuseIndexCache) return;
-  if (fetchPromise) return fetchPromise;
+function notifyListeners() {
+  preloadListeners.forEach((fn) => fn());
+}
 
-  fetchPromise = (async () => {
-    try {
-      const res = await fetch('/api/locations/all');
-      if (!res.ok) throw new Error('Failed to fetch locations');
+/**
+ * Preload the search index using a web worker.
+ * Call this as early as possible (e.g., on page load).
+ */
+export function preloadLocationSearch(): Promise<void> {
+  if (preloadPromise) return preloadPromise;
+  if (preloadStatus === 'ready') return Promise.resolve();
 
-      const data: SearchableLocation[] = await res.json();
+  preloadStatus = 'loading';
+  notifyListeners();
 
-      // Pre-normalize all fields for fast searching
-      locationsCache = data.map((loc) => {
-        const nameNorm = normalizeText(loc.name);
-        const countryNorm = loc.country ? normalizeText(loc.country) : '';
-        const regionNorm = loc.region ? normalizeText(loc.region) : '';
+  preloadPromise = new Promise((resolve, reject) => {
+    // Create worker
+    const worker = new Worker(
+      new URL('../workers/locationSearch.worker.ts', import.meta.url)
+    );
 
-        return {
-          ...loc,
-          nameNorm,
-          countryNorm,
-          regionNorm,
-          searchText: `${nameNorm} ${regionNorm} ${countryNorm}`.trim(),
-        };
-      });
+    worker.onmessage = (event) => {
+      const msg = event.data;
 
-      // Build Fuse.js index
-      fuseIndexCache = new Fuse(locationsCache, fuseOptions);
-    } catch (error) {
-      console.error('Failed to load locations:', error);
-      locationsCache = [];
-      fuseIndexCache = new Fuse([], fuseOptions);
-    } finally {
-      fetchPromise = null;
-    }
-  })();
+      if (msg.type === 'complete') {
+        // Build Fuse index on main thread (fast with pre-processed data)
+        const data: IndexedLocation[] = msg.data;
+        locationsCache = data;
+        fuseIndexCache = new Fuse(data, fuseOptions);
+        preloadStatus = 'ready';
+        notifyListeners();
+        worker.terminate();
+        resolve();
+      } else if (msg.type === 'error') {
+        preloadStatus = 'error';
+        notifyListeners();
+        worker.terminate();
+        reject(new Error(msg.error));
+      }
+    };
 
-  return fetchPromise;
+    worker.onerror = (error) => {
+      preloadStatus = 'error';
+      notifyListeners();
+      worker.terminate();
+      reject(error);
+    };
+
+    // Start the worker
+    worker.postMessage({
+      type: 'start',
+      apiUrl: '/api/locations/all',
+    });
+  });
+
+  return preloadPromise;
 }
 
 export function useLocationSearch() {
-  // Initialize state based on whether cache already exists
-  const [isLoading, setIsLoading] = useState(() => !locationsCache);
-  const [isReady, setIsReady] = useState(() => !!locationsCache);
+  const [isLoading, setIsLoading] = useState(() => preloadStatus === 'loading');
+  const [isReady, setIsReady] = useState(() => preloadStatus === 'ready');
 
-  // Load locations on mount
   useEffect(() => {
-    // Skip if already loaded
-    if (locationsCache && fuseIndexCache) return;
+    // Subscribe to preload status changes
+    const updateState = () => {
+      setIsLoading(preloadStatus === 'loading');
+      setIsReady(preloadStatus === 'ready');
+    };
 
-    let cancelled = false;
-    fetchAndIndexLocations().then(() => {
-      if (!cancelled) {
-        setIsLoading(false);
-        setIsReady(true);
-      }
-    });
+    preloadListeners.add(updateState);
+
+    // Start preload if not already started
+    if (preloadStatus === 'idle') {
+      preloadLocationSearch().catch(console.error);
+    }
+
+    // Update state in case preload finished before mount
+    updateState();
 
     return () => {
-      cancelled = true;
+      preloadListeners.delete(updateState);
     };
   }, []);
 
-  // Instant search function - no debounce needed, runs in <1ms
+  // Instant search function
   const search = useCallback((query: string, limit = 15): LocationSearchResult[] => {
     if (!query || query.length < 2 || !fuseIndexCache || !locationsCache) {
       return [];
     }
 
-    const normalizedQuery = normalizeText(query);
+    const normalizedQuery = query
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
     const results: LocationSearchResult[] = [];
     const seenIds = new Set<string>();
 
@@ -167,8 +195,8 @@ export function useLocationSearch() {
 
     // Sort: exact matches first, prefix matches second
     results.sort((a, b) => {
-      const aNorm = normalizeText(a.name);
-      const bNorm = normalizeText(b.name);
+      const aNorm = a.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const bNorm = b.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
       const aExact = aNorm === normalizedQuery;
       const bExact = bNorm === normalizedQuery;
