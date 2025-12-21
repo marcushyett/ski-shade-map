@@ -9,7 +9,7 @@
  *   --data-dir=path Use pre-downloaded geojson files from this directory
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { createReadStream, existsSync, statSync } from 'fs';
 import { execSync } from 'child_process';
 import { parser } from 'stream-json';
@@ -21,6 +21,129 @@ const prisma = new PrismaClient();
 
 const OPENSKIMAP_BASE = 'https://tiles.openskimap.org/geojson';
 const TMP_DIR = '/tmp';
+
+// Batch size for bulk upserts
+const BULK_UPSERT_SIZE = 500;
+
+// Generate a CUID-like ID
+function generateId(): string {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 15);
+  return `c${timestamp}${randomPart}`;
+}
+
+// Escape a string value for SQL (handle quotes and special chars)
+function escapeString(val: string | null): string {
+  if (val === null) return 'NULL';
+  // Replace backslashes first, then single quotes
+  const escaped = val.replace(/\\/g, '\\\\').replace(/'/g, "''");
+  return `'${escaped}'`;
+}
+
+// Escape JSON for SQL - only escape single quotes, leave JSON backslashes intact
+function escapeJson(val: any): string {
+  const jsonStr = JSON.stringify(val);
+  // Only escape single quotes for PostgreSQL string literal
+  const escaped = jsonStr.replace(/'/g, "''");
+  return `'${escaped}'::jsonb`;
+}
+
+// Bulk upsert runs using raw SQL for performance
+async function bulkUpsertRuns(runs: Array<{
+  osmId: string;
+  name: string | null;
+  difficulty: string | null;
+  status: string | null;
+  locality: string | null;
+  geometry: any;
+  properties: any;
+  skiAreaId: string;
+}>): Promise<number> {
+  if (runs.length === 0) return 0;
+
+  const values = runs.map(run => {
+    const id = generateId();
+    return `(
+      ${escapeString(id)},
+      ${escapeString(run.osmId)},
+      ${escapeString(run.name)},
+      ${escapeString(run.difficulty)},
+      ${escapeString(run.status)},
+      ${escapeString(run.locality)},
+      ${escapeJson(run.geometry)},
+      ${escapeJson(run.properties)},
+      ${escapeString(run.skiAreaId)},
+      NOW(),
+      NOW()
+    )`;
+  }).join(',\n');
+
+  const sql = `
+    INSERT INTO "Run" ("id", "osmId", "name", "difficulty", "status", "locality", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
+    VALUES ${values}
+    ON CONFLICT ("osmId") DO UPDATE SET
+      "name" = EXCLUDED."name",
+      "difficulty" = EXCLUDED."difficulty",
+      "status" = EXCLUDED."status",
+      "locality" = EXCLUDED."locality",
+      "geometry" = EXCLUDED."geometry",
+      "properties" = EXCLUDED."properties",
+      "updatedAt" = NOW()
+  `;
+
+  await prisma.$executeRawUnsafe(sql);
+  return runs.length;
+}
+
+// Bulk upsert lifts using raw SQL for performance
+async function bulkUpsertLifts(lifts: Array<{
+  osmId: string;
+  name: string | null;
+  liftType: string | null;
+  status: string | null;
+  locality: string | null;
+  capacity: number | null;
+  geometry: any;
+  properties: any;
+  skiAreaId: string;
+}>): Promise<number> {
+  if (lifts.length === 0) return 0;
+
+  const values = lifts.map(lift => {
+    const id = generateId();
+    return `(
+      ${escapeString(id)},
+      ${escapeString(lift.osmId)},
+      ${escapeString(lift.name)},
+      ${escapeString(lift.liftType)},
+      ${escapeString(lift.status)},
+      ${escapeString(lift.locality)},
+      ${lift.capacity !== null ? lift.capacity : 'NULL'},
+      ${escapeJson(lift.geometry)},
+      ${escapeJson(lift.properties)},
+      ${escapeString(lift.skiAreaId)},
+      NOW(),
+      NOW()
+    )`;
+  }).join(',\n');
+
+  const sql = `
+    INSERT INTO "Lift" ("id", "osmId", "name", "liftType", "status", "locality", "capacity", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
+    VALUES ${values}
+    ON CONFLICT ("osmId") DO UPDATE SET
+      "name" = EXCLUDED."name",
+      "liftType" = EXCLUDED."liftType",
+      "status" = EXCLUDED."status",
+      "locality" = EXCLUDED."locality",
+      "capacity" = EXCLUDED."capacity",
+      "geometry" = EXCLUDED."geometry",
+      "properties" = EXCLUDED."properties",
+      "updatedAt" = NOW()
+  `;
+
+  await prisma.$executeRawUnsafe(sql);
+  return lifts.length;
+}
 
 // Parse --data-dir argument for pre-downloaded files
 const dataDirArg = process.argv.find(a => a.startsWith('--data-dir='));
@@ -422,6 +545,7 @@ async function main() {
 
     console.log('💾 Processing runs (streaming)...');
     let runsProcessed = 0;
+    let runsFailed = 0;
     let runsWithPlaces = 0;
     let runsWithLocality = 0;
     let samplePlacesLogged = false;
@@ -433,11 +557,39 @@ async function main() {
       streamArray(),
     ]);
 
-    await new Promise<void>((resolve, reject) => {
-      const processQueue: Promise<void>[] = [];
+    // Collect runs into batches for bulk upsert
+    interface RunData {
+      osmId: string;
+      name: string | null;
+      difficulty: string | null;
+      status: string | null;
+      locality: string | null;
+      geometry: any;
+      properties: any;
+      skiAreaId: string;
+    }
 
+    let pendingBatch: RunData[] = [];
+
+    const processPendingBatch = async () => {
+      if (pendingBatch.length === 0) return;
+
+      const batch = pendingBatch;
+      pendingBatch = [];
+
+      try {
+        const count = await bulkUpsertRuns(batch);
+        runsProcessed += count;
+        process.stdout.write(`   Processed ${runsProcessed} runs\r`);
+      } catch (err) {
+        runsFailed += batch.length;
+        console.error(`   ❌ Bulk upsert failed for ${batch.length} runs: ${(err as Error).message}`);
+      }
+    };
+
+    await new Promise<void>((resolve, reject) => {
       pipeline
-        .on('data', ({ value }: { value: { geometry: any; properties: RunProperties } }) => {
+        .on('data', async ({ value }: { value: { geometry: any; properties: RunProperties } }) => {
           const props = value.properties;
           const skiAreaRefs = props?.skiAreas || [];
 
@@ -456,7 +608,7 @@ async function main() {
               console.log(`   📍 Sample run places data: ${JSON.stringify(props.places[0])}`);
               samplePlacesLogged = true;
             }
-          } else if (runsProcessed < 5) {
+          } else if (pendingBatch.length < 5 && runsProcessed === 0) {
             console.log(`   ⚠️ Run "${props.name}" has no places. Keys: ${Object.keys(props).join(', ')}`);
           }
 
@@ -469,40 +621,28 @@ async function main() {
             }
           }
 
-          const processPromise = prisma.run.upsert({
-            where: { osmId: props.id },
-            create: {
-              osmId: props.id,
-              name: props.name || null,
-              difficulty: mapDifficulty(props.difficulty),
-              status: props.status || null,
-              locality,
-              geometry: JSON.parse(JSON.stringify(value.geometry)),
-              properties: JSON.parse(JSON.stringify(props)),
-              skiAreaId,
-            },
-            update: {
-              name: props.name || null,
-              difficulty: mapDifficulty(props.difficulty),
-              status: props.status || null,
-              locality,
-              geometry: JSON.parse(JSON.stringify(value.geometry)),
-              properties: JSON.parse(JSON.stringify(props)),
-            },
-          }).then(() => {
-            runsProcessed++;
-            if (runsProcessed % 500 === 0) {
-              process.stdout.write(`   Processed ${runsProcessed} runs\r`);
-            }
-          }).catch((err) => {
-            console.error(`   ❌ Failed to upsert run ${props.id}: ${err.message}`);
+          pendingBatch.push({
+            osmId: props.id,
+            name: props.name || null,
+            difficulty: mapDifficulty(props.difficulty),
+            status: props.status || null,
+            locality,
+            geometry: value.geometry,
+            properties: props,
+            skiAreaId,
           });
-          
-          processQueue.push(processPromise);
+
+          // Process batch when full
+          if (pendingBatch.length >= BULK_UPSERT_SIZE) {
+            pipeline.pause();
+            await processPendingBatch();
+            pipeline.resume();
+          }
         })
         .on('end', async () => {
-          await Promise.all(processQueue);
-          console.log(`   ✅ Saved ${runsProcessed} runs                    `);
+          // Process any remaining items
+          await processPendingBatch();
+          console.log(`   ✅ Saved ${runsProcessed} runs (${runsFailed} failed)                    `);
           console.log(`   📊 Locality stats: ${runsWithPlaces} runs with places data, ${runsWithLocality} with extracted locality`);
           if (runsWithPlaces === 0) {
             console.log(`   ⚠️  WARNING: No runs have places data - locality will be null for all runs`);
@@ -521,6 +661,7 @@ async function main() {
 
     console.log('💾 Processing lifts (streaming)...');
     let liftsProcessed = 0;
+    let liftsFailed = 0;
     let liftsWithPlaces = 0;
     let liftsWithLocality = 0;
     let sampleLiftPlacesLogged = false;
@@ -532,11 +673,40 @@ async function main() {
       streamArray(),
     ]);
 
-    await new Promise<void>((resolve, reject) => {
-      const processQueue: Promise<void>[] = [];
+    // Collect lifts into batches for bulk upsert
+    interface LiftData {
+      osmId: string;
+      name: string | null;
+      liftType: string | null;
+      status: string | null;
+      locality: string | null;
+      capacity: number | null;
+      geometry: any;
+      properties: any;
+      skiAreaId: string;
+    }
 
+    let pendingLiftBatch: LiftData[] = [];
+
+    const processPendingLiftBatch = async () => {
+      if (pendingLiftBatch.length === 0) return;
+
+      const batch = pendingLiftBatch;
+      pendingLiftBatch = [];
+
+      try {
+        const count = await bulkUpsertLifts(batch);
+        liftsProcessed += count;
+        process.stdout.write(`   Processed ${liftsProcessed} lifts\r`);
+      } catch (err) {
+        liftsFailed += batch.length;
+        console.error(`   ❌ Bulk upsert failed for ${batch.length} lifts: ${(err as Error).message}`);
+      }
+    };
+
+    await new Promise<void>((resolve, reject) => {
       liftsPipeline
-        .on('data', ({ value }: { value: { geometry: any; properties: LiftProperties } }) => {
+        .on('data', async ({ value }: { value: { geometry: any; properties: LiftProperties } }) => {
           const props = value.properties;
           const skiAreaRefs = props?.skiAreas || [];
 
@@ -562,42 +732,29 @@ async function main() {
             liftsWithLocality++;
           }
 
-          const processPromise = prisma.lift.upsert({
-            where: { osmId: props.id },
-            create: {
-              osmId: props.id,
-              name: props.name || null,
-              liftType: props.liftType || null,
-              status: props.status || null,
-              locality,
-              capacity: props.capacity || null,
-              geometry: JSON.parse(JSON.stringify(value.geometry)),
-              properties: JSON.parse(JSON.stringify(props)),
-              skiAreaId,
-            },
-            update: {
-              name: props.name || null,
-              liftType: props.liftType || null,
-              status: props.status || null,
-              locality,
-              capacity: props.capacity || null,
-              geometry: JSON.parse(JSON.stringify(value.geometry)),
-              properties: JSON.parse(JSON.stringify(props)),
-            },
-          }).then(() => {
-            liftsProcessed++;
-            if (liftsProcessed % 100 === 0) {
-              process.stdout.write(`   Processed ${liftsProcessed} lifts\r`);
-            }
-          }).catch((err) => {
-            console.error(`   ❌ Failed to upsert lift ${props.id}: ${err.message}`);
+          pendingLiftBatch.push({
+            osmId: props.id,
+            name: props.name || null,
+            liftType: props.liftType || null,
+            status: props.status || null,
+            locality,
+            capacity: props.capacity || null,
+            geometry: value.geometry,
+            properties: props,
+            skiAreaId,
           });
-          
-          processQueue.push(processPromise);
+
+          // Process batch when full
+          if (pendingLiftBatch.length >= BULK_UPSERT_SIZE) {
+            liftsPipeline.pause();
+            await processPendingLiftBatch();
+            liftsPipeline.resume();
+          }
         })
         .on('end', async () => {
-          await Promise.all(processQueue);
-          console.log(`   ✅ Saved ${liftsProcessed} lifts                    `);
+          // Process any remaining items
+          await processPendingLiftBatch();
+          console.log(`   ✅ Saved ${liftsProcessed} lifts (${liftsFailed} failed)                    `);
           console.log(`   📊 Locality stats: ${liftsWithPlaces} lifts with places data, ${liftsWithLocality} with extracted locality`);
           if (liftsWithPlaces === 0) {
             console.log(`   ⚠️  WARNING: No lifts have places data - locality will be null for all lifts`);
