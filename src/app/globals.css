@@ -2874,12 +2874,8 @@ h5.ant-typography {
     min-width: 44px;
   }
 
-  /* Increase tap target for run/lift list items */
-  .run-item,
-  .lift-item {
-    min-height: 44px !important;
-    padding: 10px 8px !important;
-  }
+  /* Run/lift list items - keep compact, they're information-dense */
+  /* Touch targets are handled by the expandable group headers instead */
 
   /* Expand/collapse toggles */
   .ant-collapse-header {

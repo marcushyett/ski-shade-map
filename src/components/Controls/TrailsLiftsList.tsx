@@ -59,10 +59,12 @@ const RunItem = memo(function RunItem({
 const LiftItem = memo(function LiftItem({
   name,
   liftType,
+  locality,
   onClick
 }: {
   name: string;
   liftType?: string | null;
+  locality?: string | null;
   onClick: () => void;
 }) {
   return (
@@ -74,11 +76,18 @@ const LiftItem = memo(function LiftItem({
       <span style={{ fontSize: 9, color: '#ccc', lineHeight: '14px' }} className="truncate">
         {name}
       </span>
-      {liftType && (
-        <span style={{ fontSize: 8, color: '#666', marginLeft: 4, flexShrink: 0 }}>
-          {liftType}
-        </span>
-      )}
+      <div className="flex items-center" style={{ flexShrink: 0 }}>
+        {liftType && (
+          <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
+            {liftType}
+          </span>
+        )}
+        {locality && (
+          <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
+            {locality}
+          </span>
+        )}
+      </div>
     </div>
   );
 });
@@ -217,7 +226,8 @@ function TrailsListInner({
     const lower = searchText.toLowerCase();
     return lifts.filter(l =>
       l.name?.toLowerCase().includes(lower) ||
-      l.liftType?.toLowerCase().includes(lower)
+      l.liftType?.toLowerCase().includes(lower) ||
+      l.locality?.toLowerCase().includes(lower)
     );
   }, [lifts, searchText]);
 
@@ -283,6 +293,47 @@ function TrailsListInner({
     // Only return non-empty groups
     return Object.entries(groups).filter(([_, arr]) => arr.length > 0);
   }, [filteredRuns, hasLocalities]);
+
+  // Group lifts by locality
+  const liftsByLocality = useMemo(() => {
+    if (!hasLocalities) return null;
+
+    const groups: Record<string, { locality: string | null; lifts: LiftData[] }> = {};
+
+    // Create group for each locality
+    localities.forEach(locality => {
+      groups[locality] = { locality, lifts: [] };
+    });
+
+    // Create "Other" group for lifts without locality
+    groups['_other'] = { locality: null, lifts: [] };
+
+    // Sort lifts into groups
+    filteredLifts.forEach(lift => {
+      const locality = lift.locality || '_other';
+      if (!groups[locality]) {
+        // Locality not found, put in other
+        groups['_other'].lifts.push(lift);
+      } else {
+        groups[locality].lifts.push(lift);
+      }
+    });
+
+    // Filter out empty groups and sort
+    const result = Object.entries(groups)
+      .filter(([_, data]) => data.lifts.length > 0)
+      .sort(([aId, a], [bId, b]) => {
+        // Put "Other" last
+        if (aId === '_other') return 1;
+        if (bId === '_other') return -1;
+        // Sort by locality name
+        const aName = a.locality || '';
+        const bName = b.locality || '';
+        return aName.localeCompare(bName);
+      });
+
+    return result;
+  }, [filteredLifts, localities, hasLocalities]);
 
   const difficultyLabels: Record<string, string> = {
     novice: 'Novice',
@@ -459,23 +510,76 @@ function TrailsListInner({
 
         {liftsExpanded && (
           <div className="ml-3">
-            {filteredLifts.slice(0, getVisibleCount('lifts')).map(lift => (
-              <LiftItem
-                key={lift.id}
-                name={lift.name || 'Unnamed'}
-                liftType={lift.liftType}
-                onClick={() => onSelectLift?.(lift)}
-              />
-            ))}
-            {filteredLifts.length > getVisibleCount('lifts') && (
-              <button
-                className="text-blue-400 hover:text-blue-300"
-                style={{ fontSize: 9, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
-                onClick={() => loadMore('lifts')}
-              >
-                +{filteredLifts.length - getVisibleCount('lifts')} more
-              </button>
+            {/* With localities: group by locality */}
+            {hasLocalities && liftsByLocality && (
+              <>
+                {liftsByLocality.map(([localityKey, data]) => {
+                  const isExpanded = expandedLocalities.has(`lifts-${localityKey}`);
+                  const localityName = data.locality || 'Other';
+                  const visible = getVisibleCount(`lifts-${localityKey}`);
+                  const visibleLifts = data.lifts.slice(0, visible);
+                  const hasMore = data.lifts.length > visible;
+
+                  return (
+                    <div key={localityKey} className="mb-1">
+                      <LocalityHeader
+                        name={localityName}
+                        count={data.lifts.length}
+                        isExpanded={isExpanded}
+                        onClick={() => toggleLocality(`lifts-${localityKey}`)}
+                      />
+
+                      {isExpanded && (
+                        <div className="ml-3">
+                          {visibleLifts.map(lift => (
+                            <LiftItem
+                              key={lift.id}
+                              name={lift.name || 'Unnamed'}
+                              liftType={lift.liftType}
+                              onClick={() => onSelectLift?.(lift)}
+                            />
+                          ))}
+                          {hasMore && (
+                            <button
+                              className="text-blue-400 hover:text-blue-300"
+                              style={{ fontSize: 9, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+                              onClick={() => loadMore(`lifts-${localityKey}`)}
+                            >
+                              +{data.lifts.length - visible} more
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
             )}
+
+            {/* Without localities: flat list */}
+            {!hasLocalities && (
+              <>
+                {filteredLifts.slice(0, getVisibleCount('lifts')).map(lift => (
+                  <LiftItem
+                    key={lift.id}
+                    name={lift.name || 'Unnamed'}
+                    liftType={lift.liftType}
+                    locality={lift.locality}
+                    onClick={() => onSelectLift?.(lift)}
+                  />
+                ))}
+                {filteredLifts.length > getVisibleCount('lifts') && (
+                  <button
+                    className="text-blue-400 hover:text-blue-300"
+                    style={{ fontSize: 9, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+                    onClick={() => loadMore('lifts')}
+                  >
+                    +{filteredLifts.length - getVisibleCount('lifts')} more
+                  </button>
+                )}
+              </>
+            )}
+
             {filteredLifts.length === 0 && (
               <span style={{ fontSize: 10, color: '#666' }}>No lifts</span>
             )}
