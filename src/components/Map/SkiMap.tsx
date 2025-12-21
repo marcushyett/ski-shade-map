@@ -677,31 +677,37 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         type: 'geojson',
         data: polygonRunsGeoJSON,
       });
-
-      // Polygon fill layer for sunny areas - very faint opacity with sunny color
-      map.current.addLayer({
-        id: 'ski-runs-polygon-fill-sunny',
-        type: 'fill',
-        source: 'ski-runs-polygons',
-        filter: ['==', ['get', 'isShaded'], false],
-        paint: {
-          'fill-color': ['get', 'sunnyColor'],
-          'fill-opacity': isNight ? 0 : 0.12,
-        },
-      });
-
-      // Polygon fill layer for shaded areas - very faint opacity with shaded color
-      map.current.addLayer({
-        id: 'ski-runs-polygon-fill-shaded',
-        type: 'fill',
-        source: 'ski-runs-polygons',
-        filter: ['==', ['get', 'isShaded'], true],
-        paint: {
-          'fill-color': ['get', 'shadedColor'],
-          'fill-opacity': 0.12,
-        },
+    } else {
+      // Always create the source even if empty (for progressive loading)
+      map.current.addSource('ski-runs-polygons', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
       });
     }
+
+    // Polygon fill layer for sunny areas - very faint opacity with sunny color
+    map.current.addLayer({
+      id: 'ski-runs-polygon-fill-sunny',
+      type: 'fill',
+      source: 'ski-runs-polygons',
+      filter: ['==', ['get', 'isShaded'], false],
+      paint: {
+        'fill-color': ['get', 'sunnyColor'],
+        'fill-opacity': isNight ? 0 : 0.12,
+      },
+    });
+
+    // Polygon fill layer for shaded areas - very faint opacity with shaded color
+    map.current.addLayer({
+      id: 'ski-runs-polygon-fill-shaded',
+      type: 'fill',
+      source: 'ski-runs-polygons',
+      filter: ['==', ['get', 'isShaded'], true],
+      paint: {
+        'fill-color': ['get', 'shadedColor'],
+        'fill-opacity': 0.12,
+      },
+    });
 
     // Runs source and layer (LineString runs only - for click detection)
     // Polygon runs are handled separately with their own fill layers
@@ -1507,26 +1513,28 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     }
   }, [favouriteIds, mapLoaded]);
 
-  // Track runs count to detect progressive loading updates
-  const runsCountRef = useRef(0);
-  const liftsCountRef = useRef(0);
+  // Track what we've rendered to detect progressive loading updates
+  const lastRenderedRunsRef = useRef<string | null>(null);
+  const lastRenderedLiftsRef = useRef<string | null>(null);
 
   // Update map sources when runs/lifts are progressively loaded
   useEffect(() => {
     if (!map.current || !mapLoaded || !layersInitialized.current || !skiArea) return;
 
-    // Only update if runs or lifts have been added (not on initial load)
-    const runsChanged = skiArea.runs.length !== runsCountRef.current && runsCountRef.current >= 0;
-    const liftsChanged = skiArea.lifts.length !== liftsCountRef.current && liftsCountRef.current >= 0;
+    // Create a simple key based on ski area id and counts
+    const runsKey = `${skiArea.id}-${skiArea.runs.length}`;
+    const liftsKey = `${skiArea.id}-${skiArea.lifts.length}`;
 
+    const runsChanged = runsKey !== lastRenderedRunsRef.current;
+    const liftsChanged = liftsKey !== lastRenderedLiftsRef.current;
+
+    // Skip if nothing to update or no data loaded yet
     if (!runsChanged && !liftsChanged) return;
-
-    // Update the counts
-    runsCountRef.current = skiArea.runs.length;
-    liftsCountRef.current = skiArea.lifts.length;
-
-    // Skip the first update (initial empty state)
     if (skiArea.runs.length === 0 && skiArea.lifts.length === 0) return;
+
+    // Update the tracking refs
+    lastRenderedRunsRef.current = runsKey;
+    lastRenderedLiftsRef.current = liftsKey;
 
     // Start geometry precomputation for new runs
     if (runsChanged && skiArea.runs.length > 0) {
@@ -1539,7 +1547,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const sunPos = getSunPosition(selectedTime, skiArea.latitude, skiArea.longitude);
 
     // Update runs source (LineString runs for click detection)
-    if (runsChanged) {
+    if (runsChanged && skiArea.runs.length > 0) {
       const runsSource = map.current.getSource('ski-runs') as maplibregl.GeoJSONSource | undefined;
       if (runsSource) {
         const runsGeoJSON = {
@@ -1608,7 +1616,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     }
 
     // Update lifts source
-    if (liftsChanged) {
+    if (liftsChanged && skiArea.lifts.length > 0) {
       const liftsSource = map.current.getSource('ski-lifts') as maplibregl.GeoJSONSource | undefined;
       if (liftsSource) {
         const liftsGeoJSON = {
@@ -1627,7 +1635,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         liftsSource.setData(liftsGeoJSON);
       }
     }
-  }, [skiArea?.runs.length, skiArea?.lifts.length, mapLoaded, selectedTime]);
+  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, mapLoaded, selectedTime]);
 
   // Update POI source when pois change
   useEffect(() => {

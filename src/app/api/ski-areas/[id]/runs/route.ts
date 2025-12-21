@@ -21,7 +21,9 @@ export async function GET(
   const url = new URL(request.url);
   const bboxParam = url.searchParams.get('bbox');
   const includeConnected = url.searchParams.get('includeConnected') === 'true';
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '200'), 500);
+  // Only apply limit if explicitly requested (for future viewport-based loading)
+  const limitParam = url.searchParams.get('limit');
+  const limit = limitParam ? Math.min(parseInt(limitParam), 2000) : null;
   const offset = parseInt(url.searchParams.get('offset') || '0');
 
   try {
@@ -90,8 +92,10 @@ export async function GET(
       });
     }
 
-    // Apply pagination
-    const paginatedRuns = filteredRuns.slice(offset, offset + limit);
+    // Apply pagination only if limit is specified
+    const paginatedRuns = limit
+      ? filteredRuns.slice(offset, offset + limit)
+      : filteredRuns;
 
     // Transform for response
     const runs = paginatedRuns.map(run => ({
@@ -108,7 +112,7 @@ export async function GET(
     const response = {
       runs,
       total: filteredRuns.length,
-      hasMore: offset + limit < filteredRuns.length,
+      hasMore: limit ? (offset + limit < filteredRuns.length) : false,
       bbox: bbox,
     };
 
