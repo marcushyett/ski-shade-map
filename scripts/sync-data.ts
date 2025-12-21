@@ -23,7 +23,7 @@ const OPENSKIMAP_BASE = 'https://tiles.openskimap.org/geojson';
 const TMP_DIR = '/tmp';
 
 // Batch size for COPY-based bulk upserts - can be very large since COPY is efficient
-const BULK_UPSERT_SIZE = 10000;
+const BULK_UPSERT_SIZE = 50000;
 
 // Generate a CUID-like ID
 function generateId(): string {
