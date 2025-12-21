@@ -63,6 +63,7 @@ function notifyListeners() {
 /**
  * Preload the search index using a web worker.
  * Call this as early as possible (e.g., on page load).
+ * Falls back to main thread fetch if worker fails.
  */
 export function preloadLocationSearch(): Promise<void> {
   if (preloadPromise) return preloadPromise;
@@ -72,46 +73,98 @@ export function preloadLocationSearch(): Promise<void> {
   notifyListeners();
 
   preloadPromise = new Promise((resolve, reject) => {
-    // Create worker
-    const worker = new Worker(
-      new URL('../workers/locationSearch.worker.ts', import.meta.url)
-    );
+    // Try web worker first
+    try {
+      const worker = new Worker(
+        new URL('../workers/locationSearch.worker.ts', import.meta.url)
+      );
 
-    worker.onmessage = (event) => {
-      const msg = event.data;
-
-      if (msg.type === 'complete') {
-        // Build Fuse index on main thread (fast with pre-processed data)
-        const data: IndexedLocation[] = msg.data;
-        locationsCache = data;
-        fuseIndexCache = new Fuse(data, fuseOptions);
-        preloadStatus = 'ready';
-        notifyListeners();
+      const timeoutId = setTimeout(() => {
+        console.warn('Worker timeout, falling back to main thread');
         worker.terminate();
-        resolve();
-      } else if (msg.type === 'error') {
-        preloadStatus = 'error';
-        notifyListeners();
+        fallbackLoad().then(resolve).catch(reject);
+      }, 10000); // 10 second timeout
+
+      worker.onmessage = (event) => {
+        const msg = event.data;
+
+        if (msg.type === 'complete') {
+          clearTimeout(timeoutId);
+          const data: IndexedLocation[] = msg.data;
+          locationsCache = data;
+          fuseIndexCache = new Fuse(data, fuseOptions);
+          preloadStatus = 'ready';
+          notifyListeners();
+          worker.terminate();
+          resolve();
+        } else if (msg.type === 'error') {
+          clearTimeout(timeoutId);
+          console.warn('Worker error, falling back:', msg.error);
+          worker.terminate();
+          fallbackLoad().then(resolve).catch(reject);
+        }
+      };
+
+      worker.onerror = (error) => {
+        clearTimeout(timeoutId);
+        console.warn('Worker failed, falling back:', error);
         worker.terminate();
-        reject(new Error(msg.error));
-      }
-    };
+        fallbackLoad().then(resolve).catch(reject);
+      };
 
-    worker.onerror = (error) => {
-      preloadStatus = 'error';
-      notifyListeners();
-      worker.terminate();
-      reject(error);
-    };
-
-    // Start the worker
-    worker.postMessage({
-      type: 'start',
-      apiUrl: '/api/locations/all',
-    });
+      worker.postMessage({
+        type: 'start',
+        apiUrl: '/api/locations/all',
+      });
+    } catch (error) {
+      console.warn('Worker creation failed, falling back:', error);
+      fallbackLoad().then(resolve).catch(reject);
+    }
   });
 
   return preloadPromise;
+}
+
+// Fallback: load on main thread if worker fails
+async function fallbackLoad(): Promise<void> {
+  try {
+    const res = await fetch('/api/locations/all');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const rawData = await res.json();
+
+    // Process data on main thread
+    const processed: IndexedLocation[] = rawData.map((loc: Record<string, unknown>) => {
+      const nameNorm = normalizeText(loc.name as string);
+      const countryNorm = loc.country ? normalizeText(loc.country as string) : '';
+      const regionNorm = loc.region ? normalizeText(loc.region as string) : '';
+
+      return {
+        ...loc,
+        nameNorm,
+        countryNorm,
+        regionNorm,
+        searchText: `${nameNorm} ${regionNorm} ${countryNorm}`.trim(),
+      } as IndexedLocation;
+    });
+
+    locationsCache = processed;
+    fuseIndexCache = new Fuse(processed, fuseOptions);
+    preloadStatus = 'ready';
+    notifyListeners();
+  } catch (error) {
+    preloadStatus = 'error';
+    notifyListeners();
+    throw error;
+  }
+}
+
+// Normalize text helper
+function normalizeText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 }
 
 export function useLocationSearch() {

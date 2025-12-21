@@ -1,7 +1,20 @@
 // Web worker for preloading and processing location search data
 // This runs in a separate thread to avoid blocking the UI
 
-import type { SearchableLocation } from '@/app/api/locations/all/route';
+// Note: Workers can't use TypeScript path aliases, so we define types inline
+
+interface RawLocation {
+  id: string;
+  type: 'region' | 'locality';
+  name: string;
+  country: string | null;
+  region?: string;
+  skiAreaId: string;
+  lat?: number;
+  lng?: number;
+  runs?: number;
+  lifts?: number;
+}
 
 export interface ProcessedLocation {
   id: string;
@@ -20,12 +33,6 @@ export interface ProcessedLocation {
   searchText: string;
 }
 
-export type WorkerMessage =
-  | { type: 'start'; apiUrl: string }
-  | { type: 'progress'; stage: string }
-  | { type: 'complete'; data: ProcessedLocation[] }
-  | { type: 'error'; error: string };
-
 // Normalize text for matching - same logic as main thread
 function normalizeText(text: string): string {
   return text
@@ -34,7 +41,7 @@ function normalizeText(text: string): string {
     .toLowerCase();
 }
 
-self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
+self.onmessage = async (event: MessageEvent) => {
   if (event.data.type !== 'start') return;
 
   try {
@@ -46,7 +53,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const rawData: SearchableLocation[] = await response.json();
+    const rawData: RawLocation[] = await response.json();
 
     // Notify: processing
     self.postMessage({ type: 'progress', stage: 'processing' });
