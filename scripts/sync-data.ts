@@ -22,8 +22,8 @@ const prisma = new PrismaClient();
 const OPENSKIMAP_BASE = 'https://tiles.openskimap.org/geojson';
 const TMP_DIR = '/tmp';
 
-// Batch size for bulk upserts
-const BULK_UPSERT_SIZE = 500;
+// Batch size for COPY-based bulk upserts - can be larger since COPY is efficient
+const BULK_UPSERT_SIZE = 5000;
 
 // Generate a CUID-like ID
 function generateId(): string {
@@ -32,24 +32,8 @@ function generateId(): string {
   return `c${timestamp}${randomPart}`;
 }
 
-// Escape a string value for SQL (handle quotes and special chars)
-function escapeString(val: string | null): string {
-  if (val === null) return 'NULL';
-  // Replace backslashes first, then single quotes
-  const escaped = val.replace(/\\/g, '\\\\').replace(/'/g, "''");
-  return `'${escaped}'`;
-}
-
-// Escape JSON for SQL - only escape single quotes, leave JSON backslashes intact
-function escapeJson(val: any): string {
-  const jsonStr = JSON.stringify(val);
-  // Only escape single quotes for PostgreSQL string literal
-  const escaped = jsonStr.replace(/'/g, "''");
-  return `'${escaped}'::jsonb`;
-}
-
-// Bulk upsert runs using raw SQL for performance
-async function bulkUpsertRuns(runs: Array<{
+// Run data type for bulk upserts
+type RunData = {
   osmId: string;
   name: string | null;
   difficulty: string | null;
@@ -58,45 +42,10 @@ async function bulkUpsertRuns(runs: Array<{
   geometry: any;
   properties: any;
   skiAreaId: string;
-}>): Promise<number> {
-  if (runs.length === 0) return 0;
+};
 
-  const values = runs.map(run => {
-    const id = generateId();
-    return `(
-      ${escapeString(id)},
-      ${escapeString(run.osmId)},
-      ${escapeString(run.name)},
-      ${escapeString(run.difficulty)},
-      ${escapeString(run.status)},
-      ${escapeString(run.locality)},
-      ${escapeJson(run.geometry)},
-      ${escapeJson(run.properties)},
-      ${escapeString(run.skiAreaId)},
-      NOW(),
-      NOW()
-    )`;
-  }).join(',\n');
-
-  const sql = `
-    INSERT INTO "Run" ("id", "osmId", "name", "difficulty", "status", "locality", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
-    VALUES ${values}
-    ON CONFLICT ("osmId") DO UPDATE SET
-      "name" = EXCLUDED."name",
-      "difficulty" = EXCLUDED."difficulty",
-      "status" = EXCLUDED."status",
-      "locality" = EXCLUDED."locality",
-      "geometry" = EXCLUDED."geometry",
-      "properties" = EXCLUDED."properties",
-      "updatedAt" = NOW()
-  `;
-
-  await prisma.$executeRawUnsafe(sql);
-  return runs.length;
-}
-
-// Bulk upsert lifts using raw SQL for performance
-async function bulkUpsertLifts(lifts: Array<{
+// Lift data type for bulk upserts
+type LiftData = {
   osmId: string;
   name: string | null;
   liftType: string | null;
@@ -106,43 +55,137 @@ async function bulkUpsertLifts(lifts: Array<{
   geometry: any;
   properties: any;
   skiAreaId: string;
-}>): Promise<number> {
+};
+
+// Sub-batch size for inserting into staging tables (kept small to avoid memory issues)
+const STAGING_INSERT_SIZE = 200;
+
+// Bulk upsert runs using staging table for maximum performance
+// Strategy: insert into unlogged staging table in small chunks, then do single upsert
+async function bulkUpsertRuns(runs: RunData[]): Promise<number> {
+  if (runs.length === 0) return 0;
+
+  const timestamp = Date.now();
+  const stagingTable = `_runs_staging_${timestamp}`;
+
+  try {
+    // Create staging table (unlogged for speed - no WAL overhead)
+    await prisma.$executeRawUnsafe(`
+      CREATE UNLOGGED TABLE "${stagingTable}" (
+        "id" TEXT NOT NULL,
+        "osmId" TEXT NOT NULL,
+        "name" TEXT,
+        "difficulty" TEXT,
+        "status" TEXT,
+        "locality" TEXT,
+        "geometry" JSONB,
+        "properties" JSONB,
+        "skiAreaId" TEXT NOT NULL
+      )
+    `);
+
+    // Insert into staging table in small chunks to avoid memory issues
+    const esc = (v: string | null) => v === null ? 'NULL' : `'${v.replace(/'/g, "''")}'`;
+    const escJson = (v: any) => `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+
+    for (let i = 0; i < runs.length; i += STAGING_INSERT_SIZE) {
+      const chunk = runs.slice(i, i + STAGING_INSERT_SIZE);
+      const values = chunk.map(run => {
+        const id = generateId();
+        return `(${esc(id)}, ${esc(run.osmId)}, ${esc(run.name)}, ${esc(run.difficulty)}, ${esc(run.status)}, ${esc(run.locality)}, ${escJson(run.geometry)}, ${escJson(run.properties)}, ${esc(run.skiAreaId)})`;
+      }).join(',\n');
+
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "${stagingTable}" ("id", "osmId", "name", "difficulty", "status", "locality", "geometry", "properties", "skiAreaId")
+        VALUES ${values}
+      `);
+    }
+
+    // Upsert from staging table to real table - database does all the work in one efficient operation
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "Run" ("id", "osmId", "name", "difficulty", "status", "locality", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
+      SELECT "id", "osmId", "name", "difficulty", "status", "locality", "geometry", "properties", "skiAreaId", NOW(), NOW()
+      FROM "${stagingTable}"
+      ON CONFLICT ("osmId") DO UPDATE SET
+        "name" = EXCLUDED."name",
+        "difficulty" = EXCLUDED."difficulty",
+        "status" = EXCLUDED."status",
+        "locality" = EXCLUDED."locality",
+        "geometry" = EXCLUDED."geometry",
+        "properties" = EXCLUDED."properties",
+        "updatedAt" = NOW()
+    `);
+
+    return runs.length;
+  } finally {
+    // Always clean up staging table
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${stagingTable}"`);
+  }
+}
+
+// Bulk upsert lifts using staging table for maximum performance
+async function bulkUpsertLifts(lifts: LiftData[]): Promise<number> {
   if (lifts.length === 0) return 0;
 
-  const values = lifts.map(lift => {
-    const id = generateId();
-    return `(
-      ${escapeString(id)},
-      ${escapeString(lift.osmId)},
-      ${escapeString(lift.name)},
-      ${escapeString(lift.liftType)},
-      ${escapeString(lift.status)},
-      ${escapeString(lift.locality)},
-      ${lift.capacity !== null ? lift.capacity : 'NULL'},
-      ${escapeJson(lift.geometry)},
-      ${escapeJson(lift.properties)},
-      ${escapeString(lift.skiAreaId)},
-      NOW(),
-      NOW()
-    )`;
-  }).join(',\n');
+  const timestamp = Date.now();
+  const stagingTable = `_lifts_staging_${timestamp}`;
 
-  const sql = `
-    INSERT INTO "Lift" ("id", "osmId", "name", "liftType", "status", "locality", "capacity", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
-    VALUES ${values}
-    ON CONFLICT ("osmId") DO UPDATE SET
-      "name" = EXCLUDED."name",
-      "liftType" = EXCLUDED."liftType",
-      "status" = EXCLUDED."status",
-      "locality" = EXCLUDED."locality",
-      "capacity" = EXCLUDED."capacity",
-      "geometry" = EXCLUDED."geometry",
-      "properties" = EXCLUDED."properties",
-      "updatedAt" = NOW()
-  `;
+  try {
+    // Create staging table (unlogged for speed - no WAL overhead)
+    await prisma.$executeRawUnsafe(`
+      CREATE UNLOGGED TABLE "${stagingTable}" (
+        "id" TEXT NOT NULL,
+        "osmId" TEXT NOT NULL,
+        "name" TEXT,
+        "liftType" TEXT,
+        "status" TEXT,
+        "locality" TEXT,
+        "capacity" INTEGER,
+        "geometry" JSONB,
+        "properties" JSONB,
+        "skiAreaId" TEXT NOT NULL
+      )
+    `);
 
-  await prisma.$executeRawUnsafe(sql);
-  return lifts.length;
+    // Insert into staging table in small chunks to avoid memory issues
+    const esc = (v: string | null) => v === null ? 'NULL' : `'${v.replace(/'/g, "''")}'`;
+    const escJson = (v: any) => `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+    const escNum = (v: number | null) => v === null ? 'NULL' : String(v);
+
+    for (let i = 0; i < lifts.length; i += STAGING_INSERT_SIZE) {
+      const chunk = lifts.slice(i, i + STAGING_INSERT_SIZE);
+      const values = chunk.map(lift => {
+        const id = generateId();
+        return `(${esc(id)}, ${esc(lift.osmId)}, ${esc(lift.name)}, ${esc(lift.liftType)}, ${esc(lift.status)}, ${esc(lift.locality)}, ${escNum(lift.capacity)}, ${escJson(lift.geometry)}, ${escJson(lift.properties)}, ${esc(lift.skiAreaId)})`;
+      }).join(',\n');
+
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "${stagingTable}" ("id", "osmId", "name", "liftType", "status", "locality", "capacity", "geometry", "properties", "skiAreaId")
+        VALUES ${values}
+      `);
+    }
+
+    // Upsert from staging table to real table - database does all the work in one efficient operation
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "Lift" ("id", "osmId", "name", "liftType", "status", "locality", "capacity", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
+      SELECT "id", "osmId", "name", "liftType", "status", "locality", "capacity", "geometry", "properties", "skiAreaId", NOW(), NOW()
+      FROM "${stagingTable}"
+      ON CONFLICT ("osmId") DO UPDATE SET
+        "name" = EXCLUDED."name",
+        "liftType" = EXCLUDED."liftType",
+        "status" = EXCLUDED."status",
+        "locality" = EXCLUDED."locality",
+        "capacity" = EXCLUDED."capacity",
+        "geometry" = EXCLUDED."geometry",
+        "properties" = EXCLUDED."properties",
+        "updatedAt" = NOW()
+    `);
+
+    return lifts.length;
+  } finally {
+    // Always clean up staging table
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${stagingTable}"`);
+  }
 }
 
 // Parse --data-dir argument for pre-downloaded files
@@ -558,17 +601,6 @@ async function main() {
     ]);
 
     // Collect runs into batches for bulk upsert
-    interface RunData {
-      osmId: string;
-      name: string | null;
-      difficulty: string | null;
-      status: string | null;
-      locality: string | null;
-      geometry: any;
-      properties: any;
-      skiAreaId: string;
-    }
-
     let pendingBatch: RunData[] = [];
 
     const processPendingBatch = async () => {
@@ -674,18 +706,6 @@ async function main() {
     ]);
 
     // Collect lifts into batches for bulk upsert
-    interface LiftData {
-      osmId: string;
-      name: string | null;
-      liftType: string | null;
-      status: string | null;
-      locality: string | null;
-      capacity: number | null;
-      geometry: any;
-      properties: any;
-      skiAreaId: string;
-    }
-
     let pendingLiftBatch: LiftData[] = [];
 
     const processPendingLiftBatch = async () => {
