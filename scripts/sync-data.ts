@@ -219,10 +219,11 @@ async function bulkUpsertLifts(lifts: LiftData[]): Promise<number> {
     );
 
     // Upsert from staging table to real table with type casting
+    // Note: capacity can be decimal in source data (e.g., "1.2"), so we round before casting to integer
     await prisma.$executeRawUnsafe(`
       INSERT INTO "Lift" ("id", "osmId", "name", "liftType", "status", "locality", "capacity", "geometry", "properties", "skiAreaId", "createdAt", "updatedAt")
       SELECT "id", "osmId", "name", "liftType", "status", "locality",
-             NULLIF("capacity", '')::integer, "geometry"::jsonb, "properties"::jsonb, "skiAreaId", NOW(), NOW()
+             ROUND(NULLIF("capacity", '')::numeric)::integer, "geometry"::jsonb, "properties"::jsonb, "skiAreaId", NOW(), NOW()
       FROM "${stagingTable}"
       ON CONFLICT ("osmId") DO UPDATE SET
         "name" = EXCLUDED."name",
