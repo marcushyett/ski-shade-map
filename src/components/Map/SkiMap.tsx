@@ -2345,7 +2345,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
       // Look up the full enriched lift data to get opening times, etc.
       const enrichedLift = skiArea?.lifts.find(l => l.id === liftId);
-      const liveStatus = enrichedLift && 'liveStatus' in enrichedLift ? enrichedLift.liveStatus : null;
+      const liveStatus = enrichedLift && 'liveStatus' in enrichedLift ? (enrichedLift as EnrichedLiftData).liveStatus : null;
 
       // Track lift click
       trackEvent('lift_selected', {
@@ -2371,8 +2371,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         const timesStr = openingTimes ? `${openingTimes.beginTime} - ${openingTimes.endTime}` : null;
 
         // Get closing info
-        const closingTime = enrichedLift && 'closingTime' in enrichedLift ? enrichedLift.closingTime : null;
-        const minutesUntilClose = enrichedLift && 'minutesUntilClose' in enrichedLift ? enrichedLift.minutesUntilClose : null;
+        const closingTime = enrichedLift && 'closingTime' in enrichedLift ? (enrichedLift as EnrichedLiftData).closingTime : null;
+        const minutesUntilClose = enrichedLift && 'minutesUntilClose' in enrichedLift ? (enrichedLift as EnrichedLiftData).minutesUntilClose : null;
         const closingSoon = minutesUntilClose !== null && minutesUntilClose !== undefined && minutesUntilClose <= 60;
 
         // Build additional info
