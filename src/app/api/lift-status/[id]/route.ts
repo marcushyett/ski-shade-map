@@ -56,6 +56,15 @@ export async function GET(
     console.log(`[LiftStatus] Fetching status for resort: ${resortId} (${matchedResort?.name})`);
     const rawData = await fetchResortStatus(resortId);
 
+    // Debug: log raw data structure
+    const rawSampleLift = rawData.lifts?.[0];
+    console.log(`[LiftStatus] Raw data sample lift:`, {
+      name: rawSampleLift?.name,
+      keys: rawSampleLift ? Object.keys(rawSampleLift) : [],
+      openskimap_ids: rawSampleLift?.openskimap_ids,
+      openskimapIds: rawSampleLift?.openskimapIds,
+    });
+
     // Transform to our types
     const data = {
       resort: {
