@@ -271,7 +271,7 @@ export function enrichLiftsWithStatus(
       sampleLiftKeys: Object.keys(sampleStatusLift),
       openskimapIds: sampleStatusLift.openskimapIds,
       // Check for snake_case version
-      openskimap_ids: (sampleStatusLift as Record<string, unknown>)['openskimap_ids'],
+      openskimap_ids: (sampleStatusLift as unknown as Record<string, unknown>)['openskimap_ids'],
     });
   }
 
