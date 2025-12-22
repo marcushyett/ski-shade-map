@@ -1291,12 +1291,11 @@ export default function Home() {
                 distance_km: nearestDistKm,
               });
 
-              // If map exists (not on onboarding), fly to the location
-              if (mapRef.current) {
-                mapRef.current.flyTo(latitude, longitude, targetZoom);
-              }
+              // Set initial map view to the SKI AREA location (not user's location)
+              // This ensures the map opens centered on the resort
+              setInitialMapView({ lat: nearest.latitude, lng: nearest.longitude, zoom: 13 });
 
-              // This will dismiss onboarding and render the map
+              // This will dismiss onboarding and render the map at the ski area location
               setSelectedArea(nearest);
               setShowMapWithoutArea(true);
               setIsGettingCurrentLocation(false);
@@ -1917,6 +1916,11 @@ export default function Home() {
     
     return { run, analysis, stats, isFavourite, temperatureData };
   }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, weather?.elevation, favourites]);
+
+  // Don't render anything until initial state is loaded to prevent flicker
+  if (!initialLoadDone) {
+    return null;
+  }
 
   // Show interstitial warning when no ski areas within 50km
   if (showNoNearbyResortsWarning) {
