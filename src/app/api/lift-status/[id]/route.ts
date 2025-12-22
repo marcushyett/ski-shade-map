@@ -31,11 +31,21 @@ export async function GET(
 
   console.log(`[LiftStatus] Request for openskimapId: ${openskimapId}`);
 
-  // Check cache
-  const cached = cache.get(openskimapId);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    console.log(`[LiftStatus] Cache hit for ${openskimapId}`);
-    return NextResponse.json(cached.data);
+  // Check for cache-buster param - if present, skip server cache
+  const url = new URL(request.url);
+  const version = url.searchParams.get('v');
+
+  // Check cache (skip if version param present - means client wants fresh data)
+  if (!version) {
+    const cached = cache.get(openskimapId);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      console.log(`[LiftStatus] Cache hit for ${openskimapId}`);
+      return NextResponse.json(cached.data);
+    }
+  } else {
+    console.log(`[LiftStatus] Skipping server cache due to version param: ${version}`);
+    // Clear any existing cached data for this ID
+    cache.delete(openskimapId);
   }
 
   // Get resort ID
