@@ -1264,27 +1264,63 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const liftStatusColor = lift?.status ? statusColors[lift.status] : statusColors.unknown;
       const liftStatusLabel = lift?.status ? statusLabels[lift.status] : '';
 
+      // Extract enriched data for runs
+      const runLiveStatus = run && 'liveStatus' in run ? run.liveStatus : null;
+      const runOpeningTimes = runLiveStatus?.openingTimes?.[0];
+      const runGroomingStatus = runLiveStatus?.groomingStatus;
+      const runSnowQuality = runLiveStatus?.snowQuality;
+      const runMinutesUntilClose = run && 'minutesUntilClose' in run ? run.minutesUntilClose : null;
+      const runClosingSoon = typeof runMinutesUntilClose === 'number' && runMinutesUntilClose <= 60;
+
+      // Extract enriched data for lifts
+      const liftLiveStatus = lift && 'liveStatus' in lift ? lift.liveStatus : null;
+      const liftOpeningTimes = liftLiveStatus?.openingTimes?.[0];
+      const liftSpeed = liftLiveStatus?.speed;
+      const liftCapacity = liftLiveStatus?.uphillCapacity;
+      const liftMinutesUntilClose = lift && 'minutesUntilClose' in lift ? lift.minutesUntilClose : null;
+      const liftClosingSoon = typeof liftMinutesUntilClose === 'number' && liftMinutesUntilClose <= 60;
+
+      // Grooming status labels
+      const groomingLabels: Record<string, { icon: string; label: string; color: string }> = {
+        GROOMED: { icon: '✓', label: 'Groomed', color: '#22c55e' },
+        PARTIALLY_GROOMED: { icon: '◐', label: 'Partial', color: '#eab308' },
+        NOT_GROOMED: { icon: '○', label: 'Not Groomed', color: '#888' },
+      };
+      const groomingInfo = runGroomingStatus ? groomingLabels[runGroomingStatus] : null;
+
       const popupContent = isRun
-        ? `<div class="run-popup" style="min-width: 180px;">
-            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+        ? `<div class="run-popup" style="min-width: 180px; max-width: 240px;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
               <span style="width: 10px; height: 10px; border-radius: 50%; background: ${getDifficultyColor(run.difficulty || 'unknown')}; flex-shrink: 0;"></span>
               <strong style="font-size: 13px;">${run.name || 'Unnamed Run'}</strong>
-              ${run?.status ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${runStatusColor}20; color: ${runStatusColor}; font-weight: 500; margin-left: auto;">${runStatusLabel}</span>` : ''}
+              ${run?.status && run.status !== 'unknown' ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${runStatusColor}20; color: ${runStatusColor}; font-weight: 500; margin-left: auto;">${runStatusLabel}</span>` : ''}
             </div>
-            ${run.difficulty ? `<div style="font-size: 10px; color: ${getDifficultyColor(run.difficulty)}; margin-bottom: 4px;">${run.difficulty}</div>` : ''}
-            ${runStats?.distance ? `<div style="font-size: 10px; color: #888; margin-bottom: 2px;">📏 ${runStats.distance}</div>` : ''}
-            ${runStats?.elevation ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${runStats.elevation}</div>` : ''}
-            ${snowAnalysis ? `<div style="font-size: 11px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px; margin-top: 6px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; font-size: 10px;">
+              ${run.difficulty ? `<span style="color: ${getDifficultyColor(run.difficulty)};">${run.difficulty}</span>` : ''}
+              ${runStats?.distance ? `<span style="color: #888;">📏 ${runStats.distance}</span>` : ''}
+              ${runStats?.elevation ? `<span style="color: #888;">${runStats.elevation}</span>` : ''}
+            </div>
+            ${runOpeningTimes || groomingInfo || runSnowQuality ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; font-size: 10px;">
+              ${runOpeningTimes ? `<span style="color: #aaa;">🕐 ${runOpeningTimes.beginTime}-${runOpeningTimes.endTime}${runClosingSoon ? ` <span style="color: #eab308;">(${runMinutesUntilClose}min)</span>` : ''}</span>` : ''}
+              ${groomingInfo ? `<span style="color: ${groomingInfo.color};">${groomingInfo.icon} ${groomingInfo.label}</span>` : ''}
+              ${runSnowQuality ? `<span style="color: #60a5fa;">❄ ${runSnowQuality.replace(/_/g, ' ').toLowerCase()}</span>` : ''}
+            </div>` : ''}
+            ${snowAnalysis ? `<div style="font-size: 10px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px;">
               Snow: <span style="color: ${snowScoreColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span>
               <span style="color: #888;">${snowAnalysis.conditionLabel}</span>
             </div>` : ''}
           </div>`
-        : `<div class="lift-popup" style="min-width: 150px;">
+        : `<div class="lift-popup" style="min-width: 160px; max-width: 220px;">
             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
               <strong style="font-size: 13px;">${lift?.name || 'Unnamed Lift'}</strong>
-              ${lift?.status ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${liftStatusColor}20; color: ${liftStatusColor}; font-weight: 500; margin-left: auto;">${liftStatusLabel}</span>` : ''}
+              ${lift?.status && lift.status !== 'unknown' ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${liftStatusColor}20; color: ${liftStatusColor}; font-weight: 500; margin-left: auto;">${liftStatusLabel}</span>` : ''}
             </div>
-            ${lift?.liftType ? `<div style="opacity: 0.7; font-size: 11px;">${lift.liftType}</div>` : ''}
+            ${lift?.liftType ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${lift.liftType}</div>` : ''}
+            ${liftOpeningTimes || liftSpeed || liftCapacity ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px;">
+              ${liftOpeningTimes ? `<span style="color: #aaa;">🕐 ${liftOpeningTimes.beginTime}-${liftOpeningTimes.endTime}${liftClosingSoon ? ` <span style="color: #eab308;">(${liftMinutesUntilClose}min)</span>` : ''}</span>` : ''}
+              ${liftSpeed ? `<span style="color: #888;">${liftSpeed} m/s</span>` : ''}
+              ${liftCapacity ? `<span style="color: #888;">${liftCapacity} pers/h</span>` : ''}
+            </div>` : ''}
           </div>`;
 
       highlightPopupRef.current = new maplibregl.Popup({
@@ -2297,11 +2333,15 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const handleLiftClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
       if (!e.features?.length || !map.current) return;
       if (isEditingHomeRef.current) return; // Don't show popup in edit mode
-      
+
       const feature = e.features[0];
       const props = feature.properties;
       const liftId = props.id;
-      
+
+      // Look up the full enriched lift data to get opening times, etc.
+      const enrichedLift = skiArea?.lifts.find(l => l.id === liftId);
+      const liveStatus = enrichedLift && 'liveStatus' in enrichedLift ? enrichedLift.liveStatus : null;
+
       // Track lift click
       trackEvent('lift_selected', {
         lift_id: liftId,
@@ -2309,27 +2349,42 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         lift_type: props.liftType || undefined,
         ski_area_id: currentSkiAreaId.current || undefined,
       });
-      
+
       // Call the onLiftClick callback with map coordinates (for navigation)
       onLiftClickRef.current?.(liftId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
-      
+
       // Only show popup if not in navigation click mode
       if (!navMapClickModeRef.current) {
-        // Determine status styling
-        const status = props.status as string | undefined;
+        // Get status from enriched data or fall back to GeoJSON props
+        const status = enrichedLift?.status || props.status as string | undefined;
         const statusColor = status === 'open' ? '#22c55e' : status === 'closed' ? '#ef4444' : status === 'scheduled' ? '#eab308' : '#888';
         const statusBg = status === 'open' ? 'rgba(34, 197, 94, 0.15)' : status === 'closed' ? 'rgba(239, 68, 68, 0.15)' : status === 'scheduled' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(136, 136, 136, 0.15)';
         const statusLabel = status === 'open' ? 'Open' : status === 'closed' ? 'Closed' : status === 'scheduled' ? 'Scheduled' : null;
 
+        // Build opening times string
+        const openingTimes = liveStatus?.openingTimes?.[0];
+        const timesStr = openingTimes ? `${openingTimes.beginTime} - ${openingTimes.endTime}` : null;
+
+        // Get closing info
+        const closingTime = enrichedLift && 'closingTime' in enrichedLift ? enrichedLift.closingTime : null;
+        const minutesUntilClose = enrichedLift && 'minutesUntilClose' in enrichedLift ? enrichedLift.minutesUntilClose : null;
+        const closingSoon = minutesUntilClose !== null && minutesUntilClose !== undefined && minutesUntilClose <= 60;
+
+        // Build additional info
+        const speed = liveStatus?.speed;
+        const capacity = liveStatus?.uphillCapacity;
+
         new maplibregl.Popup()
           .setLngLat(e.lngLat)
           .setHTML(`
-            <div style="padding: 8px; min-width: 140px;">
-              <div style="font-weight: 600; font-size: 14px; color: #fff; margin-bottom: 4px;">${props.name || 'Unnamed Lift'}</div>
-              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                <span style="font-size: 11px; color: #888;">Type: ${props.liftType || 'Unknown'}</span>
+            <div style="padding: 8px; min-width: 160px; max-width: 220px;">
+              <div style="font-weight: 600; font-size: 13px; color: #fff; margin-bottom: 4px;">${props.name || 'Unnamed Lift'}</div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px;">
+                <span style="font-size: 10px; color: #888;">${props.liftType || 'Lift'}</span>
                 ${statusLabel ? `<span style="font-size: 9px; color: ${statusColor}; background: ${statusBg}; padding: 1px 5px; border-radius: 3px; font-weight: 600;">${statusLabel}</span>` : ''}
               </div>
+              ${timesStr ? `<div style="font-size: 10px; color: #aaa; margin-bottom: 2px;">🕐 ${timesStr}${closingSoon ? ` <span style="color: #eab308;">(${minutesUntilClose}min left)</span>` : ''}</div>` : ''}
+              ${speed || capacity ? `<div style="font-size: 9px; color: #666;">${speed ? `${speed} m/s` : ''}${speed && capacity ? ' · ' : ''}${capacity ? `${capacity} pers/h` : ''}</div>` : ''}
             </div>
           `)
           .addTo(map.current);
