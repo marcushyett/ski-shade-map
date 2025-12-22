@@ -10,6 +10,7 @@ export interface SkiAreaSummary {
 }
 
 export interface SkiAreaDetails extends SkiAreaSummary {
+  osmId: string | null;
   bounds: BoundingBox | null;
   geometry: Geometry | null;
   properties: Record<string, unknown> | null;

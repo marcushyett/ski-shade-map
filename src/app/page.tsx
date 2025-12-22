@@ -704,13 +704,19 @@ export default function Home() {
     }
 
     const fetchStatus = async () => {
+      // Need osmId to fetch status
+      if (!skiAreaDetails.osmId) {
+        setHasStatusData(false);
+        return;
+      }
+
       try {
         // Check if this resort has live status data available
-        const hasStatus = await hasLiveStatus(skiAreaDetails.id);
+        const hasStatus = await hasLiveStatus(skiAreaDetails.osmId);
         setHasStatusData(hasStatus);
 
         if (hasStatus) {
-          const status = await fetchResortStatus(skiAreaDetails.id);
+          const status = await fetchResortStatus(skiAreaDetails.osmId);
           setResortStatus(status);
         }
       } catch (error) {
@@ -724,7 +730,7 @@ export default function Home() {
     // Refresh status every 5 minutes
     const interval = setInterval(fetchStatus, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [skiAreaDetails?.id]);
+  }, [skiAreaDetails?.id, skiAreaDetails?.osmId]);
 
   // Enrich runs and lifts with live status
   const enrichedRuns = useMemo(() => {
@@ -857,6 +863,7 @@ export default function Home() {
           // Construct a properly typed SkiAreaDetails from cached data
           const basicInfo: SkiAreaDetails = {
             id: cachedInfo.id as string,
+            osmId: (cachedInfo.osmId as string) || null,
             name: cachedInfo.name as string,
             country: (cachedInfo.country as string) || null,
             region: (cachedInfo.region as string) || null,
@@ -945,6 +952,7 @@ export default function Home() {
         // Construct a properly typed SkiAreaDetails from API response
         basicInfo = {
           id: rawInfo.id as string,
+          osmId: (rawInfo.osmId as string) || null,
           name: rawInfo.name as string,
           country: (rawInfo.country as string) || null,
           region: (rawInfo.region as string) || null,
