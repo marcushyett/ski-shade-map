@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef, useDeferredValue, useTransition } from 'react';
 import { Typography, Alert, Button, Drawer } from 'antd';
-import { 
-  MenuOutlined, 
+import {
+  MenuOutlined,
   InfoCircleOutlined,
   CloudOutlined,
   SettingOutlined,
   DeleteOutlined,
   DownOutlined,
   RightOutlined,
+  EnvironmentOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
@@ -51,6 +52,7 @@ import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 import { analyzeResortSnowQuality, type ResortSnowSummary, type PisteSnowAnalysis, type SnowQualityAtPoint, getConditionInfo, calculateSnowQualityByAltitude } from '@/lib/snow-quality';
 import { getSunPosition } from '@/lib/suncalc';
 import { trackEvent } from '@/lib/posthog';
+import { getCachedSkiArea, cacheSkiArea, clearExpiredCache } from '@/lib/ski-area-cache';
 import SnowConditionsPanel from '@/components/Controls/SnowConditionsPanel';
 import DonateButton from '@/components/DonateButton';
 import Onboarding from '@/components/Onboarding';
@@ -470,9 +472,11 @@ export default function Home() {
     removeFavourite 
   } = useFavourites(skiAreaDetails?.id || null, skiAreaDetails?.name || null);
 
-  // Register service worker
+  // Register service worker and clear expired cache
   useEffect(() => {
     registerServiceWorker();
+    // Clean up expired cache entries on app start
+    clearExpiredCache().catch(console.error);
   }, []);
 
   // Load initial state from URL or localStorage
@@ -688,6 +692,7 @@ export default function Home() {
     }
 
     // Progressive loading strategy:
+    // 0. Check IndexedDB cache for 24hr cached data (instant if cached)
     // 1. Map has already navigated to the location (instant via handleLocationSelect)
     // 2. Fetch basic ski area info in background (for bounds, geometry, etc.)
     // 3. Fetch runs and lifts progressively - they appear on the map as they load
@@ -717,6 +722,99 @@ export default function Home() {
     const abortController = new AbortController();
     const signal = abortController.signal;
 
+    // Helper to progressively add runs/lifts in batches
+    const progressivelyAddData = (
+      allRuns: RunData[],
+      allLifts: LiftData[],
+      basicInfo: SkiAreaDetails
+    ) => {
+      const totalRuns = allRuns.length;
+      const totalLifts = allLifts.length;
+
+      // Sort runs and lifts by distance from center (closest first)
+      const centerLat = selectedArea.latitude;
+      const centerLng = selectedArea.longitude;
+      const sortedRuns = sortRunsByDistanceFromCenter(allRuns, centerLat, centerLng);
+      const sortedLifts = sortLiftsByDistanceFromCenter(allLifts, centerLat, centerLng);
+
+      // Progressive rendering: add runs/lifts in batches
+      const BATCH_SIZE = 30;
+      const BATCH_DELAY = 16;
+      let runIndex = 0;
+      let liftIndex = 0;
+
+      const addNextBatch = () => {
+        if (signal.aborted) return;
+
+        const runsToAdd = sortedRuns.slice(runIndex, runIndex + BATCH_SIZE);
+        const liftsToAdd = sortedLifts.slice(liftIndex, liftIndex + Math.ceil(BATCH_SIZE / 3));
+
+        runIndex += BATCH_SIZE;
+        liftIndex += Math.ceil(BATCH_SIZE / 3);
+
+        setSkiAreaDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            runs: [...prev.runs, ...runsToAdd],
+            lifts: [...prev.lifts, ...liftsToAdd],
+          };
+        });
+
+        setRunsLoadProgress({ loaded: Math.min(runIndex, totalRuns), total: totalRuns });
+
+        if (runIndex < totalRuns || liftIndex < totalLifts) {
+          setTimeout(addNextBatch, BATCH_DELAY);
+        } else {
+          setRunsLoading(false);
+        }
+      };
+
+      addNextBatch();
+    };
+
+    // Try to load from cache first (24hr TTL)
+    const loadData = async () => {
+      try {
+        const cached = await getCachedSkiArea(selectedArea.id);
+
+        if (cached && !signal.aborted) {
+          // Cache hit! Use cached data instantly
+          console.log(`[Cache] Using cached data for ${selectedArea.id}`);
+
+          const basicInfo = cached.info as SkiAreaDetails;
+          const allRuns = cached.runs as RunData[];
+          const allLifts = cached.lifts as LiftData[];
+
+          // Set basic info immediately
+          setSkiAreaDetails({
+            ...basicInfo,
+            runs: [],
+            lifts: [],
+          });
+
+          if (!selectedArea.name && basicInfo.name) {
+            setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
+          }
+
+          setLoading(false);
+          setRunsLoadProgress({ loaded: 0, total: allRuns.length });
+
+          // Progressively add runs/lifts
+          progressivelyAddData(allRuns, allLifts, basicInfo);
+
+          // Still fetch weather fresh (it changes frequently)
+          fetchWeatherData();
+          return;
+        }
+      } catch (err) {
+        console.error('[Cache] Failed to check cache:', err);
+      }
+
+      // Cache miss or error - fetch from network
+      fetchFromNetwork();
+    };
+
     const fetchBasicInfo = async () => {
       const res = await fetch(`/api/ski-areas/${selectedArea.id}/info`, { signal });
       if (!res.ok) throw new Error('Failed to load ski area');
@@ -736,129 +834,91 @@ export default function Home() {
     };
 
     const fetchWeatherData = async () => {
-      const res = await fetch(`/api/weather?lat=${selectedArea.latitude}&lng=${selectedArea.longitude}`, { signal });
-      if (!res.ok) throw new Error('Failed to fetch weather');
-      return res.json();
+      try {
+        const res = await fetch(`/api/weather?lat=${selectedArea.latitude}&lng=${selectedArea.longitude}`, { signal });
+        if (!res.ok) throw new Error('Failed to fetch weather');
+        const weatherData = await res.json();
+        if (!signal.aborted && weatherData) {
+          setWeather(weatherData);
+        }
+      } catch {
+        // Weather errors are non-critical
+      } finally {
+        if (!signal.aborted) {
+          setWeatherLoading(false);
+        }
+      }
     };
 
-    // Phase 1: Fetch basic info immediately - allows map to show instantly
-    fetchBasicInfo()
-      .then((basicInfo) => {
+    const fetchFromNetwork = async () => {
+      // Phase 1: Fetch basic info immediately - allows map to show instantly
+      let basicInfo: SkiAreaDetails | null = null;
+
+      try {
+        basicInfo = await fetchBasicInfo();
         if (signal.aborted) return;
 
-        // Set ski area with empty runs/lifts - map will show immediately!
         setSkiAreaDetails({
           ...basicInfo,
           runs: [],
           lifts: [],
         });
 
-        // Update selectedArea name if it was empty (from URL state)
         if (!selectedArea.name && basicInfo.name) {
-          setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
+          setSelectedArea(prev => prev ? { ...prev, name: basicInfo!.name } : prev);
         }
 
-        // Loading complete - map is showing
         setLoading(false);
 
-        // Show run count for progress indicator
         if (basicInfo.runCount) {
           setRunsLoadProgress({ loaded: 0, total: basicInfo.runCount });
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         if (signal.aborted) return;
         setError(err instanceof Error ? err.message : 'Failed to load ski area');
         setLoading(false);
         setRunsLoading(false);
-      });
+        return;
+      }
 
-    // Phase 2: Fetch runs and lifts in parallel, then add progressively from center outward
-    Promise.all([
-      fetchRuns().catch((err) => {
-        if (!signal.aborted) console.error('Failed to load runs:', err);
-        return { runs: [] };
-      }),
-      fetchLifts().catch((err) => {
-        if (!signal.aborted) console.error('Failed to load lifts:', err);
-        return { lifts: [] };
-      }),
-    ])
-      .then(([runsData, liftsData]) => {
+      // Phase 2: Fetch runs and lifts in parallel
+      try {
+        const [runsData, liftsData] = await Promise.all([
+          fetchRuns().catch((err) => {
+            if (!signal.aborted) console.error('Failed to load runs:', err);
+            return { runs: [] };
+          }),
+          fetchLifts().catch((err) => {
+            if (!signal.aborted) console.error('Failed to load lifts:', err);
+            return { lifts: [] };
+          }),
+        ]);
+
         if (signal.aborted) return;
 
         const allRuns = runsData.runs || [];
         const allLifts = liftsData.lifts || [];
-        const totalRuns = allRuns.length;
-        const totalLifts = allLifts.length;
 
-        // Sort runs and lifts by distance from center (closest first)
-        const centerLat = selectedArea.latitude;
-        const centerLng = selectedArea.longitude;
-        const sortedRuns = sortRunsByDistanceFromCenter(allRuns, centerLat, centerLng);
-        const sortedLifts = sortLiftsByDistanceFromCenter(allLifts, centerLat, centerLng);
+        // Cache the data for next time (24hr TTL)
+        if (basicInfo && allRuns.length > 0) {
+          cacheSkiArea(selectedArea.id, allRuns, allLifts, basicInfo).catch(console.error);
+          console.log(`[Cache] Cached data for ${selectedArea.id}`);
+        }
 
-        // Progressive rendering: add runs/lifts in batches
-        const BATCH_SIZE = 30; // runs per batch
-        const BATCH_DELAY = 16; // ms between batches (~60fps)
-        let runIndex = 0;
-        let liftIndex = 0;
-
-        const addNextBatch = () => {
-          if (signal.aborted) return;
-
-          // Add next batch of runs
-          const runsToAdd = sortedRuns.slice(runIndex, runIndex + BATCH_SIZE);
-          const liftsToAdd = sortedLifts.slice(liftIndex, liftIndex + Math.ceil(BATCH_SIZE / 3));
-
-          runIndex += BATCH_SIZE;
-          liftIndex += Math.ceil(BATCH_SIZE / 3);
-
-          setSkiAreaDetails(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              runs: [...prev.runs, ...runsToAdd],
-              lifts: [...prev.lifts, ...liftsToAdd],
-            };
-          });
-
-          setRunsLoadProgress({ loaded: Math.min(runIndex, totalRuns), total: totalRuns });
-
-          // Continue if more to add
-          if (runIndex < totalRuns || liftIndex < totalLifts) {
-            setTimeout(addNextBatch, BATCH_DELAY);
-          } else {
-            // All done
-            setRunsLoading(false);
-          }
-        };
-
-        // Start progressive loading immediately
-        addNextBatch();
-      })
-      .catch(() => {
+        // Progressively add to UI
+        progressivelyAddData(allRuns, allLifts, basicInfo);
+      } catch {
         if (!signal.aborted) {
           setRunsLoading(false);
         }
-      });
+      }
 
-    // Phase 3: Weather loads independently
-    fetchWeatherData()
-      .then((weatherData) => {
-        if (signal.aborted) return;
-        if (weatherData) {
-          setWeather(weatherData);
-        }
-      })
-      .catch(() => {
-        // Weather errors are non-critical
-      })
-      .finally(() => {
-        if (!signal.aborted) {
-          setWeatherLoading(false);
-        }
-      });
+      // Phase 3: Weather loads independently
+      fetchWeatherData();
+    };
+
+    // Start loading data (cache first, then network)
+    loadData();
 
     return () => {
       abortController.abort();
@@ -1942,7 +2002,7 @@ export default function Home() {
               border: '1px solid var(--border)'
             }}
           >
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🏔️</div>
+            <EnvironmentOutlined style={{ fontSize: 48, marginBottom: 16, color: '#666' }} />
             <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12, color: 'var(--foreground)' }}>
               No ski areas nearby
             </h2>
