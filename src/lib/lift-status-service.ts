@@ -182,17 +182,21 @@ export async function fetchResortStatus(openskimapId: string): Promise<ResortSta
       hasOpenskimapIds: hasCorrectFormat,
     });
 
-    // If cached data has wrong format, skip cache
-    if (!hasCorrectFormat && sampleLift) {
-      console.log('[LiftStatus Client] Cache has wrong format, fetching fresh');
+    // If cached data has wrong format or empty openskimapIds, skip cache
+    const hasEmptyIds = sampleLift?.openskimapIds?.length === 0;
+    if ((!hasCorrectFormat && sampleLift) || hasEmptyIds) {
+      console.log('[LiftStatus Client] Cache has wrong format or empty IDs, fetching fresh');
+      // Don't return cached - fall through to fetch fresh
     } else {
       return cached;
     }
   }
 
   try {
-    console.log('[LiftStatus Client] Fetching from API:', `/api/lift-status/${openskimapId}`);
-    const response = await fetch(`/api/lift-status/${encodeURIComponent(openskimapId)}`);
+    // Add cache-buster to bypass CDN/edge cache (v2 = fixed openskimapIds)
+    const url = `/api/lift-status/${encodeURIComponent(openskimapId)}?v=2`;
+    console.log('[LiftStatus Client] Fetching from API:', url);
+    const response = await fetch(url);
 
     if (!response.ok) {
       if (response.status === 404) {
