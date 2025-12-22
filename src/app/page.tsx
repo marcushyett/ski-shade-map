@@ -782,16 +782,28 @@ export default function Home() {
           // Cache hit! Use cached data instantly
           console.log(`[Cache] Using cached data for ${selectedArea.id}`);
 
-          const basicInfo = cached.info as SkiAreaDetails;
+          const cachedInfo = cached.info as Record<string, unknown>;
           const allRuns = cached.runs as RunData[];
           const allLifts = cached.lifts as LiftData[];
 
-          // Set basic info immediately
-          setSkiAreaDetails({
-            ...basicInfo,
+          // Construct a properly typed SkiAreaDetails from cached data
+          const basicInfo: SkiAreaDetails = {
+            id: cachedInfo.id as string,
+            name: cachedInfo.name as string,
+            country: (cachedInfo.country as string) || null,
+            region: (cachedInfo.region as string) || null,
+            latitude: cachedInfo.latitude as number,
+            longitude: cachedInfo.longitude as number,
+            bounds: (cachedInfo.bounds as SkiAreaDetails['bounds']) || null,
+            geometry: (cachedInfo.geometry as SkiAreaDetails['geometry']) || null,
+            properties: (cachedInfo.properties as SkiAreaDetails['properties']) || null,
+            localities: (cachedInfo.localities as string[]) || [],
             runs: [],
             lifts: [],
-          });
+          };
+
+          // Set basic info immediately
+          setSkiAreaDetails(basicInfo);
 
           if (!selectedArea.name && basicInfo.name) {
             setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
