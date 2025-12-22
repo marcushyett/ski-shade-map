@@ -1010,7 +1010,8 @@ export default function Home() {
     };
 
     const fetchBasicInfo = async () => {
-      const res = await fetch(`/api/ski-areas/${selectedArea.id}/info`, { signal });
+      // Add cache-buster to bypass CDN cache (v2 = added osmId)
+      const res = await fetch(`/api/ski-areas/${selectedArea.id}/info?v=2`, { signal });
       if (!res.ok) throw new Error('Failed to load ski area');
       return res.json();
     };
