@@ -950,9 +950,20 @@ export default function Home() {
 
         if (cached && !signal.aborted) {
           // Cache hit! Use cached data instantly
-          console.log(`[Cache] Using cached data for ${selectedArea.id}`);
-
           const cachedInfo = cached.info as Record<string, unknown>;
+          console.log(`[Cache] Using cached data for ${selectedArea.id}`, {
+            hasOsmId: !!cachedInfo.osmId,
+            osmId: cachedInfo.osmId,
+            name: cachedInfo.name,
+          });
+
+          // If cached data is missing osmId, invalidate and fetch fresh
+          if (!cachedInfo.osmId) {
+            console.log(`[Cache] Missing osmId, fetching fresh data for ${selectedArea.id}`);
+            fetchFromNetwork();
+            return;
+          }
+
           const allRuns = cached.runs as RunData[];
           const allLifts = cached.lifts as LiftData[];
 
@@ -1041,6 +1052,12 @@ export default function Home() {
       try {
         const rawInfo = await fetchBasicInfo();
         if (signal.aborted) return;
+
+        console.log(`[Network] Fetched ski area info for ${rawInfo.id}`, {
+          hasOsmId: !!rawInfo.osmId,
+          osmId: rawInfo.osmId,
+          name: rawInfo.name,
+        });
 
         // Extract runCount/liftCount for progress indicator (not part of SkiAreaDetails type)
         runCount = rawInfo.runCount as number | undefined;
