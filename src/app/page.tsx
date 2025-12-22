@@ -1230,86 +1230,11 @@ export default function Home() {
     }, 3000);
   }, []);
 
-  // Ref for debouncing bounds-based ski area loading
-  const boundsLoadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastLoadedBoundsRef = useRef<string | null>(null);
-
-  // Fetch ski areas by map bounds and auto-select nearest one
-  const loadSkiAreasByBounds = useCallback(async (view: { lat: number; lng: number; zoom: number }) => {
-    // Only load by bounds if no area is selected or at appropriate zoom level
-    // At zoom 10+, we can reasonably expect ski areas to be visible
-    if (view.zoom < 8) return;
-
-    // Calculate bounds from center and zoom
-    // Rough approximation: at zoom 10, about 50km visible
-    const latDelta = 180 / Math.pow(2, view.zoom) * 2;
-    const lngDelta = 360 / Math.pow(2, view.zoom) * 2;
-
-    const minLat = view.lat - latDelta;
-    const maxLat = view.lat + latDelta;
-    const minLng = view.lng - lngDelta;
-    const maxLng = view.lng + lngDelta;
-
-    // Create a bounds key to avoid duplicate fetches
-    const boundsKey = `${minLat.toFixed(2)},${maxLat.toFixed(2)},${minLng.toFixed(2)},${maxLng.toFixed(2)}`;
-    if (boundsKey === lastLoadedBoundsRef.current) return;
-    lastLoadedBoundsRef.current = boundsKey;
-
-    try {
-      const params = new URLSearchParams({
-        minLat: minLat.toString(),
-        maxLat: maxLat.toString(),
-        minLng: minLng.toString(),
-        maxLng: maxLng.toString(),
-        limit: '10',
-      });
-
-      const res = await fetch(`/api/ski-areas?${params}`);
-      if (!res.ok) return;
-
-      const data = await res.json();
-      const areas = data.areas as SkiAreaSummary[];
-
-      if (areas.length === 0) return;
-
-      // If no area is currently selected, auto-select the nearest one
-      if (!selectedArea) {
-        // Find the nearest ski area to the center of the view
-        let nearest = areas[0];
-        let nearestDist = Infinity;
-
-        for (const area of areas) {
-          const dist = Math.pow(area.latitude - view.lat, 2) + Math.pow(area.longitude - view.lng, 2);
-          if (dist < nearestDist) {
-            nearestDist = dist;
-            nearest = area;
-          }
-        }
-
-        trackEvent('ski_area_auto_loaded', {
-          ski_area_id: nearest.id,
-          ski_area_name: nearest.name,
-          source: 'bounds_navigation',
-        });
-
-        setSelectedArea(nearest);
-      }
-    } catch (error) {
-      console.error('Failed to load ski areas by bounds:', error);
-    }
-  }, [selectedArea]);
-
+  // Simple view change handler - no API calls on map move
+  // Ski area is selected via search or current location only
   const handleViewChange = useCallback((view: { lat: number; lng: number; zoom: number }) => {
     setMapView(view);
-
-    // Debounce bounds-based ski area loading (500ms after map stops moving)
-    if (boundsLoadTimeoutRef.current) {
-      clearTimeout(boundsLoadTimeoutRef.current);
-    }
-    boundsLoadTimeoutRef.current = setTimeout(() => {
-      loadSkiAreasByBounds(view);
-    }, 500);
-  }, [loadSkiAreasByBounds]);
+  }, []);
 
   const handleToggleFavourite = useCallback((runId: string) => {
     if (!skiAreaDetails) return;
