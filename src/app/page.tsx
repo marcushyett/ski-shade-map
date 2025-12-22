@@ -867,14 +867,28 @@ export default function Home() {
       let basicInfo: SkiAreaDetails | null = null;
 
       try {
-        basicInfo = await fetchBasicInfo();
+        const rawInfo = await fetchBasicInfo();
         if (signal.aborted) return;
 
-        setSkiAreaDetails({
-          ...basicInfo,
+        // Construct a properly typed SkiAreaDetails from API response
+        basicInfo = {
+          id: rawInfo.id as string,
+          name: rawInfo.name as string,
+          country: (rawInfo.country as string) || null,
+          region: (rawInfo.region as string) || null,
+          latitude: rawInfo.latitude as number,
+          longitude: rawInfo.longitude as number,
+          bounds: (rawInfo.bounds as SkiAreaDetails['bounds']) || null,
+          geometry: (rawInfo.geometry as SkiAreaDetails['geometry']) || null,
+          properties: (rawInfo.properties as SkiAreaDetails['properties']) || null,
+          localities: (rawInfo.localities as string[]) || [],
+          runCount: rawInfo.runCount as number | undefined,
+          liftCount: rawInfo.liftCount as number | undefined,
           runs: [],
           lifts: [],
-        });
+        };
+
+        setSkiAreaDetails(basicInfo);
 
         if (!selectedArea.name && basicInfo.name) {
           setSelectedArea(prev => prev ? { ...prev, name: basicInfo!.name } : prev);
