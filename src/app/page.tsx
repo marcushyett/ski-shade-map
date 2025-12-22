@@ -905,6 +905,10 @@ export default function Home() {
 
   // Handle location selection from unified search
   const handleLocationSelect = useCallback((location: LocationSelection) => {
+    // Clear any previous initialMapView so the map doesn't fly back to old location
+    // when ski area changes trigger the map initialization effect
+    setInitialMapView(null);
+
     // INSTANT: Fly to the location IMMEDIATELY before any API calls
     // This gives instant visual feedback while data loads in the background
     if (location.latitude && location.longitude) {
