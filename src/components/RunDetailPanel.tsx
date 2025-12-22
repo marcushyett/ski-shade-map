@@ -517,10 +517,22 @@ export const RunDetailPanel = memo(function RunDetailPanel({
             <div style={{ fontSize: 14, color: '#fff', fontWeight: 600, lineHeight: 1.2 }}>
               {run.name || 'Unnamed Run'}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span style={{ fontSize: 11, color: difficultyColor }}>
                 {run.difficulty || 'Unknown'}
               </span>
+              {run.status && run.status !== 'unknown' && (
+                <span style={{
+                  fontSize: 9,
+                  color: run.status === 'open' ? '#22c55e' : run.status === 'closed' ? '#ef4444' : '#eab308',
+                  background: run.status === 'open' ? 'rgba(34, 197, 94, 0.15)' : run.status === 'closed' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                  padding: '1px 5px',
+                  borderRadius: 3,
+                  fontWeight: 600
+                }}>
+                  {run.status === 'open' ? 'Open' : run.status === 'closed' ? 'Closed' : 'Scheduled'}
+                </span>
+              )}
               {run.locality && (
                 <span style={{
                   fontSize: 9,

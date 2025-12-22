@@ -2308,14 +2308,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       
       // Only show popup if not in navigation click mode
       if (!navMapClickModeRef.current) {
+        // Determine status styling
+        const status = props.status as string | undefined;
+        const statusColor = status === 'open' ? '#22c55e' : status === 'closed' ? '#ef4444' : status === 'scheduled' ? '#eab308' : '#888';
+        const statusBg = status === 'open' ? 'rgba(34, 197, 94, 0.15)' : status === 'closed' ? 'rgba(239, 68, 68, 0.15)' : status === 'scheduled' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(136, 136, 136, 0.15)';
+        const statusLabel = status === 'open' ? 'Open' : status === 'closed' ? 'Closed' : status === 'scheduled' ? 'Scheduled' : null;
+
         new maplibregl.Popup()
           .setLngLat(e.lngLat)
           .setHTML(`
-            <div style="padding: 6px;">
-              <strong>${props.name || 'Unnamed Lift'}</strong>
-              <br/>
-              <small>Type: ${props.liftType || 'Unknown'}</small>
-              ${props.status ? `<br/><small>Status: ${props.status}</small>` : ''}
+            <div style="padding: 8px; min-width: 140px;">
+              <div style="font-weight: 600; font-size: 14px; color: #fff; margin-bottom: 4px;">${props.name || 'Unnamed Lift'}</div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <span style="font-size: 11px; color: #888;">Type: ${props.liftType || 'Unknown'}</span>
+                ${statusLabel ? `<span style="font-size: 9px; color: ${statusColor}; background: ${statusBg}; padding: 1px 5px; border-radius: 3px; font-weight: 600;">${statusLabel}</span>` : ''}
+              </div>
             </div>
           `)
           .addTo(map.current);
