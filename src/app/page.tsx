@@ -865,10 +865,14 @@ export default function Home() {
     const fetchFromNetwork = async () => {
       // Phase 1: Fetch basic info immediately - allows map to show instantly
       let basicInfo: SkiAreaDetails | null = null;
+      let runCount: number | undefined;
 
       try {
         const rawInfo = await fetchBasicInfo();
         if (signal.aborted) return;
+
+        // Extract runCount/liftCount for progress indicator (not part of SkiAreaDetails type)
+        runCount = rawInfo.runCount as number | undefined;
 
         // Construct a properly typed SkiAreaDetails from API response
         basicInfo = {
@@ -882,8 +886,6 @@ export default function Home() {
           geometry: (rawInfo.geometry as SkiAreaDetails['geometry']) || null,
           properties: (rawInfo.properties as SkiAreaDetails['properties']) || null,
           localities: (rawInfo.localities as string[]) || [],
-          runCount: rawInfo.runCount as number | undefined,
-          liftCount: rawInfo.liftCount as number | undefined,
           runs: [],
           lifts: [],
         };
@@ -896,8 +898,8 @@ export default function Home() {
 
         setLoading(false);
 
-        if (basicInfo.runCount) {
-          setRunsLoadProgress({ loaded: 0, total: basicInfo.runCount });
+        if (runCount) {
+          setRunsLoadProgress({ loaded: 0, total: runCount });
         }
       } catch (err) {
         if (signal.aborted) return;
