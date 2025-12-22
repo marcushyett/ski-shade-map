@@ -171,11 +171,23 @@ export async function fetchResortStatus(openskimapId: string): Promise<ResortSta
   // Check client-side cache first
   const cached = await getCachedStatus(openskimapId);
   if (cached) {
+    // Check if cached data has correct format (openskimapIds not openskimap_ids)
+    const sampleLift = cached.lifts?.[0];
+    const hasCorrectFormat = sampleLift && 'openskimapIds' in sampleLift;
+
     console.log('[LiftStatus Client] Using cached status for:', openskimapId, {
       lifts: cached.lifts?.length,
       runs: cached.runs?.length,
+      sampleLiftKeys: sampleLift ? Object.keys(sampleLift) : [],
+      hasOpenskimapIds: hasCorrectFormat,
     });
-    return cached;
+
+    // If cached data has wrong format, skip cache
+    if (!hasCorrectFormat && sampleLift) {
+      console.log('[LiftStatus Client] Cache has wrong format, fetching fresh');
+    } else {
+      return cached;
+    }
   }
 
   try {
