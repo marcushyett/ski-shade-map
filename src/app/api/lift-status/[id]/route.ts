@@ -68,12 +68,9 @@ export async function GET(
 
     // Debug: log raw data structure
     const rawSampleLift = rawData.lifts?.[0];
-    console.log(`[LiftStatus] Raw data sample lift:`, {
-      name: rawSampleLift?.name,
-      keys: rawSampleLift ? Object.keys(rawSampleLift) : [],
-      openskimap_ids: rawSampleLift?.openskimap_ids,
-      openskimapIds: rawSampleLift?.openskimapIds,
-    });
+    console.log(`[LiftStatus] Raw lift count: ${rawData.lifts?.length}`);
+    console.log(`[LiftStatus] Raw sample lift JSON: ${JSON.stringify(rawSampleLift)?.slice(0, 500)}`);
+    console.log(`[LiftStatus] Raw sample lift openskimap_ids: ${JSON.stringify(rawSampleLift?.openskimap_ids)}`);
 
     // Transform to our types
     const data = {
