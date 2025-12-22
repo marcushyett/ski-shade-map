@@ -2101,26 +2101,27 @@ export default function Home() {
   // Calculate analysis and stats for the selected run overlay
   const selectedRunData = useMemo(() => {
     if (!selectedRunDetail?.runId || !skiAreaDetails) return null;
-    
-    const run = skiAreaDetails.runs.find(r => r.id === selectedRunDetail.runId);
+
+    // Use enrichedRuns to get status information
+    const run = enrichedRuns.find(r => r.id === selectedRunDetail.runId);
     if (!run) return null;
-    
+
     const analyses = analyzeRuns([run], selectedTime, skiAreaDetails.latitude, skiAreaDetails.longitude, weather?.hourly);
     const analysis = analyses[0] || null;
     const stats = calculateRunStats(run);
     const isFavourite = favourites.some(f => f.id === run.id);
-    
+
     // Calculate temperature data based on selected time
     let temperatureData: { temperature: number; stationAltitude: number } | undefined;
     if (weather?.hourly && weather.elevation) {
       const targetHour = selectedTime.getHours();
       const targetDate = selectedTime.toDateString();
-      
+
       const hourlyMatch = weather.hourly.find(h => {
         const d = new Date(h.time);
         return d.toDateString() === targetDate && d.getHours() === targetHour;
       });
-      
+
       if (hourlyMatch) {
         temperatureData = {
           temperature: hourlyMatch.temperature,
@@ -2128,9 +2129,9 @@ export default function Home() {
         };
       }
     }
-    
+
     return { run, analysis, stats, isFavourite, temperatureData };
-  }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, weather?.elevation, favourites]);
+  }, [selectedRunDetail?.runId, skiAreaDetails, enrichedRuns, selectedTime, weather?.hourly, weather?.elevation, favourites]);
 
   // Don't render anything until initial state is loaded to prevent flicker
   if (!initialLoadDone) {
