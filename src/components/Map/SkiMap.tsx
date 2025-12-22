@@ -216,17 +216,27 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     }
   }, [mapRef, mapLoaded]);
 
+  // Store initial view in a ref so we can use it during map initialization
+  const initialViewRef = useRef(initialView);
+  initialViewRef.current = initialView;
+
   // Initialize map
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
     const style = `https://api.maptiler.com/maps/backdrop/style.json?key=${MAPTILER_KEY}`;
 
+    // Use initialView if available, otherwise default to Alps
+    const startCenter = initialViewRef.current
+      ? [initialViewRef.current.lng, initialViewRef.current.lat] as [number, number]
+      : [6.8, 45.9] as [number, number];
+    const startZoom = initialViewRef.current?.zoom ?? 10;
+
     map.current = new maplibregl.Map({
       container: mapContainer.current,
       style,
-      center: [6.8, 45.9],
-      zoom: 10,
+      center: startCenter,
+      zoom: startZoom,
       pitch: is3D ? 60 : 0,
       bearing: 0,
       maxPitch: 85,
@@ -445,6 +455,32 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       initializeLayers(skiArea, selectedTime);
     }
   }, [skiArea, mapLoaded, initialView]);
+
+  // Track previous initialView to detect when it changes (for current location feature)
+  const prevInitialViewRef = useRef<MapViewState | null>(null);
+
+  // Handle initialView changes after map is loaded (e.g., when using "Use Current Location")
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !initialView) return;
+
+    // Only fly to initialView if it actually changed (not just on every render)
+    const prev = prevInitialViewRef.current;
+    if (prev && prev.lat === initialView.lat && prev.lng === initialView.lng && prev.zoom === initialView.zoom) {
+      return; // No change
+    }
+
+    // Update the ref
+    prevInitialViewRef.current = initialView;
+
+    // If this is a new initialView (user used current location), fly there
+    if (prev !== null) {
+      map.current.flyTo({
+        center: [initialView.lng, initialView.lat],
+        zoom: initialView.zoom,
+        duration: 1000,
+      });
+    }
+  }, [initialView, mapLoaded]);
 
   // Debounced update when time changes
   useEffect(() => {

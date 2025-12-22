@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef, useDeferredValue, useTransition } from 'react';
 import { Typography, Alert, Button, Drawer } from 'antd';
-import { 
-  MenuOutlined, 
+import {
+  MenuOutlined,
   InfoCircleOutlined,
   CloudOutlined,
   SettingOutlined,
   DeleteOutlined,
   DownOutlined,
   RightOutlined,
+  EnvironmentOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
@@ -51,6 +52,7 @@ import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 import { analyzeResortSnowQuality, type ResortSnowSummary, type PisteSnowAnalysis, type SnowQualityAtPoint, getConditionInfo, calculateSnowQualityByAltitude } from '@/lib/snow-quality';
 import { getSunPosition } from '@/lib/suncalc';
 import { trackEvent } from '@/lib/posthog';
+import { getCachedSkiArea, cacheSkiArea, clearExpiredCache } from '@/lib/ski-area-cache';
 import SnowConditionsPanel from '@/components/Controls/SnowConditionsPanel';
 import DonateButton from '@/components/DonateButton';
 import Onboarding from '@/components/Onboarding';
@@ -146,6 +148,8 @@ const ControlsContent = memo(function ControlsContent({
   fakeLocation,
   isFakeLocationDropMode,
   onLocationSelect,
+  onUseCurrentLocation,
+  isGettingCurrentLocation,
   currentLocality,
   onSelectRun,
   onSelectLift,
@@ -168,6 +172,8 @@ const ControlsContent = memo(function ControlsContent({
   fakeLocation: { lat: number; lng: number } | null;
   isFakeLocationDropMode: boolean;
   onLocationSelect: (location: LocationSelection) => void;
+  onUseCurrentLocation: () => void;
+  isGettingCurrentLocation: boolean;
   currentLocality: string | null;
   onSelectRun: (run: RunData) => void;
   onSelectLift: (lift: LiftData) => void;
@@ -199,6 +205,8 @@ const ControlsContent = memo(function ControlsContent({
         </Text>
         <LocationSearch
           onSelect={onLocationSelect}
+          onUseCurrentLocation={onUseCurrentLocation}
+          isGettingLocation={isGettingCurrentLocation}
           currentLocation={{
             country: selectedArea?.country || undefined,
             region: selectedArea?.name || undefined,
@@ -404,6 +412,7 @@ export default function Home() {
   const [sharedLocations, setSharedLocations] = useState<SharedLocation[]>([]);
   const [isEditingHome, setIsEditingHome] = useState(false);
   const [pendingHomeLocation, setPendingHomeLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isGettingCurrentLocation, setIsGettingCurrentLocation] = useState(false);
   const mapRef = useRef<MapRef | null>(null);
   const previousSkiAreaIdRef = useRef<string | null>(null);
   
@@ -425,7 +434,14 @@ export default function Home() {
   // Location/locality tracking
   const [currentLocality, setCurrentLocality] = useState<string | null>(null);
   const [zoomToLocality, setZoomToLocality] = useState<{ locality: string; lat: number; lng: number } | null>(null);
-  
+
+  // Allow showing map without a selected ski area (e.g., when using current location with no nearby resorts)
+  const [showMapWithoutArea, setShowMapWithoutArea] = useState(false);
+
+  // Interstitial warning when no ski areas within 50km of current location
+  const [showNoNearbyResortsWarning, setShowNoNearbyResortsWarning] = useState(false);
+  const [pendingLocationForWarning, setPendingLocationForWarning] = useState<{ lat: number; lng: number } | null>(null);
+
   // Points of Interest (toilets, restaurants, viewpoints)
   const [pois, setPois] = useState<POIData[]>([]);
   
@@ -456,9 +472,11 @@ export default function Home() {
     removeFavourite 
   } = useFavourites(skiAreaDetails?.id || null, skiAreaDetails?.name || null);
 
-  // Register service worker
+  // Register service worker and clear expired cache
   useEffect(() => {
     registerServiceWorker();
+    // Clean up expired cache entries on app start
+    clearExpiredCache().catch(console.error);
   }, []);
 
   // Load initial state from URL or localStorage
@@ -674,6 +692,7 @@ export default function Home() {
     }
 
     // Progressive loading strategy:
+    // 0. Check IndexedDB cache for 24hr cached data (instant if cached)
     // 1. Map has already navigated to the location (instant via handleLocationSelect)
     // 2. Fetch basic ski area info in background (for bounds, geometry, etc.)
     // 3. Fetch runs and lifts progressively - they appear on the map as they load
@@ -703,6 +722,111 @@ export default function Home() {
     const abortController = new AbortController();
     const signal = abortController.signal;
 
+    // Helper to progressively add runs/lifts in batches
+    const progressivelyAddData = (
+      allRuns: RunData[],
+      allLifts: LiftData[],
+      basicInfo: SkiAreaDetails
+    ) => {
+      const totalRuns = allRuns.length;
+      const totalLifts = allLifts.length;
+
+      // Sort runs and lifts by distance from center (closest first)
+      const centerLat = selectedArea.latitude;
+      const centerLng = selectedArea.longitude;
+      const sortedRuns = sortRunsByDistanceFromCenter(allRuns, centerLat, centerLng);
+      const sortedLifts = sortLiftsByDistanceFromCenter(allLifts, centerLat, centerLng);
+
+      // Progressive rendering: add runs/lifts in batches
+      const BATCH_SIZE = 30;
+      const BATCH_DELAY = 16;
+      let runIndex = 0;
+      let liftIndex = 0;
+
+      const addNextBatch = () => {
+        if (signal.aborted) return;
+
+        const runsToAdd = sortedRuns.slice(runIndex, runIndex + BATCH_SIZE);
+        const liftsToAdd = sortedLifts.slice(liftIndex, liftIndex + Math.ceil(BATCH_SIZE / 3));
+
+        runIndex += BATCH_SIZE;
+        liftIndex += Math.ceil(BATCH_SIZE / 3);
+
+        setSkiAreaDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            runs: [...prev.runs, ...runsToAdd],
+            lifts: [...prev.lifts, ...liftsToAdd],
+          };
+        });
+
+        setRunsLoadProgress({ loaded: Math.min(runIndex, totalRuns), total: totalRuns });
+
+        if (runIndex < totalRuns || liftIndex < totalLifts) {
+          setTimeout(addNextBatch, BATCH_DELAY);
+        } else {
+          setRunsLoading(false);
+        }
+      };
+
+      addNextBatch();
+    };
+
+    // Try to load from cache first (24hr TTL)
+    const loadData = async () => {
+      try {
+        const cached = await getCachedSkiArea(selectedArea.id);
+
+        if (cached && !signal.aborted) {
+          // Cache hit! Use cached data instantly
+          console.log(`[Cache] Using cached data for ${selectedArea.id}`);
+
+          const cachedInfo = cached.info as Record<string, unknown>;
+          const allRuns = cached.runs as RunData[];
+          const allLifts = cached.lifts as LiftData[];
+
+          // Construct a properly typed SkiAreaDetails from cached data
+          const basicInfo: SkiAreaDetails = {
+            id: cachedInfo.id as string,
+            name: cachedInfo.name as string,
+            country: (cachedInfo.country as string) || null,
+            region: (cachedInfo.region as string) || null,
+            latitude: cachedInfo.latitude as number,
+            longitude: cachedInfo.longitude as number,
+            bounds: (cachedInfo.bounds as SkiAreaDetails['bounds']) || null,
+            geometry: (cachedInfo.geometry as SkiAreaDetails['geometry']) || null,
+            properties: (cachedInfo.properties as SkiAreaDetails['properties']) || null,
+            localities: (cachedInfo.localities as string[]) || [],
+            runs: [],
+            lifts: [],
+          };
+
+          // Set basic info immediately
+          setSkiAreaDetails(basicInfo);
+
+          if (!selectedArea.name && basicInfo.name) {
+            setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
+          }
+
+          setLoading(false);
+          setRunsLoadProgress({ loaded: 0, total: allRuns.length });
+
+          // Progressively add runs/lifts
+          progressivelyAddData(allRuns, allLifts, basicInfo);
+
+          // Still fetch weather fresh (it changes frequently)
+          fetchWeatherData();
+          return;
+        }
+      } catch (err) {
+        console.error('[Cache] Failed to check cache:', err);
+      }
+
+      // Cache miss or error - fetch from network
+      fetchFromNetwork();
+    };
+
     const fetchBasicInfo = async () => {
       const res = await fetch(`/api/ski-areas/${selectedArea.id}/info`, { signal });
       if (!res.ok) throw new Error('Failed to load ski area');
@@ -722,129 +846,107 @@ export default function Home() {
     };
 
     const fetchWeatherData = async () => {
-      const res = await fetch(`/api/weather?lat=${selectedArea.latitude}&lng=${selectedArea.longitude}`, { signal });
-      if (!res.ok) throw new Error('Failed to fetch weather');
-      return res.json();
+      try {
+        const res = await fetch(`/api/weather?lat=${selectedArea.latitude}&lng=${selectedArea.longitude}`, { signal });
+        if (!res.ok) throw new Error('Failed to fetch weather');
+        const weatherData = await res.json();
+        if (!signal.aborted && weatherData) {
+          setWeather(weatherData);
+        }
+      } catch {
+        // Weather errors are non-critical
+      } finally {
+        if (!signal.aborted) {
+          setWeatherLoading(false);
+        }
+      }
     };
 
-    // Phase 1: Fetch basic info immediately - allows map to show instantly
-    fetchBasicInfo()
-      .then((basicInfo) => {
+    const fetchFromNetwork = async () => {
+      // Phase 1: Fetch basic info immediately - allows map to show instantly
+      let basicInfo: SkiAreaDetails | null = null;
+      let runCount: number | undefined;
+
+      try {
+        const rawInfo = await fetchBasicInfo();
         if (signal.aborted) return;
 
-        // Set ski area with empty runs/lifts - map will show immediately!
-        setSkiAreaDetails({
-          ...basicInfo,
+        // Extract runCount/liftCount for progress indicator (not part of SkiAreaDetails type)
+        runCount = rawInfo.runCount as number | undefined;
+
+        // Construct a properly typed SkiAreaDetails from API response
+        basicInfo = {
+          id: rawInfo.id as string,
+          name: rawInfo.name as string,
+          country: (rawInfo.country as string) || null,
+          region: (rawInfo.region as string) || null,
+          latitude: rawInfo.latitude as number,
+          longitude: rawInfo.longitude as number,
+          bounds: (rawInfo.bounds as SkiAreaDetails['bounds']) || null,
+          geometry: (rawInfo.geometry as SkiAreaDetails['geometry']) || null,
+          properties: (rawInfo.properties as SkiAreaDetails['properties']) || null,
+          localities: (rawInfo.localities as string[]) || [],
           runs: [],
           lifts: [],
-        });
+        };
 
-        // Update selectedArea name if it was empty (from URL state)
+        setSkiAreaDetails(basicInfo);
+
         if (!selectedArea.name && basicInfo.name) {
-          setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
+          setSelectedArea(prev => prev ? { ...prev, name: basicInfo!.name } : prev);
         }
 
-        // Loading complete - map is showing
         setLoading(false);
 
-        // Show run count for progress indicator
-        if (basicInfo.runCount) {
-          setRunsLoadProgress({ loaded: 0, total: basicInfo.runCount });
+        if (runCount) {
+          setRunsLoadProgress({ loaded: 0, total: runCount });
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         if (signal.aborted) return;
         setError(err instanceof Error ? err.message : 'Failed to load ski area');
         setLoading(false);
         setRunsLoading(false);
-      });
+        return;
+      }
 
-    // Phase 2: Fetch runs and lifts in parallel, then add progressively from center outward
-    Promise.all([
-      fetchRuns().catch((err) => {
-        if (!signal.aborted) console.error('Failed to load runs:', err);
-        return { runs: [] };
-      }),
-      fetchLifts().catch((err) => {
-        if (!signal.aborted) console.error('Failed to load lifts:', err);
-        return { lifts: [] };
-      }),
-    ])
-      .then(([runsData, liftsData]) => {
+      // Phase 2: Fetch runs and lifts in parallel
+      try {
+        const [runsData, liftsData] = await Promise.all([
+          fetchRuns().catch((err) => {
+            if (!signal.aborted) console.error('Failed to load runs:', err);
+            return { runs: [] };
+          }),
+          fetchLifts().catch((err) => {
+            if (!signal.aborted) console.error('Failed to load lifts:', err);
+            return { lifts: [] };
+          }),
+        ]);
+
         if (signal.aborted) return;
 
         const allRuns = runsData.runs || [];
         const allLifts = liftsData.lifts || [];
-        const totalRuns = allRuns.length;
-        const totalLifts = allLifts.length;
 
-        // Sort runs and lifts by distance from center (closest first)
-        const centerLat = selectedArea.latitude;
-        const centerLng = selectedArea.longitude;
-        const sortedRuns = sortRunsByDistanceFromCenter(allRuns, centerLat, centerLng);
-        const sortedLifts = sortLiftsByDistanceFromCenter(allLifts, centerLat, centerLng);
+        // Cache the data for next time (24hr TTL)
+        if (basicInfo && allRuns.length > 0) {
+          cacheSkiArea(selectedArea.id, allRuns, allLifts, basicInfo).catch(console.error);
+          console.log(`[Cache] Cached data for ${selectedArea.id}`);
+        }
 
-        // Progressive rendering: add runs/lifts in batches
-        const BATCH_SIZE = 30; // runs per batch
-        const BATCH_DELAY = 16; // ms between batches (~60fps)
-        let runIndex = 0;
-        let liftIndex = 0;
-
-        const addNextBatch = () => {
-          if (signal.aborted) return;
-
-          // Add next batch of runs
-          const runsToAdd = sortedRuns.slice(runIndex, runIndex + BATCH_SIZE);
-          const liftsToAdd = sortedLifts.slice(liftIndex, liftIndex + Math.ceil(BATCH_SIZE / 3));
-
-          runIndex += BATCH_SIZE;
-          liftIndex += Math.ceil(BATCH_SIZE / 3);
-
-          setSkiAreaDetails(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              runs: [...prev.runs, ...runsToAdd],
-              lifts: [...prev.lifts, ...liftsToAdd],
-            };
-          });
-
-          setRunsLoadProgress({ loaded: Math.min(runIndex, totalRuns), total: totalRuns });
-
-          // Continue if more to add
-          if (runIndex < totalRuns || liftIndex < totalLifts) {
-            setTimeout(addNextBatch, BATCH_DELAY);
-          } else {
-            // All done
-            setRunsLoading(false);
-          }
-        };
-
-        // Start progressive loading immediately
-        addNextBatch();
-      })
-      .catch(() => {
+        // Progressively add to UI
+        progressivelyAddData(allRuns, allLifts, basicInfo);
+      } catch {
         if (!signal.aborted) {
           setRunsLoading(false);
         }
-      });
+      }
 
-    // Phase 3: Weather loads independently
-    fetchWeatherData()
-      .then((weatherData) => {
-        if (signal.aborted) return;
-        if (weatherData) {
-          setWeather(weatherData);
-        }
-      })
-      .catch(() => {
-        // Weather errors are non-critical
-      })
-      .finally(() => {
-        if (!signal.aborted) {
-          setWeatherLoading(false);
-        }
-      });
+      // Phase 3: Weather loads independently
+      fetchWeatherData();
+    };
+
+    // Start loading data (cache first, then network)
+    loadData();
 
     return () => {
       abortController.abort();
@@ -891,6 +993,10 @@ export default function Home() {
 
   // Handle location selection from unified search
   const handleLocationSelect = useCallback((location: LocationSelection) => {
+    // Clear any previous initialMapView so the map doesn't fly back to old location
+    // when ski area changes trigger the map initialization effect
+    setInitialMapView(null);
+
     // INSTANT: Fly to the location IMMEDIATELY before any API calls
     // This gives instant visual feedback while data loads in the background
     if (location.latitude && location.longitude) {
@@ -1056,9 +1162,86 @@ export default function Home() {
     }, 3000);
   }, []);
 
+  // Ref for debouncing bounds-based ski area loading
+  const boundsLoadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastLoadedBoundsRef = useRef<string | null>(null);
+
+  // Fetch ski areas by map bounds and auto-select nearest one
+  const loadSkiAreasByBounds = useCallback(async (view: { lat: number; lng: number; zoom: number }) => {
+    // Only load by bounds if no area is selected or at appropriate zoom level
+    // At zoom 10+, we can reasonably expect ski areas to be visible
+    if (view.zoom < 8) return;
+
+    // Calculate bounds from center and zoom
+    // Rough approximation: at zoom 10, about 50km visible
+    const latDelta = 180 / Math.pow(2, view.zoom) * 2;
+    const lngDelta = 360 / Math.pow(2, view.zoom) * 2;
+
+    const minLat = view.lat - latDelta;
+    const maxLat = view.lat + latDelta;
+    const minLng = view.lng - lngDelta;
+    const maxLng = view.lng + lngDelta;
+
+    // Create a bounds key to avoid duplicate fetches
+    const boundsKey = `${minLat.toFixed(2)},${maxLat.toFixed(2)},${minLng.toFixed(2)},${maxLng.toFixed(2)}`;
+    if (boundsKey === lastLoadedBoundsRef.current) return;
+    lastLoadedBoundsRef.current = boundsKey;
+
+    try {
+      const params = new URLSearchParams({
+        minLat: minLat.toString(),
+        maxLat: maxLat.toString(),
+        minLng: minLng.toString(),
+        maxLng: maxLng.toString(),
+        limit: '10',
+      });
+
+      const res = await fetch(`/api/ski-areas?${params}`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const areas = data.areas as SkiAreaSummary[];
+
+      if (areas.length === 0) return;
+
+      // If no area is currently selected, auto-select the nearest one
+      if (!selectedArea) {
+        // Find the nearest ski area to the center of the view
+        let nearest = areas[0];
+        let nearestDist = Infinity;
+
+        for (const area of areas) {
+          const dist = Math.pow(area.latitude - view.lat, 2) + Math.pow(area.longitude - view.lng, 2);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearest = area;
+          }
+        }
+
+        trackEvent('ski_area_auto_loaded', {
+          ski_area_id: nearest.id,
+          ski_area_name: nearest.name,
+          source: 'bounds_navigation',
+        });
+
+        setSelectedArea(nearest);
+      }
+    } catch (error) {
+      console.error('Failed to load ski areas by bounds:', error);
+    }
+  }, [selectedArea]);
+
   const handleViewChange = useCallback((view: { lat: number; lng: number; zoom: number }) => {
     setMapView(view);
-  }, []);
+
+    // Debounce bounds-based ski area loading (500ms after map stops moving)
+    if (boundsLoadTimeoutRef.current) {
+      clearTimeout(boundsLoadTimeoutRef.current);
+    }
+    boundsLoadTimeoutRef.current = setTimeout(() => {
+      loadSkiAreasByBounds(view);
+    }, 500);
+  }, [loadSkiAreasByBounds]);
 
   const handleToggleFavourite = useCallback((runId: string) => {
     if (!skiAreaDetails) return;
@@ -1110,6 +1293,179 @@ export default function Home() {
 
   const handleUserLocationChange = useCallback((location: UserLocation | null) => {
     setUserLocation(location);
+  }, []);
+
+  // Helper to calculate distance in km between two points using Haversine formula
+  const calculateDistanceKm = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }, []);
+
+  // Handler for "Use Current Location" in location search
+  const handleUseCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setIsGettingCurrentLocation(true);
+    trackEvent('current_location_requested', { source: 'location_search' });
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+
+        trackEvent('current_location_granted', {
+          latitude,
+          longitude,
+          accuracy,
+          source: 'location_search',
+        });
+
+        // Update user location state
+        const location: UserLocation = {
+          latitude,
+          longitude,
+          accuracy,
+          timestamp: position.timestamp,
+        };
+        setUserLocation(location);
+        setIsTrackingLocation(true);
+
+        // Set initial map view so the map starts at the user's location
+        const targetZoom = 11;
+        setInitialMapView({ lat: latitude, lng: longitude, zoom: targetZoom });
+
+        // Search for ski areas within ~50km (0.45 degrees is roughly 50km)
+        const searchRadiusDeg = 0.5; // Slightly larger to catch edge cases
+        const minLat = latitude - searchRadiusDeg;
+        const maxLat = latitude + searchRadiusDeg;
+        const minLng = longitude - searchRadiusDeg / Math.cos(latitude * Math.PI / 180);
+        const maxLng = longitude + searchRadiusDeg / Math.cos(latitude * Math.PI / 180);
+
+        try {
+          const params = new URLSearchParams({
+            minLat: minLat.toString(),
+            maxLat: maxLat.toString(),
+            minLng: minLng.toString(),
+            maxLng: maxLng.toString(),
+            limit: '20',
+          });
+
+          const res = await fetch(`/api/ski-areas?${params}`);
+          if (res.ok) {
+            const data = await res.json();
+            const areas = data.areas as SkiAreaSummary[];
+
+            // Find the nearest ski area and calculate actual distance
+            let nearest: SkiAreaSummary | null = null;
+            let nearestDistKm = Infinity;
+            for (const area of areas) {
+              const distKm = calculateDistanceKm(latitude, longitude, area.latitude, area.longitude);
+              if (distKm < nearestDistKm) {
+                nearestDistKm = distKm;
+                nearest = area;
+              }
+            }
+
+            // Check if nearest ski area is within 50km
+            if (nearest && nearestDistKm <= 50) {
+              trackEvent('ski_area_auto_loaded', {
+                ski_area_id: nearest.id,
+                ski_area_name: nearest.name,
+                source: 'current_location',
+                distance_km: nearestDistKm,
+              });
+
+              // Set initial map view to the SKI AREA location (not user's location)
+              // This ensures the map opens centered on the resort
+              setInitialMapView({ lat: nearest.latitude, lng: nearest.longitude, zoom: 13 });
+
+              // This will dismiss onboarding and render the map at the ski area location
+              setSelectedArea(nearest);
+              setShowMapWithoutArea(true);
+              setIsGettingCurrentLocation(false);
+              setMobileMenuOpen(false);
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to load ski areas near current location:', error);
+        }
+
+        // No ski areas within 50km - show warning interstitial
+        trackEvent('no_nearby_resorts_warning', {
+          latitude,
+          longitude,
+        });
+        setPendingLocationForWarning({ lat: latitude, lng: longitude });
+        setShowNoNearbyResortsWarning(true);
+        setIsGettingCurrentLocation(false);
+      },
+      (error) => {
+        setIsGettingCurrentLocation(false);
+        trackEvent('current_location_denied', {
+          error_code: error.code,
+          error_message: error.message,
+          source: 'location_search',
+        });
+
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setError('Location permission denied');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setError('Location information unavailable');
+            break;
+          case error.TIMEOUT:
+            setError('Location request timed out');
+            break;
+          default:
+            setError('Unable to get your location');
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
+      }
+    );
+  }, [calculateDistanceKm]);
+
+  // Handler for confirming to navigate to map outside ski areas
+  const handleConfirmNoNearbyResorts = useCallback(() => {
+    if (!pendingLocationForWarning) return;
+
+    trackEvent('no_nearby_resorts_confirmed', {
+      latitude: pendingLocationForWarning.lat,
+      longitude: pendingLocationForWarning.lng,
+    });
+
+    const targetZoom = 11;
+    setInitialMapView({ lat: pendingLocationForWarning.lat, lng: pendingLocationForWarning.lng, zoom: targetZoom });
+
+    // If map exists, fly to the location
+    if (mapRef.current) {
+      mapRef.current.flyTo(pendingLocationForWarning.lat, pendingLocationForWarning.lng, targetZoom);
+    }
+
+    // Show the map without a ski area selected
+    setShowMapWithoutArea(true);
+    setShowNoNearbyResortsWarning(false);
+    setPendingLocationForWarning(null);
+    setMobileMenuOpen(false);
+  }, [pendingLocationForWarning]);
+
+  // Handler to cancel the no nearby resorts warning
+  const handleCancelNoNearbyResorts = useCallback(() => {
+    setShowNoNearbyResortsWarning(false);
+    setPendingLocationForWarning(null);
   }, []);
 
   // Handler to remove a shared location
@@ -1653,9 +2009,73 @@ export default function Home() {
     return { run, analysis, stats, isFavourite, temperatureData };
   }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, weather?.elevation, favourites]);
 
+  // Don't render anything until initial state is loaded to prevent flicker
+  if (!initialLoadDone) {
+    return null;
+  }
+
+  // Show interstitial warning when no ski areas within 50km
+  if (showNoNearbyResortsWarning) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--background)' }}>
+        <div className="max-w-md w-full text-center">
+          <div style={{ marginBottom: 24 }}>
+            <Logo size="lg" />
+          </div>
+
+          <div
+            className="rounded-lg p-6"
+            style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border)'
+            }}
+          >
+            <EnvironmentOutlined style={{ fontSize: 48, marginBottom: 16, color: '#666' }} />
+            <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12, color: 'var(--foreground)' }}>
+              No ski areas nearby
+            </h2>
+            <p style={{ fontSize: 14, color: '#888', marginBottom: 24, lineHeight: 1.5 }}>
+              There are no ski areas within 50km of your current location. You can still explore the map, but you won&apos;t see any ski runs or lifts until you navigate to a ski area.
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <Button
+                type="primary"
+                size="large"
+                onClick={handleConfirmNoNearbyResorts}
+                style={{ width: '100%' }}
+              >
+                Continue to map
+              </Button>
+              <Button
+                type="default"
+                size="large"
+                onClick={handleCancelNoNearbyResorts}
+                style={{ width: '100%' }}
+              >
+                Go back
+              </Button>
+            </div>
+          </div>
+
+          <p style={{ fontSize: 11, color: '#555', marginTop: 16 }}>
+            You can search for ski areas using the search bar once on the map.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Show onboarding for first-time users (no resort selected)
-  if (initialLoadDone && !selectedArea) {
-    return <Onboarding onSelectLocation={handleLocationSelect} />;
+  // Skip onboarding if user used current location (showMapWithoutArea is true)
+  if (initialLoadDone && !selectedArea && !showMapWithoutArea) {
+    return (
+      <Onboarding
+        onSelectLocation={handleLocationSelect}
+        onUseCurrentLocation={handleUseCurrentLocation}
+        isGettingLocation={isGettingCurrentLocation}
+      />
+    );
   }
 
   return (
@@ -1743,7 +2163,7 @@ export default function Home() {
           body: { padding: 12, display: 'flex', flexDirection: 'column' } 
         }}
       >
-        <ControlsContent 
+        <ControlsContent
           selectedArea={selectedArea}
           skiAreaDetails={skiAreaDetails}
           error={error}
@@ -1756,6 +2176,8 @@ export default function Home() {
           fakeLocation={fakeLocation}
           isFakeLocationDropMode={isFakeLocationDropMode}
           onLocationSelect={handleLocationSelect}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          isGettingCurrentLocation={isGettingCurrentLocation}
           currentLocality={currentLocality}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}
@@ -1783,6 +2205,8 @@ export default function Home() {
           fakeLocation={fakeLocation}
           isFakeLocationDropMode={isFakeLocationDropMode}
           onLocationSelect={handleLocationSelect}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          isGettingCurrentLocation={isGettingCurrentLocation}
           currentLocality={currentLocality}
           onSelectRun={handleSelectRun}
           onSelectLift={handleSelectLift}

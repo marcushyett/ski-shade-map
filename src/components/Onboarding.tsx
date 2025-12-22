@@ -4,15 +4,18 @@ import { SunOutlined, CompassOutlined, EnvironmentOutlined } from '@ant-design/i
 import { Typography } from 'antd';
 import LocationSearch, { type LocationSelection } from './LocationSearch';
 import Logo from './Logo';
+import LoadingSpinner from './LoadingSpinner';
 import { trackEvent } from '@/lib/posthog';
 
 const { Text } = Typography;
 
 interface OnboardingProps {
   onSelectLocation: (location: LocationSelection) => void;
+  onUseCurrentLocation?: () => void;
+  isGettingLocation?: boolean;
 }
 
-export default function Onboarding({ onSelectLocation }: OnboardingProps) {
+export default function Onboarding({ onSelectLocation, onUseCurrentLocation, isGettingLocation = false }: OnboardingProps) {
   const handleLocationSelect = (location: LocationSelection) => {
     trackEvent('onboarding_resort_selected', {
       skiAreaId: location.skiAreaId,
@@ -20,6 +23,23 @@ export default function Onboarding({ onSelectLocation }: OnboardingProps) {
     });
     onSelectLocation(location);
   };
+
+  // Show loading overlay while getting current location
+  if (isGettingLocation) {
+    return (
+      <div className="onboarding-container">
+        <div className="onboarding-content" style={{ justifyContent: 'center', alignItems: 'center' }}>
+          <Logo size="lg" />
+          <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+            <LoadingSpinner size={32} />
+            <Text type="secondary" style={{ fontSize: 14 }}>
+              Finding ski areas near you...
+            </Text>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="onboarding-container">
@@ -52,6 +72,8 @@ export default function Onboarding({ onSelectLocation }: OnboardingProps) {
           </Text>
           <LocationSearch
             onSelect={handleLocationSelect}
+            onUseCurrentLocation={onUseCurrentLocation}
+            isGettingLocation={isGettingLocation}
             placeholder="Search ski areas..."
           />
         </div>

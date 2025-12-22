@@ -68,6 +68,11 @@ export type AnalyticsEvent =
   | 'user_location_requested'
   | 'user_location_granted'
   | 'user_location_denied'
+  | 'current_location_requested'
+  | 'current_location_granted'
+  | 'current_location_denied'
+  | 'use_current_location_clicked'
+  | 'ski_area_auto_loaded'
   | 'mountain_home_set'
   | 'mountain_home_removed'
   | 'fly_to_location'
@@ -88,6 +93,8 @@ export type AnalyticsEvent =
   
   // Onboarding
   | 'onboarding_resort_selected'
+  | 'no_nearby_resorts_warning'
+  | 'no_nearby_resorts_confirmed'
 
   // App lifecycle
   | 'app_loaded'
