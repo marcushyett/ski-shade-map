@@ -3,7 +3,7 @@
 import { memo, useEffect, useState, useCallback } from 'react';
 import { Tooltip, Button } from 'antd';
 import type { MapRef } from '@/components/Map/SkiMap';
-import { CloseOutlined, StarOutlined, EnvironmentOutlined, DeleteOutlined } from '@ant-design/icons';
+import { CloseOutlined, StarOutlined, EnvironmentOutlined, DeleteOutlined, ClockCircleOutlined, CheckCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import type { RunData } from '@/lib/types';
 import type { EnrichedRunData, GroomingStatus } from '@/lib/lift-status-types';
 import type { RunSunAnalysis, RunStats } from '@/lib/sunny-time-calculator';
@@ -620,7 +620,7 @@ export const RunDetailPanel = memo(function RunDetailPanel({
         <div className="flex items-center gap-3 mb-3 flex-wrap" style={{ fontSize: 10, color: '#888' }}>
           {openingTimes && (
             <span className="flex items-center gap-1">
-              <span>🕐</span>
+              <ClockCircleOutlined style={{ fontSize: 10 }} />
               <span>{openingTimes.beginTime} - {openingTimes.endTime}</span>
               {closingSoon && (
                 <span style={{ color: '#eab308', fontWeight: 600 }}>({minutesUntilClose}min)</span>
@@ -629,13 +629,19 @@ export const RunDetailPanel = memo(function RunDetailPanel({
           )}
           {groomingStatus && (
             <span style={{ color: formatGroomingLabel(groomingStatus).color }} className="flex items-center gap-1">
-              <span>{formatGroomingLabel(groomingStatus).icon}</span>
+              {groomingStatus === 'GROOMED' ? (
+                <CheckCircleOutlined style={{ fontSize: 10 }} />
+              ) : groomingStatus === 'NOT_GROOMED' ? (
+                <MinusCircleOutlined style={{ fontSize: 10 }} />
+              ) : (
+                <span style={{ fontSize: 10 }}>◐</span>
+              )}
               <span>{formatGroomingLabel(groomingStatus).label}</span>
             </span>
           )}
           {liveSnowQuality && (
             <span style={{ color: '#60a5fa' }} className="flex items-center gap-1">
-              <span>❄</span>
+              <ConditionIcon iconType="snowflake" style={{ fontSize: 10 }} />
               <span>{liveSnowQuality.replace(/_/g, ' ').toLowerCase()}</span>
             </span>
           )}

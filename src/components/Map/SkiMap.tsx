@@ -1280,11 +1280,11 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const liftMinutesUntilClose = lift && 'minutesUntilClose' in lift ? lift.minutesUntilClose : null;
       const liftClosingSoon = typeof liftMinutesUntilClose === 'number' && liftMinutesUntilClose <= 60;
 
-      // Grooming status labels
-      const groomingLabels: Record<string, { icon: string; label: string; color: string }> = {
-        GROOMED: { icon: '✓', label: 'Groomed', color: '#22c55e' },
-        PARTIALLY_GROOMED: { icon: '◐', label: 'Partial', color: '#eab308' },
-        NOT_GROOMED: { icon: '○', label: 'Not Groomed', color: '#888' },
+      // Grooming status labels (text only for HTML popups)
+      const groomingLabels: Record<string, { label: string; color: string }> = {
+        GROOMED: { label: 'Groomed', color: '#22c55e' },
+        PARTIALLY_GROOMED: { label: 'Partial', color: '#eab308' },
+        NOT_GROOMED: { label: 'Ungroomed', color: '#888' },
       };
       const groomingInfo = runGroomingStatus ? groomingLabels[runGroomingStatus] : null;
 
@@ -1297,13 +1297,13 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; font-size: 10px;">
               ${run.difficulty ? `<span style="color: ${getDifficultyColor(run.difficulty)};">${run.difficulty}</span>` : ''}
-              ${runStats?.distance ? `<span style="color: #888;">📏 ${runStats.distance}</span>` : ''}
+              ${runStats?.distance ? `<span style="color: #888;">${runStats.distance}</span>` : ''}
               ${runStats?.elevation ? `<span style="color: #888;">${runStats.elevation}</span>` : ''}
             </div>
             ${runOpeningTimes || groomingInfo || runSnowQuality ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; font-size: 10px;">
-              ${runOpeningTimes ? `<span style="color: #aaa;">🕐 ${runOpeningTimes.beginTime}-${runOpeningTimes.endTime}${runClosingSoon ? ` <span style="color: #eab308;">(${runMinutesUntilClose}min)</span>` : ''}</span>` : ''}
-              ${groomingInfo ? `<span style="color: ${groomingInfo.color};">${groomingInfo.icon} ${groomingInfo.label}</span>` : ''}
-              ${runSnowQuality ? `<span style="color: #60a5fa;">❄ ${runSnowQuality.replace(/_/g, ' ').toLowerCase()}</span>` : ''}
+              ${runOpeningTimes ? `<span style="color: #aaa;">${runOpeningTimes.beginTime}-${runOpeningTimes.endTime}${runClosingSoon ? ` <span style="color: #eab308;">(${runMinutesUntilClose}min)</span>` : ''}</span>` : ''}
+              ${groomingInfo ? `<span style="color: ${groomingInfo.color};">${groomingInfo.label}</span>` : ''}
+              ${runSnowQuality ? `<span style="color: #60a5fa;">${runSnowQuality.replace(/_/g, ' ').toLowerCase()}</span>` : ''}
             </div>` : ''}
             ${snowAnalysis ? `<div style="font-size: 10px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px;">
               Snow: <span style="color: ${snowScoreColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span>
@@ -1317,7 +1317,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
             </div>
             ${lift?.liftType ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${lift.liftType}</div>` : ''}
             ${liftOpeningTimes || liftSpeed || liftCapacity ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px;">
-              ${liftOpeningTimes ? `<span style="color: #aaa;">🕐 ${liftOpeningTimes.beginTime}-${liftOpeningTimes.endTime}${liftClosingSoon ? ` <span style="color: #eab308;">(${liftMinutesUntilClose}min)</span>` : ''}</span>` : ''}
+              ${liftOpeningTimes ? `<span style="color: #aaa;">${liftOpeningTimes.beginTime}-${liftOpeningTimes.endTime}${liftClosingSoon ? ` <span style="color: #eab308;">(${liftMinutesUntilClose}min)</span>` : ''}</span>` : ''}
               ${liftSpeed ? `<span style="color: #888;">${liftSpeed} m/s</span>` : ''}
               ${liftCapacity ? `<span style="color: #888;">${liftCapacity} pers/h</span>` : ''}
             </div>` : ''}
@@ -2383,7 +2383,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
                 <span style="font-size: 10px; color: #888;">${props.liftType || 'Lift'}</span>
                 ${statusLabel ? `<span style="font-size: 9px; color: ${statusColor}; background: ${statusBg}; padding: 1px 5px; border-radius: 3px; font-weight: 600;">${statusLabel}</span>` : ''}
               </div>
-              ${timesStr ? `<div style="font-size: 10px; color: #aaa; margin-bottom: 2px;">🕐 ${timesStr}${closingSoon ? ` <span style="color: #eab308;">(${minutesUntilClose}min left)</span>` : ''}</div>` : ''}
+              ${timesStr ? `<div style="font-size: 10px; color: #aaa; margin-bottom: 2px;">${timesStr}${closingSoon ? ` <span style="color: #eab308;">(${minutesUntilClose}min left)</span>` : ''}</div>` : ''}
               ${speed || capacity ? `<div style="font-size: 9px; color: #666;">${speed ? `${speed} m/s` : ''}${speed && capacity ? ' · ' : ''}${capacity ? `${capacity} pers/h` : ''}</div>` : ''}
             </div>
           `)
