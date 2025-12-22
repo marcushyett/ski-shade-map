@@ -957,55 +957,63 @@ export default function Home() {
             name: cachedInfo.name,
           });
 
-          // If cached data is missing osmId, invalidate and fetch fresh
+          // If cached data is missing osmId, clear cache and fetch fresh
           if (!cachedInfo.osmId) {
-            console.log(`[Cache] Missing osmId, fetching fresh data for ${selectedArea.id}`);
-            fetchFromNetwork();
-            return;
+            console.log(`[Cache] Missing osmId, clearing cache and fetching fresh data for ${selectedArea.id}`);
+            // Clear the stale cache entry
+            try {
+              const { clearCachedSkiArea } = await import('@/lib/ski-area-cache');
+              await clearCachedSkiArea(selectedArea.id);
+              console.log(`[Cache] Cleared stale cache for ${selectedArea.id}`);
+            } catch (e) {
+              console.error('[Cache] Failed to clear cache:', e);
+            }
+            // Don't return - fall through to network fetch below
+          } else {
+            // Cache is valid with osmId - use it
+            const allRuns = cached.runs as RunData[];
+            const allLifts = cached.lifts as LiftData[];
+
+            // Construct a properly typed SkiAreaDetails from cached data
+            const basicInfo: SkiAreaDetails = {
+              id: cachedInfo.id as string,
+              osmId: (cachedInfo.osmId as string) || null,
+              name: cachedInfo.name as string,
+              country: (cachedInfo.country as string) || null,
+              region: (cachedInfo.region as string) || null,
+              latitude: cachedInfo.latitude as number,
+              longitude: cachedInfo.longitude as number,
+              bounds: (cachedInfo.bounds as SkiAreaDetails['bounds']) || null,
+              geometry: (cachedInfo.geometry as SkiAreaDetails['geometry']) || null,
+              properties: (cachedInfo.properties as SkiAreaDetails['properties']) || null,
+              localities: (cachedInfo.localities as string[]) || [],
+              runs: [],
+              lifts: [],
+            };
+
+            // Set basic info immediately
+            setSkiAreaDetails(basicInfo);
+
+            if (!selectedArea.name && basicInfo.name) {
+              setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
+            }
+
+            setLoading(false);
+            setRunsLoadProgress({ loaded: 0, total: allRuns.length });
+
+            // Progressively add runs/lifts
+            progressivelyAddData(allRuns, allLifts, basicInfo);
+
+            // Still fetch weather fresh (it changes frequently)
+            fetchWeatherData();
+            return; // Exit early - cache was valid
           }
-
-          const allRuns = cached.runs as RunData[];
-          const allLifts = cached.lifts as LiftData[];
-
-          // Construct a properly typed SkiAreaDetails from cached data
-          const basicInfo: SkiAreaDetails = {
-            id: cachedInfo.id as string,
-            osmId: (cachedInfo.osmId as string) || null,
-            name: cachedInfo.name as string,
-            country: (cachedInfo.country as string) || null,
-            region: (cachedInfo.region as string) || null,
-            latitude: cachedInfo.latitude as number,
-            longitude: cachedInfo.longitude as number,
-            bounds: (cachedInfo.bounds as SkiAreaDetails['bounds']) || null,
-            geometry: (cachedInfo.geometry as SkiAreaDetails['geometry']) || null,
-            properties: (cachedInfo.properties as SkiAreaDetails['properties']) || null,
-            localities: (cachedInfo.localities as string[]) || [],
-            runs: [],
-            lifts: [],
-          };
-
-          // Set basic info immediately
-          setSkiAreaDetails(basicInfo);
-
-          if (!selectedArea.name && basicInfo.name) {
-            setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
-          }
-
-          setLoading(false);
-          setRunsLoadProgress({ loaded: 0, total: allRuns.length });
-
-          // Progressively add runs/lifts
-          progressivelyAddData(allRuns, allLifts, basicInfo);
-
-          // Still fetch weather fresh (it changes frequently)
-          fetchWeatherData();
-          return;
         }
       } catch (err) {
         console.error('[Cache] Failed to check cache:', err);
       }
 
-      // Cache miss or error - fetch from network
+      // Cache miss, invalid cache (missing osmId), or error - fetch from network
       fetchFromNetwork();
     };
 

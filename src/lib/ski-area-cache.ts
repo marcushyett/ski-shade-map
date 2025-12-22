@@ -77,7 +77,7 @@ export async function getCachedSkiArea(skiAreaId: string): Promise<CachedSkiArea
         const age = Date.now() - data.cachedAt;
         if (age > CACHE_TTL_MS) {
           // Cache expired, delete it
-          deleteFromCache(skiAreaId).catch(console.error);
+          clearCachedSkiArea(skiAreaId).catch(console.error);
           resolve(null);
           return;
         }
@@ -135,9 +135,9 @@ export async function cacheSkiArea(
 }
 
 /**
- * Delete cached ski area data
+ * Delete cached ski area data (exported as clearCachedSkiArea)
  */
-async function deleteFromCache(skiAreaId: string): Promise<void> {
+export async function clearCachedSkiArea(skiAreaId: string): Promise<void> {
   try {
     const db = await openDB();
 
