@@ -226,34 +226,43 @@ export async function fetchResortStatus(openskimapId: string): Promise<ResortSta
 }
 
 /**
- * Match lift status to a lift by OpenSkiMap ID
+ * Match lift status to a lift by OpenSkiMap ID, with name fallback
  */
-function matchLiftStatus(liftId: string, liftStatuses: LiftStatus[]): LiftStatus | undefined {
-  const match = liftStatuses.find(s => s.openskimapIds?.includes(liftId));
-  // Debug: log first few attempts
-  if (!match && liftStatuses.length > 0) {
-    const sampleStatus = liftStatuses.find(s => s.openskimapIds?.length > 0);
-    if (sampleStatus && !matchLiftStatus._logged) {
-      matchLiftStatus._logged = true;
-      console.log('[LiftStatus Debug] No match found. Sample comparison:', {
-        searchingFor: liftId,
-        sampleStatusName: sampleStatus.name,
-        sampleStatusIds: sampleStatus.openskimapIds,
-        idsType: typeof sampleStatus.openskimapIds,
-        isArray: Array.isArray(sampleStatus.openskimapIds),
-      });
-    }
+function matchLiftStatus(liftId: string, liftName: string | null, liftStatuses: LiftStatus[]): LiftStatus | undefined {
+  // First try matching by openskimap ID
+  const matchById = liftStatuses.find(s => s.openskimapIds?.includes(liftId));
+  if (matchById) return matchById;
+
+  // Fallback: match by name (case-insensitive)
+  if (liftName) {
+    const normalizedName = liftName.toLowerCase().trim();
+    const matchByName = liftStatuses.find(s =>
+      s.name?.toLowerCase().trim() === normalizedName
+    );
+    if (matchByName) return matchByName;
   }
-  return match;
+
+  return undefined;
 }
-// Track if we've logged once
-matchLiftStatus._logged = false;
 
 /**
- * Match run status to a run by OpenSkiMap ID
+ * Match run status to a run by OpenSkiMap ID, with name fallback
  */
-function matchRunStatus(runId: string, runStatuses: RunStatus[]): RunStatus | undefined {
-  return runStatuses.find(s => s.openskimapIds.includes(runId));
+function matchRunStatus(runId: string, runName: string | null, runStatuses: RunStatus[]): RunStatus | undefined {
+  // First try matching by openskimap ID
+  const matchById = runStatuses.find(s => s.openskimapIds?.includes(runId));
+  if (matchById) return matchById;
+
+  // Fallback: match by name (case-insensitive)
+  if (runName) {
+    const normalizedName = runName.toLowerCase().trim();
+    const matchByName = runStatuses.find(s =>
+      s.name?.toLowerCase().trim() === normalizedName
+    );
+    if (matchByName) return matchByName;
+  }
+
+  return undefined;
 }
 
 /**
@@ -302,7 +311,7 @@ export function enrichLiftsWithStatus(
         });
       }
 
-      const liveStatus = matchLiftStatus(lift.osmId, resortStatus.lifts);
+      const liveStatus = matchLiftStatus(lift.osmId, lift.name, resortStatus.lifts);
       if (liveStatus) {
         matchedCount++;
         enriched.liveStatus = liveStatus;
@@ -351,7 +360,7 @@ export function enrichRunsWithStatus(
     };
 
     if (resortStatus && run.osmId) {
-      const liveStatus = matchRunStatus(run.osmId, resortStatus.runs);
+      const liveStatus = matchRunStatus(run.osmId, run.name, resortStatus.runs);
       if (liveStatus) {
         matchedCount++;
         enriched.liveStatus = liveStatus;
