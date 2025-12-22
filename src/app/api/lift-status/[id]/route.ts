@@ -64,6 +64,18 @@ export async function GET(
 
   try {
     console.log(`[LiftStatus] Fetching status for resort: ${resortId} (${matchedResort?.name})`);
+
+    // Debug: Check if CSV files exist in the module's data directory
+    const path = require('path');
+    const fs = require('fs');
+    const moduleDataDir = path.resolve(require.resolve('ski-resort-status'), '../../data');
+    console.log(`[LiftStatus] Module data dir: ${moduleDataDir}`);
+    console.log(`[LiftStatus] Data dir exists: ${fs.existsSync(moduleDataDir)}`);
+    if (fs.existsSync(moduleDataDir)) {
+      const files = fs.readdirSync(moduleDataDir);
+      console.log(`[LiftStatus] Data dir contents: ${files.join(', ')}`);
+    }
+
     const rawData = await fetchResortStatus(resortId);
 
     // Debug: log raw data structure
