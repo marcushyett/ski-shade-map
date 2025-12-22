@@ -507,6 +507,7 @@ export const RunDetailPanel = memo(function RunDetailPanel({
   const groomingStatus = liveStatus?.groomingStatus;
   const liveSnowQuality = liveStatus?.snowQuality;
   const openingTimes = liveStatus?.openingTimes?.[0];
+  const statusMessage = liveStatus?.message;
   const closingTime = enriched?.closingTime;
   const minutesUntilClose = enriched?.minutesUntilClose;
   const closingSoon = minutesUntilClose !== null && minutesUntilClose !== undefined && minutesUntilClose <= 60;
@@ -645,6 +646,22 @@ export const RunDetailPanel = memo(function RunDetailPanel({
               <span>{liveSnowQuality.replace(/_/g, ' ').toLowerCase()}</span>
             </span>
           )}
+        </div>
+      )}
+
+      {/* Status message from resort API */}
+      {statusMessage && (
+        <div
+          className="mb-3"
+          style={{
+            fontSize: 10,
+            color: '#f97316',
+            padding: '6px 8px',
+            background: 'rgba(249, 115, 22, 0.1)',
+            borderRadius: 4
+          }}
+        >
+          {statusMessage}
         </div>
       )}
       

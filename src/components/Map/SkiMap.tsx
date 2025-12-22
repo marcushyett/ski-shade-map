@@ -14,7 +14,8 @@ import {
 } from '@/lib/geometry-cache';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { trackEvent } from '@/lib/posthog';
-import type { SkiAreaDetails, RunData, POIData } from '@/lib/types';
+import type { SkiAreaDetails, RunData, LiftData, POIData } from '@/lib/types';
+import type { EnrichedRunData, EnrichedLiftData, LiftStatus, RunStatus } from '@/lib/lift-status-types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 import type { NavigationRoute } from '@/lib/navigation';
 
@@ -1265,19 +1266,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const liftStatusLabel = lift?.status ? statusLabels[lift.status] : '';
 
       // Extract enriched data for runs
-      const runLiveStatus = run && 'liveStatus' in run ? run.liveStatus : null;
+      const runLiveStatus = run && 'liveStatus' in run ? (run as EnrichedRunData).liveStatus : null;
       const runOpeningTimes = runLiveStatus?.openingTimes?.[0];
       const runGroomingStatus = runLiveStatus?.groomingStatus;
       const runSnowQuality = runLiveStatus?.snowQuality;
-      const runMinutesUntilClose = run && 'minutesUntilClose' in run ? run.minutesUntilClose : null;
+      const runMessage = runLiveStatus?.message;
+      const runMinutesUntilClose = run && 'minutesUntilClose' in run ? (run as EnrichedRunData).minutesUntilClose : null;
       const runClosingSoon = typeof runMinutesUntilClose === 'number' && runMinutesUntilClose <= 60;
 
       // Extract enriched data for lifts
-      const liftLiveStatus = lift && 'liveStatus' in lift ? lift.liveStatus : null;
+      const liftLiveStatus = lift && 'liveStatus' in lift ? (lift as EnrichedLiftData).liveStatus : null;
       const liftOpeningTimes = liftLiveStatus?.openingTimes?.[0];
       const liftSpeed = liftLiveStatus?.speed;
       const liftCapacity = liftLiveStatus?.uphillCapacity;
-      const liftMinutesUntilClose = lift && 'minutesUntilClose' in lift ? lift.minutesUntilClose : null;
+      const liftMessage = liftLiveStatus?.message;
+      const liftMinutesUntilClose = lift && 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
       const liftClosingSoon = typeof liftMinutesUntilClose === 'number' && liftMinutesUntilClose <= 60;
 
       // Grooming status labels (text only for HTML popups)
@@ -1305,6 +1308,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
               ${groomingInfo ? `<span style="color: ${groomingInfo.color};">${groomingInfo.label}</span>` : ''}
               ${runSnowQuality ? `<span style="color: #60a5fa;">${runSnowQuality.replace(/_/g, ' ').toLowerCase()}</span>` : ''}
             </div>` : ''}
+            ${runMessage ? `<div style="font-size: 10px; color: #f97316; padding: 4px 6px; background: rgba(249, 115, 22, 0.1); border-radius: 4px; margin-bottom: 4px;">${runMessage}</div>` : ''}
             ${snowAnalysis ? `<div style="font-size: 10px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px;">
               Snow: <span style="color: ${snowScoreColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span>
               <span style="color: #888;">${snowAnalysis.conditionLabel}</span>
@@ -1316,11 +1320,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
               ${lift?.status && lift.status !== 'unknown' ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${liftStatusColor}20; color: ${liftStatusColor}; font-weight: 500; margin-left: auto;">${liftStatusLabel}</span>` : ''}
             </div>
             ${lift?.liftType ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${lift.liftType}</div>` : ''}
-            ${liftOpeningTimes || liftSpeed || liftCapacity ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px;">
+            ${liftOpeningTimes || liftSpeed || liftCapacity ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px; margin-bottom: 4px;">
               ${liftOpeningTimes ? `<span style="color: #aaa;">${liftOpeningTimes.beginTime}-${liftOpeningTimes.endTime}${liftClosingSoon ? ` <span style="color: #eab308;">(${liftMinutesUntilClose}min)</span>` : ''}</span>` : ''}
               ${liftSpeed ? `<span style="color: #888;">${liftSpeed} m/s</span>` : ''}
               ${liftCapacity ? `<span style="color: #888;">${liftCapacity} pers/h</span>` : ''}
             </div>` : ''}
+            ${liftMessage ? `<div style="font-size: 10px; color: #f97316; padding: 4px 6px; background: rgba(249, 115, 22, 0.1); border-radius: 4px;">${liftMessage}</div>` : ''}
           </div>`;
 
       highlightPopupRef.current = new maplibregl.Popup({
@@ -2373,6 +2378,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         // Build additional info
         const speed = liveStatus?.speed;
         const capacity = liveStatus?.uphillCapacity;
+        const message = liveStatus?.message;
 
         new maplibregl.Popup()
           .setLngLat(e.lngLat)
@@ -2384,7 +2390,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
                 ${statusLabel ? `<span style="font-size: 9px; color: ${statusColor}; background: ${statusBg}; padding: 1px 5px; border-radius: 3px; font-weight: 600;">${statusLabel}</span>` : ''}
               </div>
               ${timesStr ? `<div style="font-size: 10px; color: #aaa; margin-bottom: 2px;">${timesStr}${closingSoon ? ` <span style="color: #eab308;">(${minutesUntilClose}min left)</span>` : ''}</div>` : ''}
-              ${speed || capacity ? `<div style="font-size: 9px; color: #666;">${speed ? `${speed} m/s` : ''}${speed && capacity ? ' · ' : ''}${capacity ? `${capacity} pers/h` : ''}</div>` : ''}
+              ${speed || capacity ? `<div style="font-size: 9px; color: #666; margin-bottom: 2px;">${speed ? `${speed} m/s` : ''}${speed && capacity ? ' · ' : ''}${capacity ? `${capacity} pers/h` : ''}</div>` : ''}
+              ${message ? `<div style="font-size: 10px; color: #f97316; padding: 4px 6px; background: rgba(249, 115, 22, 0.1); border-radius: 4px;">${message}</div>` : ''}
             </div>
           `)
           .addTo(map.current);
