@@ -213,8 +213,25 @@ export async function fetchResortStatus(openskimapId: string): Promise<ResortSta
  * Match lift status to a lift by OpenSkiMap ID
  */
 function matchLiftStatus(liftId: string, liftStatuses: LiftStatus[]): LiftStatus | undefined {
-  return liftStatuses.find(s => s.openskimapIds.includes(liftId));
+  const match = liftStatuses.find(s => s.openskimapIds?.includes(liftId));
+  // Debug: log first few attempts
+  if (!match && liftStatuses.length > 0) {
+    const sampleStatus = liftStatuses.find(s => s.openskimapIds?.length > 0);
+    if (sampleStatus && !matchLiftStatus._logged) {
+      matchLiftStatus._logged = true;
+      console.log('[LiftStatus Debug] No match found. Sample comparison:', {
+        searchingFor: liftId,
+        sampleStatusName: sampleStatus.name,
+        sampleStatusIds: sampleStatus.openskimapIds,
+        idsType: typeof sampleStatus.openskimapIds,
+        isArray: Array.isArray(sampleStatus.openskimapIds),
+      });
+    }
+  }
+  return match;
 }
+// Track if we've logged once
+matchLiftStatus._logged = false;
 
 /**
  * Match run status to a run by OpenSkiMap ID
