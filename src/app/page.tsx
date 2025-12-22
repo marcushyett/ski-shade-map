@@ -435,7 +435,11 @@ export default function Home() {
 
   // Allow showing map without a selected ski area (e.g., when using current location with no nearby resorts)
   const [showMapWithoutArea, setShowMapWithoutArea] = useState(false);
-  
+
+  // Interstitial warning when no ski areas within 50km of current location
+  const [showNoNearbyResortsWarning, setShowNoNearbyResortsWarning] = useState(false);
+  const [pendingLocationForWarning, setPendingLocationForWarning] = useState<{ lat: number; lng: number } | null>(null);
+
   // Points of Interest (toilets, restaurants, viewpoints)
   const [pois, setPois] = useState<POIData[]>([]);
   
@@ -1199,6 +1203,18 @@ export default function Home() {
     setUserLocation(location);
   }, []);
 
+  // Helper to calculate distance in km between two points using Haversine formula
+  const calculateDistanceKm = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }, []);
+
   // Handler for "Use Current Location" in location search
   const handleUseCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -1231,28 +1247,15 @@ export default function Home() {
         setIsTrackingLocation(true);
 
         // Set initial map view so the map starts at the user's location
-        // This is important for onboarding when the map hasn't rendered yet
         const targetZoom = 11;
         setInitialMapView({ lat: latitude, lng: longitude, zoom: targetZoom });
 
-        // Show the map even if no ski areas are found nearby
-        // This allows the user to navigate to their location and explore
-        setShowMapWithoutArea(true);
-
-        // If map exists (not on onboarding), fly to the location
-        if (mapRef.current) {
-          mapRef.current.flyTo(latitude, longitude, targetZoom);
-        }
-
-        // Directly trigger bounds-based loading to find nearby ski areas
-        // This handles onboarding case where map isn't rendered yet
-        // Calculate bounds from user location
-        const latDelta = 180 / Math.pow(2, targetZoom) * 2;
-        const lngDelta = 360 / Math.pow(2, targetZoom) * 2;
-        const minLat = latitude - latDelta;
-        const maxLat = latitude + latDelta;
-        const minLng = longitude - lngDelta;
-        const maxLng = longitude + lngDelta;
+        // Search for ski areas within ~50km (0.45 degrees is roughly 50km)
+        const searchRadiusDeg = 0.5; // Slightly larger to catch edge cases
+        const minLat = latitude - searchRadiusDeg;
+        const maxLat = latitude + searchRadiusDeg;
+        const minLng = longitude - searchRadiusDeg / Math.cos(latitude * Math.PI / 180);
+        const maxLng = longitude + searchRadiusDeg / Math.cos(latitude * Math.PI / 180);
 
         try {
           const params = new URLSearchParams({
@@ -1260,7 +1263,7 @@ export default function Home() {
             maxLat: maxLat.toString(),
             minLng: minLng.toString(),
             maxLng: maxLng.toString(),
-            limit: '10',
+            limit: '20',
           });
 
           const res = await fetch(`/api/ski-areas?${params}`);
@@ -1268,34 +1271,51 @@ export default function Home() {
             const data = await res.json();
             const areas = data.areas as SkiAreaSummary[];
 
-            if (areas.length > 0) {
-              // Find the nearest ski area
-              let nearest = areas[0];
-              let nearestDist = Infinity;
-              for (const area of areas) {
-                const dist = Math.pow(area.latitude - latitude, 2) + Math.pow(area.longitude - longitude, 2);
-                if (dist < nearestDist) {
-                  nearestDist = dist;
-                  nearest = area;
-                }
+            // Find the nearest ski area and calculate actual distance
+            let nearest: SkiAreaSummary | null = null;
+            let nearestDistKm = Infinity;
+            for (const area of areas) {
+              const distKm = calculateDistanceKm(latitude, longitude, area.latitude, area.longitude);
+              if (distKm < nearestDistKm) {
+                nearestDistKm = distKm;
+                nearest = area;
               }
+            }
 
+            // Check if nearest ski area is within 50km
+            if (nearest && nearestDistKm <= 50) {
               trackEvent('ski_area_auto_loaded', {
                 ski_area_id: nearest.id,
                 ski_area_name: nearest.name,
                 source: 'current_location',
+                distance_km: nearestDistKm,
               });
+
+              // If map exists (not on onboarding), fly to the location
+              if (mapRef.current) {
+                mapRef.current.flyTo(latitude, longitude, targetZoom);
+              }
 
               // This will dismiss onboarding and render the map
               setSelectedArea(nearest);
+              setShowMapWithoutArea(true);
+              setIsGettingCurrentLocation(false);
+              setMobileMenuOpen(false);
+              return;
             }
           }
         } catch (error) {
           console.error('Failed to load ski areas near current location:', error);
         }
 
+        // No ski areas within 50km - show warning interstitial
+        trackEvent('no_nearby_resorts_warning', {
+          latitude,
+          longitude,
+        });
+        setPendingLocationForWarning({ lat: latitude, lng: longitude });
+        setShowNoNearbyResortsWarning(true);
         setIsGettingCurrentLocation(false);
-        setMobileMenuOpen(false);
       },
       (error) => {
         setIsGettingCurrentLocation(false);
@@ -1325,6 +1345,36 @@ export default function Home() {
         maximumAge: 30000,
       }
     );
+  }, [calculateDistanceKm]);
+
+  // Handler for confirming to navigate to map outside ski areas
+  const handleConfirmNoNearbyResorts = useCallback(() => {
+    if (!pendingLocationForWarning) return;
+
+    trackEvent('no_nearby_resorts_confirmed', {
+      latitude: pendingLocationForWarning.lat,
+      longitude: pendingLocationForWarning.lng,
+    });
+
+    const targetZoom = 11;
+    setInitialMapView({ lat: pendingLocationForWarning.lat, lng: pendingLocationForWarning.lng, zoom: targetZoom });
+
+    // If map exists, fly to the location
+    if (mapRef.current) {
+      mapRef.current.flyTo(pendingLocationForWarning.lat, pendingLocationForWarning.lng, targetZoom);
+    }
+
+    // Show the map without a ski area selected
+    setShowMapWithoutArea(true);
+    setShowNoNearbyResortsWarning(false);
+    setPendingLocationForWarning(null);
+    setMobileMenuOpen(false);
+  }, [pendingLocationForWarning]);
+
+  // Handler to cancel the no nearby resorts warning
+  const handleCancelNoNearbyResorts = useCallback(() => {
+    setShowNoNearbyResortsWarning(false);
+    setPendingLocationForWarning(null);
   }, []);
 
   // Handler to remove a shared location
@@ -1867,6 +1917,58 @@ export default function Home() {
     
     return { run, analysis, stats, isFavourite, temperatureData };
   }, [selectedRunDetail?.runId, skiAreaDetails, selectedTime, weather?.hourly, weather?.elevation, favourites]);
+
+  // Show interstitial warning when no ski areas within 50km
+  if (showNoNearbyResortsWarning) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--background)' }}>
+        <div className="max-w-md w-full text-center">
+          <div style={{ marginBottom: 24 }}>
+            <Logo size="lg" />
+          </div>
+
+          <div
+            className="rounded-lg p-6"
+            style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border)'
+            }}
+          >
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🏔️</div>
+            <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12, color: 'var(--foreground)' }}>
+              No ski areas nearby
+            </h2>
+            <p style={{ fontSize: 14, color: '#888', marginBottom: 24, lineHeight: 1.5 }}>
+              There are no ski areas within 50km of your current location. You can still explore the map, but you won&apos;t see any ski runs or lifts until you navigate to a ski area.
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <Button
+                type="primary"
+                size="large"
+                onClick={handleConfirmNoNearbyResorts}
+                style={{ width: '100%' }}
+              >
+                Continue to map
+              </Button>
+              <Button
+                type="default"
+                size="large"
+                onClick={handleCancelNoNearbyResorts}
+                style={{ width: '100%' }}
+              >
+                Go back
+              </Button>
+            </div>
+          </div>
+
+          <p style={{ fontSize: 11, color: '#555', marginTop: 16 }}>
+            You can search for ski areas using the search bar once on the map.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // Show onboarding for first-time users (no resort selected)
   // Skip onboarding if user used current location (showMapWithoutArea is true)

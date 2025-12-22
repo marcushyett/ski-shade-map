@@ -93,6 +93,8 @@ export type AnalyticsEvent =
   
   // Onboarding
   | 'onboarding_resort_selected'
+  | 'no_nearby_resorts_warning'
+  | 'no_nearby_resorts_confirmed'
 
   // App lifecycle
   | 'app_loaded'
