@@ -70,6 +70,7 @@ export interface SupportedResort {
 // Enriched data types that combine our app's data with status data
 export interface EnrichedLiftData {
   id: string;
+  osmId: string | null;
   name: string | null;
   liftType: string | null;
   status: LiftOperatingStatus | null;
@@ -85,6 +86,7 @@ export interface EnrichedLiftData {
 
 export interface EnrichedRunData {
   id: string;
+  osmId: string | null;
   name: string | null;
   difficulty: import('./types').RunDifficulty | null;
   status: RunOperatingStatus | null;

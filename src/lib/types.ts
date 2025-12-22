@@ -21,6 +21,7 @@ export interface SkiAreaDetails extends SkiAreaSummary {
 
 export interface RunData {
   id: string;
+  osmId: string | null;
   name: string | null;
   difficulty: RunDifficulty | null;
   status: OperationStatus | null;
@@ -31,6 +32,7 @@ export interface RunData {
 
 export interface LiftData {
   id: string;
+  osmId: string | null;
   name: string | null;
   liftType: string | null;
   status: OperationStatus | null;

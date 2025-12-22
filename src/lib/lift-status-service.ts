@@ -208,8 +208,8 @@ export function enrichLiftsWithStatus(
       status: lift.status as EnrichedLiftData['status'],
     };
 
-    if (resortStatus) {
-      const liveStatus = matchLiftStatus(lift.id, resortStatus.lifts);
+    if (resortStatus && lift.osmId) {
+      const liveStatus = matchLiftStatus(lift.osmId, resortStatus.lifts);
       if (liveStatus) {
         enriched.liveStatus = liveStatus;
         enriched.status = liveStatus.status;
@@ -240,8 +240,8 @@ export function enrichRunsWithStatus(
       status: run.status as EnrichedRunData['status'],
     };
 
-    if (resortStatus) {
-      const liveStatus = matchRunStatus(run.id, resortStatus.runs);
+    if (resortStatus && run.osmId) {
+      const liveStatus = matchRunStatus(run.osmId, resortStatus.runs);
       if (liveStatus) {
         enriched.liveStatus = liveStatus;
         enriched.status = liveStatus.status;
