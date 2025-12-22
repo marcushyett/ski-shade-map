@@ -517,6 +517,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-closed', 'ski-segments-closed-markers',
+      'ski-segments-closing-soon',
       'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-touch', 'ski-lifts-symbols',
       'ski-segments-sunny-glow',
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded',
@@ -700,6 +701,24 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
+    // Closing soon runs - orange glow underneath (only for open runs closing within 60 min)
+    map.current.addLayer({
+      id: 'ski-segments-closing-soon',
+      type: 'line',
+      source: 'ski-segments',
+      filter: ['all', ['==', ['get', 'closingSoon'], true], ['!=', ['get', 'isClosed'], true]],
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#f97316',
+        'line-width': 8,
+        'line-opacity': 0.4,
+        'line-blur': 2,
+      },
+    }, 'ski-segments-sunny'); // Place below the main segment layers
+
     // Polygon runs source (for fill) - only runs that are polygons
     // Calculate sun/shade for each polygon based on its orientation (sunPos already defined above)
     const polygonRunsGeoJSON = {
@@ -847,16 +866,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Lifts source and layer
     const liftsGeoJSON = {
       type: 'FeatureCollection' as const,
-      features: area.lifts.map(lift => ({
-        type: 'Feature' as const,
-        properties: {
-          id: lift.id,
-          name: lift.name,
-          liftType: lift.liftType,
-          status: lift.status,
-        },
-        geometry: lift.geometry,
-      })),
+      features: area.lifts.map(lift => {
+        const minutesUntilClose = 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
+        const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose <= 60;
+        return {
+          type: 'Feature' as const,
+          properties: {
+            id: lift.id,
+            name: lift.name,
+            liftType: lift.liftType,
+            status: lift.status,
+            closingSoon,
+          },
+          geometry: lift.geometry,
+        };
+      }),
     };
 
     map.current.addSource('ski-lifts', {
@@ -876,7 +900,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Lift lines with status-based coloring
+    // Lift lines with status-based coloring and opacity
     map.current.addLayer({
       id: 'ski-lifts',
       type: 'line',
@@ -884,11 +908,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       paint: {
         'line-color': [
           'case',
+          ['==', ['get', 'status'], 'closed'], '#888888',
+          ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
-          ['==', ['get', 'status'], 'closed'], '#ff4d4f',
           '#888888'
         ],
-        'line-width': 2,
+        'line-width': [
+          'case',
+          ['==', ['get', 'status'], 'closed'], 1.5,
+          2
+        ],
+        'line-opacity': [
+          'case',
+          ['==', ['get', 'status'], 'closed'], 0.4,
+          1
+        ],
         'line-dasharray': [4, 2],
       },
     });
@@ -902,12 +936,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'circle-radius': 3,
         'circle-color': [
           'case',
+          ['==', ['get', 'status'], 'closed'], '#888888',
+          ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
-          ['==', ['get', 'status'], 'closed'], '#ff4d4f',
           '#888888'
         ],
         'circle-stroke-color': '#000',
         'circle-stroke-width': 1,
+        'circle-opacity': [
+          'case',
+          ['==', ['get', 'status'], 'closed'], 0.4,
+          1
+        ],
       },
     });
 
@@ -1767,16 +1807,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       if (liftsSource) {
         const liftsGeoJSON = {
           type: 'FeatureCollection' as const,
-          features: skiArea.lifts.map(lift => ({
-            type: 'Feature' as const,
-            properties: {
-              id: lift.id,
-              name: lift.name,
-              liftType: lift.liftType,
-              status: lift.status,
-            },
-            geometry: lift.geometry,
-          })),
+          features: skiArea.lifts.map(lift => {
+            const minutesUntilClose = 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
+            const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose <= 60;
+            return {
+              type: 'Feature' as const,
+              properties: {
+                id: lift.id,
+                name: lift.name,
+                liftType: lift.liftType,
+                status: lift.status,
+                closingSoon,
+              },
+              geometry: lift.geometry,
+            };
+          }),
         };
         liftsSource.setData(liftsGeoJSON);
       }
@@ -1839,7 +1884,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     if (!navigationRoute) {
       // Reset all layer opacities to normal
       const layersToReset = [
-        'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-closed', 'ski-segments-closed-markers', 'ski-segments-sunny-glow',
+        'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-closed', 'ski-segments-closed-markers',
+        'ski-segments-closing-soon', 'ski-segments-sunny-glow',
         'ski-lifts', 'ski-lifts-symbols', 'ski-runs-labels', 'ski-lifts-labels',
       ];
       layersToReset.forEach(layerId => {
@@ -1892,6 +1938,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const dimLayers = [
       { id: 'ski-segments-sunny', prop: 'line-opacity' },
       { id: 'ski-segments-shaded', prop: 'line-opacity' },
+      { id: 'ski-segments-closing-soon', prop: 'line-opacity' },
       { id: 'ski-segments-sunny-glow', prop: 'line-opacity' },
       { id: 'ski-lifts', prop: 'line-opacity' },
       { id: 'ski-lifts-symbols', prop: 'circle-opacity' },
@@ -2132,13 +2179,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       currentSunAzimuth.current = sunPos.azimuthDegrees;
       currentSkiAreaRef.current = area;
 
+      // Build minutes until close map for runs (for closing soon styling)
+      const runMinutesUntilCloseMap = new Map<string, number | undefined>();
+      area.runs.forEach(run => {
+        if ('minutesUntilClose' in run) {
+          runMinutesUntilCloseMap.set(run.id, (run as EnrichedRunData).minutesUntilClose);
+        }
+      });
+
       // Prepare segment data first (outside of map updates)
       const cache = getGeometryCache(area.id);
       let segments: GeoJSON.FeatureCollection;
 
       if (cache && cache.isComplete && cache.segments.size > 0) {
         // Use precomputed geometry - much faster, only calculates isShaded
-        segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+        segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees, undefined, runMinutesUntilCloseMap);
       } else {
         // Fallback to on-demand calculation (initial load or cache still processing)
         segments = createRunSegments(area, time, area.latitude, area.longitude);
