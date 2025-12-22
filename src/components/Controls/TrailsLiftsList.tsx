@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, memo, useTransition } from 'react';
-import { Input, Typography, Button } from 'antd';
+import { Input, Typography, Badge, Tooltip } from 'antd';
 import {
   SearchOutlined,
   NodeIndexOutlined,
@@ -9,86 +9,234 @@ import {
   DownOutlined,
   RightOutlined,
   EnvironmentOutlined,
+  ClockCircleOutlined,
+  StopOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import type { RunData, LiftData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
+import type { EnrichedLiftData, EnrichedRunData, ResortStatus } from '@/lib/lift-status-types';
+import {
+  getClosingUrgency,
+  formatTimeUntilClose,
+  formatGroomingStatus,
+  formatSnowQuality,
+} from '@/lib/lift-status-types';
 
 const { Text } = Typography;
 
 // Max items to show per group
 const ITEMS_PER_PAGE = 15;
 
+// Status colors
+const STATUS_COLORS = {
+  open: '#52c41a',      // green
+  closed: '#ff4d4f',    // red
+  scheduled: '#faad14', // yellow/orange
+  unknown: '#8c8c8c',   // gray
+};
+
 interface TrailsLiftsListProps {
-  runs: RunData[];
-  lifts: LiftData[];
+  runs: (RunData | EnrichedRunData)[];
+  lifts: (LiftData | EnrichedLiftData)[];
   localities?: string[];
-  onSelectRun?: (run: RunData) => void;
-  onSelectLift?: (lift: LiftData) => void;
+  resortStatus?: ResortStatus | null;
+  onSelectRun?: (run: RunData | EnrichedRunData) => void;
+  onSelectLift?: (lift: LiftData | EnrichedLiftData) => void;
   onSelectLocality?: (locality: string) => void;
 }
 
+// Helper to check if data is enriched
+function isEnrichedRun(run: RunData | EnrichedRunData): run is EnrichedRunData {
+  return 'liveStatus' in run || 'minutesUntilClose' in run;
+}
+
+function isEnrichedLift(lift: LiftData | EnrichedLiftData): lift is EnrichedLiftData {
+  return 'liveStatus' in lift || 'minutesUntilClose' in lift;
+}
+
+// Status indicator component
+const StatusIndicator = memo(function StatusIndicator({
+  status,
+  minutesUntilClose,
+  size = 'small'
+}: {
+  status?: 'open' | 'closed' | 'scheduled' | 'unknown' | null;
+  minutesUntilClose?: number;
+  size?: 'small' | 'tiny';
+}) {
+  const urgency = getClosingUrgency(minutesUntilClose);
+  const fontSize = size === 'tiny' ? 7 : 8;
+  const iconSize = size === 'tiny' ? 8 : 10;
+
+  if (status === 'closed') {
+    return (
+      <Tooltip title="Closed">
+        <StopOutlined style={{ color: STATUS_COLORS.closed, fontSize: iconSize }} />
+      </Tooltip>
+    );
+  }
+
+  if (urgency === 'urgent') {
+    return (
+      <Tooltip title={`Closes in ${formatTimeUntilClose(minutesUntilClose!)}`}>
+        <span style={{ color: STATUS_COLORS.closed, fontSize, fontWeight: 600, animation: 'pulse 1s infinite' }}>
+          {formatTimeUntilClose(minutesUntilClose!)}
+        </span>
+      </Tooltip>
+    );
+  }
+
+  if (urgency === 'warning') {
+    return (
+      <Tooltip title={`Closes in ${formatTimeUntilClose(minutesUntilClose!)}`}>
+        <span style={{ color: STATUS_COLORS.scheduled, fontSize }}>
+          <ClockCircleOutlined style={{ fontSize: iconSize, marginRight: 2 }} />
+          {formatTimeUntilClose(minutesUntilClose!)}
+        </span>
+      </Tooltip>
+    );
+  }
+
+  if (status === 'open') {
+    return null; // Don't clutter with green checkmarks for open items
+  }
+
+  if (status === 'scheduled') {
+    return (
+      <Tooltip title="Scheduled to open">
+        <ClockCircleOutlined style={{ color: STATUS_COLORS.scheduled, fontSize: iconSize }} />
+      </Tooltip>
+    );
+  }
+
+  return null;
+});
+
 // Simple run item - minimal DOM, tight spacing
 const RunItem = memo(function RunItem({
-  name,
-  locality,
+  run,
+  showLocality,
   onClick
 }: {
-  name: string;
-  locality?: string | null;
+  run: RunData | EnrichedRunData;
+  showLocality?: boolean;
   onClick: () => void;
 }) {
+  const name = run.name || 'Unnamed';
+  const isClosed = run.status === 'closed';
+  const enriched = isEnrichedRun(run) ? run : null;
+  const minutesUntilClose = enriched?.minutesUntilClose;
+  const urgency = getClosingUrgency(minutesUntilClose);
+  const groomingStatus = enriched?.liveStatus?.groomingStatus;
+  const snowQuality = enriched?.liveStatus?.snowQuality;
+
+  // Build tooltip content
+  let tooltipContent = name;
+  if (groomingStatus) tooltipContent += ` - ${formatGroomingStatus(groomingStatus)}`;
+  if (snowQuality) tooltipContent += ` - ${formatSnowQuality(snowQuality)}`;
+
   return (
-    <div
-      className="run-item cursor-pointer flex items-center justify-between hover:bg-white/5"
-      onClick={onClick}
-      style={{ padding: '1px 4px' }}
-    >
-      <span className="truncate" style={{ fontSize: 9, color: '#ccc', lineHeight: '14px' }}>
-        {name}
-      </span>
-      {locality && (
-        <span style={{ fontSize: 8, color: '#666', marginLeft: 4, flexShrink: 0 }}>
-          {locality}
-        </span>
-      )}
-    </div>
+    <Tooltip title={tooltipContent} placement="left" mouseEnterDelay={0.5}>
+      <div
+        className={`run-item cursor-pointer flex items-center justify-between hover:bg-white/5 ${isClosed ? 'opacity-50' : ''}`}
+        onClick={onClick}
+        style={{
+          padding: '1px 4px',
+          textDecoration: isClosed ? 'line-through' : 'none',
+        }}
+      >
+        <div className="flex items-center gap-1 truncate">
+          <span
+            className="truncate"
+            style={{
+              fontSize: 9,
+              color: urgency === 'urgent' ? STATUS_COLORS.closed : urgency === 'warning' ? STATUS_COLORS.scheduled : '#ccc',
+              lineHeight: '14px'
+            }}
+          >
+            {name}
+          </span>
+          {groomingStatus && (
+            <span style={{ fontSize: 7, color: '#888' }}>
+              {groomingStatus === 'GROOMED' ? '✓' : groomingStatus === 'NOT_GROOMED' ? '○' : '◐'}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
+          <StatusIndicator status={run.status} minutesUntilClose={minutesUntilClose} size="tiny" />
+          {showLocality && run.locality && (
+            <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
+              {run.locality}
+            </span>
+          )}
+        </div>
+      </div>
+    </Tooltip>
   );
 });
 
 // Simple lift item - tight spacing to match runs
 const LiftItem = memo(function LiftItem({
-  name,
-  liftType,
-  locality,
+  lift,
+  showLocality,
   onClick
 }: {
-  name: string;
-  liftType?: string | null;
-  locality?: string | null;
+  lift: LiftData | EnrichedLiftData;
+  showLocality?: boolean;
   onClick: () => void;
 }) {
+  const name = lift.name || 'Unnamed';
+  const isClosed = lift.status === 'closed';
+  const enriched = isEnrichedLift(lift) ? lift : null;
+  const minutesUntilClose = enriched?.minutesUntilClose;
+  const urgency = getClosingUrgency(minutesUntilClose);
+  const liveStatus = enriched?.liveStatus;
+
+  // Build tooltip content
+  let tooltipContent = name;
+  if (lift.liftType) tooltipContent += ` (${lift.liftType})`;
+  if (liveStatus?.openingTimes?.[0]) {
+    tooltipContent += ` - ${liveStatus.openingTimes[0].beginTime} to ${liveStatus.openingTimes[0].endTime}`;
+  }
+  if (liveStatus?.speed) tooltipContent += ` - ${liveStatus.speed} m/s`;
+  if (liveStatus?.uphillCapacity) tooltipContent += ` - ${liveStatus.uphillCapacity} pers/h`;
+
   return (
-    <div
-      className="lift-item cursor-pointer flex justify-between hover:bg-white/5"
-      onClick={onClick}
-      style={{ padding: '1px 4px' }}
-    >
-      <span style={{ fontSize: 9, color: '#ccc', lineHeight: '14px' }} className="truncate">
-        {name}
-      </span>
-      <div className="flex items-center" style={{ flexShrink: 0 }}>
-        {liftType && (
-          <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
-            {liftType}
-          </span>
-        )}
-        {locality && (
-          <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
-            {locality}
-          </span>
-        )}
+    <Tooltip title={tooltipContent} placement="left" mouseEnterDelay={0.5}>
+      <div
+        className={`lift-item cursor-pointer flex justify-between hover:bg-white/5 ${isClosed ? 'opacity-50' : ''}`}
+        onClick={onClick}
+        style={{
+          padding: '1px 4px',
+          textDecoration: isClosed ? 'line-through' : 'none',
+        }}
+      >
+        <span
+          style={{
+            fontSize: 9,
+            color: urgency === 'urgent' ? STATUS_COLORS.closed : urgency === 'warning' ? STATUS_COLORS.scheduled : '#ccc',
+            lineHeight: '14px'
+          }}
+          className="truncate"
+        >
+          {name}
+        </span>
+        <div className="flex items-center" style={{ flexShrink: 0 }}>
+          <StatusIndicator status={lift.status} minutesUntilClose={minutesUntilClose} size="tiny" />
+          {lift.liftType && (
+            <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
+              {lift.liftType}
+            </span>
+          )}
+          {showLocality && lift.locality && (
+            <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
+              {lift.locality}
+            </span>
+          )}
+        </div>
       </div>
-    </div>
+    </Tooltip>
   );
 });
 
@@ -231,11 +379,21 @@ function TrailsListInner({
     );
   }, [lifts, searchText]);
 
+  // Count closed items
+  const closedLiftsCount = useMemo(() =>
+    filteredLifts.filter(l => l.status === 'closed').length
+  , [filteredLifts]);
+
+  const closedRunsCount = useMemo(() =>
+    filteredRuns.filter(r => r.status === 'closed').length
+  , [filteredRuns]);
+
   // Group runs by locality, then by difficulty
   const runsByLocalityAndDifficulty = useMemo(() => {
     if (!hasLocalities) return null;
 
-    const groups: Record<string, { locality: string | null; runs: Record<string, RunData[]> }> = {};
+    type RunType = RunData | EnrichedRunData;
+    const groups: Record<string, { locality: string | null; runs: Record<string, RunType[]> }> = {};
     const diffOrder = ['novice', 'easy', 'intermediate', 'advanced', 'expert', 'unknown'];
 
     // Create group for each locality
@@ -280,7 +438,8 @@ function TrailsListInner({
   const runsByDifficulty = useMemo(() => {
     if (hasLocalities) return null;
 
-    const groups: Record<string, RunData[]> = {};
+    type RunType = RunData | EnrichedRunData;
+    const groups: Record<string, RunType[]> = {};
     const order = ['novice', 'easy', 'intermediate', 'advanced', 'expert', 'unknown'];
     order.forEach(d => groups[d] = []);
 
@@ -298,7 +457,8 @@ function TrailsListInner({
   const liftsByLocality = useMemo(() => {
     if (!hasLocalities) return null;
 
-    const groups: Record<string, { locality: string | null; lifts: LiftData[] }> = {};
+    type LiftType = LiftData | EnrichedLiftData;
+    const groups: Record<string, { locality: string | null; lifts: LiftType[] }> = {};
 
     // Create group for each locality
     localities.forEach(locality => {
@@ -378,7 +538,7 @@ function TrailsListInner({
   const getVisibleCount = (key: string) => visibleCounts[key] || ITEMS_PER_PAGE;
 
   const renderRunsByDifficulty = (
-    difficultyGroups: [string, RunData[]][],
+    difficultyGroups: [string, (RunData | EnrichedRunData)[]][],
     keyPrefix: string = '',
     showLocality: boolean = false
   ) => {
@@ -388,6 +548,8 @@ function TrailsListInner({
       const visible = getVisibleCount(`runs-${key}`);
       const visibleRuns = groupRuns.slice(0, visible);
       const hasMore = groupRuns.length > visible;
+      // Count closed runs in this group
+      const closedCount = groupRuns.filter(r => r.status === 'closed').length;
 
       return (
         <div key={key} className="mb-0.5">
@@ -398,14 +560,19 @@ function TrailsListInner({
             isExpanded={isExpanded}
             onClick={() => toggleDifficulty(key)}
           />
+          {closedCount > 0 && (
+            <span style={{ fontSize: 8, color: STATUS_COLORS.closed, marginLeft: 4 }}>
+              ({closedCount} closed)
+            </span>
+          )}
 
           {isExpanded && (
             <div className="ml-3">
               {visibleRuns.map(run => (
                 <RunItem
                   key={run.id}
-                  name={run.name || 'Unnamed'}
-                  locality={showLocality ? run.locality : undefined}
+                  run={run}
+                  showLocality={showLocality}
                   onClick={() => onSelectRun?.(run)}
                 />
               ))}
@@ -450,6 +617,11 @@ function TrailsListInner({
           {runsExpanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
           <NodeIndexOutlined style={{ fontSize: 10 }} />
           <span style={{ fontSize: 10 }}>Runs ({filteredRuns.length})</span>
+          {closedRunsCount > 0 && (
+            <span style={{ fontSize: 8, color: STATUS_COLORS.closed }}>
+              ({closedRunsCount} closed)
+            </span>
+          )}
         </div>
 
         {runsExpanded && (
@@ -506,6 +678,11 @@ function TrailsListInner({
           {liftsExpanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
           <SwapOutlined style={{ fontSize: 10 }} />
           <span style={{ fontSize: 10 }}>Lifts ({filteredLifts.length})</span>
+          {closedLiftsCount > 0 && (
+            <span style={{ fontSize: 8, color: STATUS_COLORS.closed }}>
+              ({closedLiftsCount} closed)
+            </span>
+          )}
         </div>
 
         {liftsExpanded && (
@@ -519,23 +696,30 @@ function TrailsListInner({
                   const visible = getVisibleCount(`lifts-${localityKey}`);
                   const visibleLifts = data.lifts.slice(0, visible);
                   const hasMore = data.lifts.length > visible;
+                  const closedInGroup = data.lifts.filter(l => l.status === 'closed').length;
 
                   return (
                     <div key={localityKey} className="mb-1">
-                      <LocalityHeader
-                        name={localityName}
-                        count={data.lifts.length}
-                        isExpanded={isExpanded}
-                        onClick={() => toggleLocality(`lifts-${localityKey}`)}
-                      />
+                      <div className="flex items-center">
+                        <LocalityHeader
+                          name={localityName}
+                          count={data.lifts.length}
+                          isExpanded={isExpanded}
+                          onClick={() => toggleLocality(`lifts-${localityKey}`)}
+                        />
+                        {closedInGroup > 0 && (
+                          <span style={{ fontSize: 8, color: STATUS_COLORS.closed, marginLeft: 4 }}>
+                            ({closedInGroup} closed)
+                          </span>
+                        )}
+                      </div>
 
                       {isExpanded && (
                         <div className="ml-3">
                           {visibleLifts.map(lift => (
                             <LiftItem
                               key={lift.id}
-                              name={lift.name || 'Unnamed'}
-                              liftType={lift.liftType}
+                              lift={lift}
                               onClick={() => onSelectLift?.(lift)}
                             />
                           ))}
@@ -562,9 +746,8 @@ function TrailsListInner({
                 {filteredLifts.slice(0, getVisibleCount('lifts')).map(lift => (
                   <LiftItem
                     key={lift.id}
-                    name={lift.name || 'Unnamed'}
-                    liftType={lift.liftType}
-                    locality={lift.locality}
+                    lift={lift}
+                    showLocality
                     onClick={() => onSelectLift?.(lift)}
                   />
                 ))}

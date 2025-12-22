@@ -10,13 +10,14 @@
  * - Lazy computation doesn't slow down initial load
  */
 
-import type { RunData } from './types';
+import type { RunData, OperationStatus } from './types';
 import { getDifficultyColorSunny, getDifficultyColorShaded } from './shade-calculator';
 
 export interface PrecomputedSegment {
   runId: string;
   runName: string | null;
   difficulty: string | null;
+  status: OperationStatus | null;
   segmentIndex: number;
   coordinates: [number, number][];
   bearing: number;
@@ -59,25 +60,26 @@ function calculateBearing(lng1: number, lat1: number, lng2: number, lat2: number
  */
 function processRun(run: RunData): PrecomputedSegment[] {
   if (run.geometry.type !== 'LineString') return [];
-  
+
   const coords = run.geometry.coordinates;
   if (coords.length < 2) return [];
-  
+
   const segments: PrecomputedSegment[] = [];
   const sunnyColor = getDifficultyColorSunny(run.difficulty);
   const shadedColor = getDifficultyColorShaded(run.difficulty);
-  
+
   for (let i = 0; i < coords.length - 1; i++) {
     const [lng1, lat1] = coords[i];
     const [lng2, lat2] = coords[i + 1];
-    
+
     const bearing = calculateBearing(lng1, lat1, lng2, lat2);
     const slopeAspect = (bearing + 90) % 360;
-    
+
     segments.push({
       runId: run.id,
       runName: run.name,
       difficulty: run.difficulty,
+      status: run.status,
       segmentIndex: i,
       coordinates: [[lng1, lat1], [lng2, lat2]],
       bearing,
@@ -86,7 +88,7 @@ function processRun(run: RunData): PrecomputedSegment[] {
       shadedColor,
     });
   }
-  
+
   return segments;
 }
 
@@ -269,10 +271,11 @@ export function calculateSegmentShadeFromCache(
 export function generateShadedGeoJSON(
   cache: GeometryCache,
   sunAzimuth: number,
-  sunAltitude: number
+  sunAltitude: number,
+  runStatusMap?: Map<string, OperationStatus>
 ): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
-  
+
   cache.segments.forEach((segments) => {
     for (const segment of segments) {
       const isShaded = calculateSegmentShadeFromCache(
@@ -280,13 +283,19 @@ export function generateShadedGeoJSON(
         sunAzimuth,
         sunAltitude
       );
-      
+
+      // Use live status if available, fallback to cached status
+      const status = runStatusMap?.get(segment.runId) ?? segment.status;
+      const isClosed = status === 'closed';
+
       features.push({
         type: 'Feature',
         properties: {
           runId: segment.runId,
           runName: segment.runName,
           difficulty: segment.difficulty,
+          status,
+          isClosed,
           segmentIndex: segment.segmentIndex,
           isShaded,
           bearing: segment.bearing,
@@ -301,7 +310,7 @@ export function generateShadedGeoJSON(
       });
     }
   });
-  
+
   return {
     type: 'FeatureCollection',
     features,

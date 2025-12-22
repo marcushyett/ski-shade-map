@@ -1577,3 +1577,316 @@ export function formatDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)}km`;
 }
 
+// ============================================================================
+// Status-Aware Routing
+// ============================================================================
+
+export interface LiveStatusData {
+  closedLiftIds: Set<string>;
+  closedRunIds: Set<string>;
+  liftClosingTimes: Map<string, number>; // lift ID -> minutes until close
+  runClosingTimes: Map<string, number>;  // run ID -> minutes until close
+}
+
+export interface StatusAwareRouteOptions {
+  liveStatus?: LiveStatusData;
+  currentTime?: Date;
+  closingTimeBuffer?: number; // minutes buffer before closing (default: 10)
+  avoidClosingSoon?: boolean; // avoid lifts/runs closing within buffer
+}
+
+/**
+ * Build a status-aware navigation graph that excludes closed lifts/runs
+ * and optionally considers closing times
+ */
+export function buildStatusAwareGraph(
+  baseGraph: NavigationGraph,
+  options: StatusAwareRouteOptions = {}
+): NavigationGraph {
+  const {
+    liveStatus,
+    closingTimeBuffer = 10,
+    avoidClosingSoon = true,
+  } = options;
+
+  if (!liveStatus) {
+    return baseGraph;
+  }
+
+  const { closedLiftIds, closedRunIds, liftClosingTimes, runClosingTimes } = liveStatus;
+
+  // Create new adjacency map that excludes closed features
+  const filteredAdjacency = new Map<string, string[]>();
+
+  for (const [nodeId, edgeIds] of baseGraph.adjacency) {
+    const filteredEdgeIds = edgeIds.filter(edgeId => {
+      const edge = baseGraph.edges.get(edgeId);
+      if (!edge) return false;
+
+      // Check if this is a closed lift
+      if (edge.type === 'lift') {
+        if (closedLiftIds.has(edge.featureId)) {
+          return false;
+        }
+        // Check if closing soon
+        if (avoidClosingSoon) {
+          const minutesUntilClose = liftClosingTimes.get(edge.featureId);
+          if (minutesUntilClose !== undefined && minutesUntilClose <= closingTimeBuffer) {
+            return false;
+          }
+        }
+      }
+
+      // Check if this is a closed run
+      if (edge.type === 'run') {
+        if (closedRunIds.has(edge.featureId)) {
+          return false;
+        }
+        // Check if closing soon
+        if (avoidClosingSoon) {
+          const minutesUntilClose = runClosingTimes.get(edge.featureId);
+          if (minutesUntilClose !== undefined && minutesUntilClose <= closingTimeBuffer) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+
+    filteredAdjacency.set(nodeId, filteredEdgeIds);
+  }
+
+  return {
+    nodes: baseGraph.nodes,
+    edges: baseGraph.edges,
+    adjacency: filteredAdjacency,
+  };
+}
+
+/**
+ * Enhanced pathfinding that considers arrival time at each lift
+ * This ensures we don't route through lifts that will be closed when we arrive
+ */
+export function findRouteWithArrivalTimes(
+  graph: NavigationGraph,
+  startNodeId: string,
+  endNodeId: string,
+  liveStatus?: LiveStatusData,
+  closingTimeBuffer: number = 10
+): NavigationRoute | null {
+  if (!graph.nodes.has(startNodeId) || !graph.nodes.has(endNodeId)) {
+    return null;
+  }
+
+  // Priority queue tracking both time and arrival time
+  interface ArrivalState {
+    nodeId: string;
+    elapsedTime: number; // seconds since start
+    prevEdgeId: string | null;
+    prevNodeId: string | null;
+  }
+
+  const openSet: ArrivalState[] = [{
+    nodeId: startNodeId,
+    elapsedTime: 0,
+    prevEdgeId: null,
+    prevNodeId: null,
+  }];
+
+  const bestTime = new Map<string, number>();
+  bestTime.set(startNodeId, 0);
+
+  const cameFrom = new Map<string, { prevNodeId: string; edgeId: string }>();
+
+  while (openSet.length > 0) {
+    openSet.sort((a, b) => a.elapsedTime - b.elapsedTime);
+    const current = openSet.shift()!;
+
+    if (current.nodeId === endNodeId) {
+      return reconstructRouteFromPath(graph, cameFrom, endNodeId);
+    }
+
+    const currentBest = bestTime.get(current.nodeId);
+    if (currentBest !== undefined && current.elapsedTime > currentBest) {
+      continue;
+    }
+
+    const edgeIds = graph.adjacency.get(current.nodeId) || [];
+    for (const edgeId of edgeIds) {
+      const edge = graph.edges.get(edgeId);
+      if (!edge) continue;
+
+      // Calculate arrival time at the destination of this edge
+      const arrivalTimeMinutes = (current.elapsedTime + edge.travelTime) / 60;
+
+      // Check if the feature will still be open when we arrive
+      if (liveStatus && edge.type === 'lift') {
+        const closingTime = liveStatus.liftClosingTimes.get(edge.featureId);
+        if (closingTime !== undefined) {
+          // Need buffer time before closing
+          const effectiveClosingTime = closingTime - closingTimeBuffer;
+          if (arrivalTimeMinutes >= effectiveClosingTime) {
+            // This lift will be closed (or closing soon) when we arrive
+            continue;
+          }
+        }
+      }
+
+      if (liveStatus && edge.type === 'run') {
+        const closingTime = liveStatus.runClosingTimes.get(edge.featureId);
+        if (closingTime !== undefined) {
+          const effectiveClosingTime = closingTime - closingTimeBuffer;
+          if (arrivalTimeMinutes >= effectiveClosingTime) {
+            continue;
+          }
+        }
+      }
+
+      const newTime = current.elapsedTime + edge.travelTime;
+      const neighborBest = bestTime.get(edge.toNodeId);
+
+      if (neighborBest === undefined || newTime < neighborBest) {
+        bestTime.set(edge.toNodeId, newTime);
+        cameFrom.set(edge.toNodeId, { prevNodeId: current.nodeId, edgeId });
+        openSet.push({
+          nodeId: edge.toNodeId,
+          elapsedTime: newTime,
+          prevEdgeId: edgeId,
+          prevNodeId: current.nodeId,
+        });
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Reconstruct route from pathfinding result (simplified version for status-aware routing)
+ */
+function reconstructRouteFromPath(
+  graph: NavigationGraph,
+  cameFrom: Map<string, { prevNodeId: string; edgeId: string }>,
+  endNodeId: string
+): NavigationRoute {
+  const edges: NavigationEdge[] = [];
+  let currentId = endNodeId;
+
+  while (cameFrom.has(currentId)) {
+    const { prevNodeId, edgeId } = cameFrom.get(currentId)!;
+    const edge = graph.edges.get(edgeId);
+    if (edge) {
+      edges.unshift(edge);
+    }
+    currentId = prevNodeId;
+  }
+
+  let totalDistance = 0;
+  let totalTime = 0;
+  let totalElevationGain = 0;
+  let totalElevationLoss = 0;
+  const segments: RouteSegment[] = [];
+
+  for (const edge of edges) {
+    totalDistance += edge.distance;
+    totalTime += edge.travelTime;
+
+    if (edge.elevationChange > 0) {
+      totalElevationGain += edge.elevationChange;
+    } else {
+      totalElevationLoss += Math.abs(edge.elevationChange);
+    }
+
+    segments.push({
+      type: edge.type,
+      name: edge.featureName,
+      difficulty: edge.difficulty,
+      liftType: edge.liftType,
+      distance: edge.distance,
+      time: edge.travelTime,
+      elevationChange: edge.elevationChange,
+      coordinates: edge.coordinates,
+    });
+  }
+
+  return {
+    edges,
+    totalDistance,
+    totalTime,
+    totalElevationGain,
+    totalElevationLoss,
+    segments,
+  };
+}
+
+/**
+ * Find status-aware route that avoids closed lifts/runs and respects closing times
+ */
+export function findStatusAwareRoute(
+  graph: NavigationGraph,
+  startNodeId: string,
+  endNodeId: string,
+  skiArea: SkiAreaDetails,
+  options: StatusAwareRouteOptions = {}
+): { route: NavigationRoute | null; warnings: string[] } {
+  const warnings: string[] = [];
+  const { liveStatus, closingTimeBuffer = 10 } = options;
+
+  // First, build a status-aware graph excluding closed features
+  const statusGraph = buildStatusAwareGraph(graph, options);
+
+  // Try to find a route using arrival-time-aware pathfinding
+  let route = findRouteWithArrivalTimes(
+    statusGraph,
+    startNodeId,
+    endNodeId,
+    liveStatus,
+    closingTimeBuffer
+  );
+
+  if (route) {
+    // Optimize the route
+    route = optimizeRoute(route, skiArea);
+
+    // Add warnings for lifts/runs closing soon on the route
+    if (liveStatus) {
+      for (const segment of route.segments) {
+        if (segment.type === 'lift') {
+          const edge = route.edges.find(e => e.type === 'lift' && e.featureName === segment.name);
+          if (edge) {
+            const minutesUntilClose = liveStatus.liftClosingTimes.get(edge.featureId);
+            if (minutesUntilClose !== undefined && minutesUntilClose <= 30) {
+              warnings.push(`${segment.name} closes in ${minutesUntilClose} minutes`);
+            }
+          }
+        }
+      }
+    }
+
+    return { route, warnings };
+  }
+
+  // If no route found with status filtering, try without and warn
+  const basicRoute = findRoute(graph, startNodeId, endNodeId);
+  if (basicRoute) {
+    warnings.push('Some lifts or runs on this route may be closed');
+
+    // Check which ones are closed
+    if (liveStatus) {
+      for (const edge of basicRoute.edges) {
+        if (edge.type === 'lift' && liveStatus.closedLiftIds.has(edge.featureId)) {
+          warnings.push(`${edge.featureName || 'A lift'} is currently closed`);
+        }
+        if (edge.type === 'run' && liveStatus.closedRunIds.has(edge.featureId)) {
+          warnings.push(`${edge.featureName || 'A run'} is currently closed`);
+        }
+      }
+    }
+
+    return { route: optimizeRoute(basicRoute, skiArea), warnings };
+  }
+
+  return { route: null, warnings: ['No route available'] };
+}
+

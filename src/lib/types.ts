@@ -48,7 +48,7 @@ export interface BoundingBox {
 }
 
 export type RunDifficulty = 'novice' | 'easy' | 'intermediate' | 'advanced' | 'expert';
-export type OperationStatus = 'open' | 'closed' | 'unknown';
+export type OperationStatus = 'open' | 'closed' | 'unknown' | 'scheduled';
 
 export interface MapViewState {
   latitude: number;

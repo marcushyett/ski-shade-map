@@ -56,6 +56,8 @@ import { getCachedSkiArea, cacheSkiArea, clearExpiredCache } from '@/lib/ski-are
 import SnowConditionsPanel from '@/components/Controls/SnowConditionsPanel';
 import DonateButton from '@/components/DonateButton';
 import Onboarding from '@/components/Onboarding';
+import { fetchResortStatus, hasLiveStatus, enrichLiftsWithStatus, enrichRunsWithStatus, getResortStatusSummary, type ResortStatusSummary } from '@/lib/lift-status-service';
+import type { ResortStatus, EnrichedLiftData, EnrichedRunData } from '@/lib/lift-status-types';
 
 const { Text } = Typography;
 
@@ -138,6 +140,9 @@ interface StoredState {
 const ControlsContent = memo(function ControlsContent({
   selectedArea,
   skiAreaDetails,
+  enrichedRuns,
+  enrichedLifts,
+  resortStatus,
   error,
   weather,
   selectedTime,
@@ -162,6 +167,9 @@ const ControlsContent = memo(function ControlsContent({
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
+  enrichedRuns: EnrichedRunData[];
+  enrichedLifts: EnrichedLiftData[];
+  resortStatus: ResortStatus | null;
   error: string | null;
   weather: WeatherData | null;
   selectedTime: Date;
@@ -175,8 +183,8 @@ const ControlsContent = memo(function ControlsContent({
   onUseCurrentLocation: () => void;
   isGettingCurrentLocation: boolean;
   currentLocality: string | null;
-  onSelectRun: (run: RunData) => void;
-  onSelectLift: (lift: LiftData) => void;
+  onSelectRun: (run: RunData | EnrichedRunData) => void;
+  onSelectLift: (lift: LiftData | EnrichedLiftData) => void;
   onSelectLocality: (locality: string) => void;
   onErrorClose: () => void;
   onWeatherLoad: (weather: WeatherData) => void;
@@ -240,9 +248,10 @@ const ControlsContent = memo(function ControlsContent({
           {/* Trails, lifts, and favourites list */}
           <div className="flex-1 overflow-y-auto min-h-0">
             <TrailsLiftsList
-              runs={skiAreaDetails.runs}
-              lifts={skiAreaDetails.lifts}
+              runs={enrichedRuns}
+              lifts={enrichedLifts}
               localities={skiAreaDetails.localities}
+              resortStatus={resortStatus}
               onSelectRun={onSelectRun}
               onSelectLift={onSelectLift}
               onSelectLocality={onSelectLocality}
@@ -427,6 +436,11 @@ export default function Home() {
   const [currentNavSegment, setCurrentNavSegment] = useState(0);
   const [fakeLocation, setFakeLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isFakeLocationDropMode, setIsFakeLocationDropMode] = useState(false);
+
+  // Live lift/run status
+  const [resortStatus, setResortStatus] = useState<ResortStatus | null>(null);
+  const [hasStatusData, setHasStatusData] = useState(false);
+  const statusSummary = useMemo(() => getResortStatusSummary(resortStatus), [resortStatus]);
   const [navReturnPoint, setNavReturnPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [isWeatherCardCollapsed, setIsWeatherCardCollapsed] = useState(false);
   const [isNavPanelMinimized, setIsNavPanelMinimized] = useState(false);
@@ -681,6 +695,58 @@ export default function Home() {
     }
   }, [navigationState?.isNavigating, navigationRoute, skiAreaDetails?.id, initialLoadDone]);
 
+  // Fetch live lift/run status when ski area is loaded
+  useEffect(() => {
+    if (!skiAreaDetails?.id) {
+      setResortStatus(null);
+      setHasStatusData(false);
+      return;
+    }
+
+    const fetchStatus = async () => {
+      try {
+        // Check if this resort has live status data available
+        const hasStatus = await hasLiveStatus(skiAreaDetails.id);
+        setHasStatusData(hasStatus);
+
+        if (hasStatus) {
+          const status = await fetchResortStatus(skiAreaDetails.id);
+          setResortStatus(status);
+        }
+      } catch (error) {
+        console.error('Failed to fetch resort status:', error);
+        setHasStatusData(false);
+      }
+    };
+
+    fetchStatus();
+
+    // Refresh status every 5 minutes
+    const interval = setInterval(fetchStatus, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [skiAreaDetails?.id]);
+
+  // Enrich runs and lifts with live status
+  const enrichedRuns = useMemo(() => {
+    if (!skiAreaDetails?.runs) return [];
+    return enrichRunsWithStatus(skiAreaDetails.runs, resortStatus, selectedTime);
+  }, [skiAreaDetails?.runs, resortStatus, selectedTime]);
+
+  const enrichedLifts = useMemo(() => {
+    if (!skiAreaDetails?.lifts) return [];
+    return enrichLiftsWithStatus(skiAreaDetails.lifts, resortStatus, selectedTime);
+  }, [skiAreaDetails?.lifts, resortStatus, selectedTime]);
+
+  // Create enriched ski area details for map display
+  const enrichedSkiAreaDetails = useMemo(() => {
+    if (!skiAreaDetails) return null;
+    return {
+      ...skiAreaDetails,
+      runs: enrichedRuns,
+      lifts: enrichedLifts,
+    };
+  }, [skiAreaDetails, enrichedRuns, enrichedLifts]);
+
   useEffect(() => {
     if (!selectedArea) {
       setSkiAreaDetails(null);
@@ -688,6 +754,8 @@ export default function Home() {
       setWeatherLoading(false);
       setRunsLoading(false);
       setRunsLoadProgress(null);
+      setResortStatus(null);
+      setHasStatusData(false);
       return;
     }
 
@@ -2166,6 +2234,9 @@ export default function Home() {
         <ControlsContent
           selectedArea={selectedArea}
           skiAreaDetails={skiAreaDetails}
+          enrichedRuns={enrichedRuns}
+          enrichedLifts={enrichedLifts}
+          resortStatus={resortStatus}
           error={error}
           weather={weather}
           selectedTime={selectedTime}
@@ -2195,6 +2266,9 @@ export default function Home() {
         <ControlsContent
           selectedArea={selectedArea}
           skiAreaDetails={skiAreaDetails}
+          enrichedRuns={enrichedRuns}
+          enrichedLifts={enrichedLifts}
+          resortStatus={resortStatus}
           error={error}
           weather={weather}
           selectedTime={selectedTime}
@@ -2238,7 +2312,7 @@ export default function Home() {
         )}
 
         <SkiMap 
-          skiArea={skiAreaDetails}
+          skiArea={enrichedSkiAreaDetails}
           selectedTime={selectedTime}
           is3D={is3D}
           highlightedFeatureId={highlightedFeatureId}
@@ -2401,10 +2475,10 @@ export default function Home() {
         {/* Time slider with optional navigation panel and instruction bar above it */}
         <div className="time-slider-container">
           {/* Navigation panel - shown as card above weather when route planning */}
-          {skiAreaDetails && isNavigationOpen && (
+          {enrichedSkiAreaDetails && isNavigationOpen && (
             <div className="nav-panel-inline">
               <NavigationPanel
-                skiArea={skiAreaDetails}
+                skiArea={enrichedSkiAreaDetails}
                 userLocation={effectiveUserLocation}
                 mountainHome={mountainHome}
                 onRouteChange={handleRouteChange}

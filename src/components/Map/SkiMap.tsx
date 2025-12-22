@@ -515,7 +515,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Remove existing layers
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
-      'ski-segments-sunny', 'ski-segments-shaded', 
+      'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-closed', 'ski-segments-closed-markers',
       'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-touch', 'ski-lifts-symbols',
       'ski-segments-sunny-glow',
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded',
@@ -623,12 +623,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Sunny segments layer - uses bright difficulty colors
+    // Sunny segments layer - uses bright difficulty colors (open runs only)
     map.current.addLayer({
       id: 'ski-segments-sunny',
       type: 'line',
       source: 'ski-segments',
-      filter: ['==', ['get', 'isShaded'], false],
+      filter: ['all', ['==', ['get', 'isShaded'], false], ['!=', ['get', 'isClosed'], true]],
       layout: {
         'line-cap': 'round',
         'line-join': 'round',
@@ -641,12 +641,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Shaded segments layer - uses darker difficulty color (also used at night)
+    // Shaded segments layer - uses darker difficulty color (open runs only)
     map.current.addLayer({
       id: 'ski-segments-shaded',
       type: 'line',
       source: 'ski-segments',
-      filter: ['==', ['get', 'isShaded'], true],
+      filter: ['all', ['==', ['get', 'isShaded'], true], ['!=', ['get', 'isClosed'], true]],
       layout: {
         'line-cap': 'round',
         'line-join': 'round',
@@ -657,6 +657,45 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'line-opacity': 1,
         'line-opacity-transition': { duration: 200 },
         'line-color-transition': { duration: 200 },
+      },
+    });
+
+    // Closed runs layer - dashed lines with reduced opacity
+    map.current.addLayer({
+      id: 'ski-segments-closed',
+      type: 'line',
+      source: 'ski-segments',
+      filter: ['==', ['get', 'isClosed'], true],
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#666666',
+        'line-width': 3,
+        'line-opacity': 0.4,
+        'line-dasharray': [2, 2],
+      },
+    });
+
+    // Closed runs X markers - show at higher zoom levels
+    map.current.addLayer({
+      id: 'ski-segments-closed-markers',
+      type: 'symbol',
+      source: 'ski-segments',
+      minzoom: 14,
+      filter: ['==', ['get', 'isClosed'], true],
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 80,
+        'text-field': '\u2716', // X symbol
+        'text-size': 10,
+        'text-allow-overlap': true,
+      },
+      paint: {
+        'text-color': '#ff4d4f',
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1,
       },
     });
 
@@ -1206,22 +1245,45 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         runStats = { distance: distStr, elevation: elevStr };
       }
       
+      // Status colors and labels
+      const statusColors: Record<string, string> = {
+        open: '#52c41a',
+        closed: '#ff4d4f',
+        scheduled: '#faad14',
+        unknown: '#8c8c8c',
+      };
+      const statusLabels: Record<string, string> = {
+        open: 'Open',
+        closed: 'Closed',
+        scheduled: 'Scheduled',
+        unknown: 'Unknown',
+      };
+
+      const runStatusColor = run?.status ? statusColors[run.status] : statusColors.unknown;
+      const runStatusLabel = run?.status ? statusLabels[run.status] : '';
+      const liftStatusColor = lift?.status ? statusColors[lift.status] : statusColors.unknown;
+      const liftStatusLabel = lift?.status ? statusLabels[lift.status] : '';
+
       const popupContent = isRun
         ? `<div class="run-popup" style="min-width: 180px;">
             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
               <span style="width: 10px; height: 10px; border-radius: 50%; background: ${getDifficultyColor(run.difficulty || 'unknown')}; flex-shrink: 0;"></span>
               <strong style="font-size: 13px;">${run.name || 'Unnamed Run'}</strong>
+              ${run?.status ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${runStatusColor}20; color: ${runStatusColor}; font-weight: 500; margin-left: auto;">${runStatusLabel}</span>` : ''}
             </div>
             ${run.difficulty ? `<div style="font-size: 10px; color: ${getDifficultyColor(run.difficulty)}; margin-bottom: 4px;">${run.difficulty}</div>` : ''}
             ${runStats?.distance ? `<div style="font-size: 10px; color: #888; margin-bottom: 2px;">📏 ${runStats.distance}</div>` : ''}
             ${runStats?.elevation ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${runStats.elevation}</div>` : ''}
             ${snowAnalysis ? `<div style="font-size: 11px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px; margin-top: 6px;">
-              Snow: <span style="color: ${snowScoreColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span> 
+              Snow: <span style="color: ${snowScoreColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span>
               <span style="color: #888;">${snowAnalysis.conditionLabel}</span>
             </div>` : ''}
           </div>`
-        : `<div class="lift-popup">
-            <strong>${lift?.name || 'Unnamed Lift'}</strong>
+        : `<div class="lift-popup" style="min-width: 150px;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+              <strong style="font-size: 13px;">${lift?.name || 'Unnamed Lift'}</strong>
+              ${lift?.status ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${liftStatusColor}20; color: ${liftStatusColor}; font-weight: 500; margin-left: auto;">${liftStatusLabel}</span>` : ''}
+            </div>
             ${lift?.liftType ? `<div style="opacity: 0.7; font-size: 11px;">${lift.liftType}</div>` : ''}
           </div>`;
 
@@ -1729,7 +1791,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     if (!navigationRoute) {
       // Reset all layer opacities to normal
       const layersToReset = [
-        'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-sunny-glow',
+        'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-closed', 'ski-segments-closed-markers', 'ski-segments-sunny-glow',
         'ski-lifts', 'ski-lifts-symbols', 'ski-runs-labels', 'ski-lifts-labels',
       ];
       layersToReset.forEach(layerId => {
