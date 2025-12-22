@@ -1802,7 +1802,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
             map.current.setPaintProperty(layerId, 'line-opacity', 1);
           } else if (layerId === 'ski-lifts-symbols') {
             map.current.setPaintProperty(layerId, 'circle-opacity', 1);
-          } else if (layerId.includes('labels')) {
+          } else if (layerId.includes('labels') || layerId.includes('markers')) {
             map.current.setPaintProperty(layerId, 'text-opacity', 1);
           } else {
             map.current.setPaintProperty(layerId, 'line-opacity', 1);
