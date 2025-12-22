@@ -263,6 +263,21 @@ export function enrichLiftsWithStatus(
   let matchedCount = 0;
   const unmatchedLifts: string[] = [];
 
+  // Debug: log the structure of status data
+  if (resortStatus && resortStatus.lifts?.length > 0) {
+    const sampleStatusLift = resortStatus.lifts[0];
+    console.log('[LiftStatus Debug] Status data structure:', {
+      sampleLiftName: sampleStatusLift.name,
+      sampleLiftKeys: Object.keys(sampleStatusLift),
+      openskimapIds: sampleStatusLift.openskimapIds,
+      // Check for snake_case version
+      openskimap_ids: (sampleStatusLift as Record<string, unknown>)['openskimap_ids'],
+    });
+  }
+
+  // Debug: log first lift comparison
+  let debuggedFirst = false;
+
   const result = lifts.map(lift => {
     const enriched: EnrichedLiftData = {
       ...lift,
@@ -270,6 +285,19 @@ export function enrichLiftsWithStatus(
     };
 
     if (resortStatus && lift.osmId) {
+      // Debug first lift
+      if (!debuggedFirst && resortStatus.lifts?.length > 0) {
+        debuggedFirst = true;
+        const firstStatusLift = resortStatus.lifts[0];
+        console.log('[LiftStatus Debug] First lift comparison:', {
+          ourLiftName: lift.name,
+          ourLiftOsmId: lift.osmId,
+          statusLiftName: firstStatusLift.name,
+          statusLiftIds: firstStatusLift.openskimapIds,
+          wouldMatch: firstStatusLift.openskimapIds?.includes(lift.osmId),
+        });
+      }
+
       const liveStatus = matchLiftStatus(lift.osmId, resortStatus.lifts);
       if (liveStatus) {
         matchedCount++;
