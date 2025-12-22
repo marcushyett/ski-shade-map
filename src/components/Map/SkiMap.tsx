@@ -1614,17 +1614,23 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   // Track what we've rendered to detect progressive loading updates
   const lastRenderedRunsRef = useRef<string | null>(null);
   const lastRenderedLiftsRef = useRef<string | null>(null);
+  const lastRunsCountRef = useRef<string | null>(null);
 
-  // Update map sources when runs/lifts are progressively loaded
+  // Update map sources when runs/lifts are progressively loaded or status changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !layersInitialized.current || !skiArea) return;
 
-    // Create a simple key based on ski area id and counts
-    const runsKey = `${skiArea.id}-${skiArea.runs.length}`;
-    const liftsKey = `${skiArea.id}-${skiArea.lifts.length}`;
+    // Create keys that include count AND status data to detect when status is enriched
+    // Count how many items have non-null status to detect when status data arrives
+    const runsWithStatus = skiArea.runs.filter(r => r.status && r.status !== 'unknown').length;
+    const liftsWithStatus = skiArea.lifts.filter(l => l.status && l.status !== 'unknown').length;
+    const runsKey = `${skiArea.id}-${skiArea.runs.length}-${runsWithStatus}`;
+    const liftsKey = `${skiArea.id}-${skiArea.lifts.length}-${liftsWithStatus}`;
+    const runsCountKey = `${skiArea.id}-${skiArea.runs.length}`;
 
     const runsChanged = runsKey !== lastRenderedRunsRef.current;
     const liftsChanged = liftsKey !== lastRenderedLiftsRef.current;
+    const runsCountChanged = runsCountKey !== lastRunsCountRef.current;
 
     // Skip if nothing to update or no data loaded yet
     if (!runsChanged && !liftsChanged) return;
@@ -1633,9 +1639,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Update the tracking refs
     lastRenderedRunsRef.current = runsKey;
     lastRenderedLiftsRef.current = liftsKey;
+    lastRunsCountRef.current = runsCountKey;
 
-    // Start geometry precomputation for new runs
-    if (runsChanged && skiArea.runs.length > 0) {
+    // Start geometry precomputation only when new runs are loaded (not just status changes)
+    if (runsCountChanged && skiArea.runs.length > 0) {
       geometryCacheRef.current = startGeometryPrecomputation(
         skiArea.id,
         skiArea.runs
