@@ -59,7 +59,7 @@ export default async function ResortsPage() {
     name: 'All Ski Resorts',
     description: 'Complete list of ski resorts worldwide with live conditions and 3D maps',
     numberOfItems: totalResorts,
-    itemListElement: countries.map((c, index) => ({
+    itemListElement: countries.map((c: (typeof countries)[number], index: number) => ({
       '@type': 'ListItem',
       position: index + 1,
       item: {
@@ -121,8 +121,8 @@ export default async function ResortsPage() {
           <h2 className="mb-4 text-xl font-semibold">Browse by Country</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {countries
-              .filter((c) => c.country)
-              .map((c) => {
+              .filter((c: (typeof countries)[number]) => c.country)
+              .map((c: (typeof countries)[number]) => {
                 const countryName = getCountryDisplayName(c.country!);
                 return (
                   <Link

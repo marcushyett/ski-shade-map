@@ -48,8 +48,8 @@ export async function GET(
     const areaIds = [skiArea.id];
     if (includeConnected) {
       areaIds.push(
-        ...skiArea.connectedTo.map(c => c.toAreaId),
-        ...skiArea.connectedFrom.map(c => c.fromAreaId)
+        ...skiArea.connectedTo.map((c: (typeof skiArea.connectedTo)[number]) => c.toAreaId),
+        ...skiArea.connectedFrom.map((c: (typeof skiArea.connectedFrom)[number]) => c.fromAreaId)
       );
     }
 
@@ -87,7 +87,7 @@ export async function GET(
     // Filter by bounding box if provided
     let filteredRuns = allRuns;
     if (bbox) {
-      filteredRuns = allRuns.filter(run => {
+      filteredRuns = allRuns.filter((run: (typeof allRuns)[number]) => {
         return runIntersectsBbox(run.geometry, bbox!);
       });
     }
@@ -98,7 +98,7 @@ export async function GET(
       : filteredRuns;
 
     // Transform for response
-    const runs = paginatedRuns.map(run => ({
+    const runs = paginatedRuns.map((run: (typeof allRuns)[number]) => ({
       id: run.id,
       osmId: run.osmId,
       name: run.name,

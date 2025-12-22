@@ -71,8 +71,8 @@ export async function GET(
 
     // Build connected areas list
     const connectedAreas = [
-      ...connectedTo.map(c => c.toArea),
-      ...connectedFrom.map(c => c.fromArea),
+      ...connectedTo.map((c: (typeof connectedTo)[number]) => c.toArea),
+      ...connectedFrom.map((c: (typeof connectedFrom)[number]) => c.fromArea),
     ];
 
     // Get all ski area IDs for counting total runs/lifts
@@ -97,7 +97,7 @@ export async function GET(
       ]);
       runCount = totalRuns;
       liftCount = totalLifts;
-      localities = localityResults.map(l => l.locality).filter(Boolean).sort() as string[];
+      localities = localityResults.map((l: (typeof localityResults)[number]) => l.locality).filter(Boolean).sort() as string[];
     } else {
       // Just get localities for the single area
       const localityResults = await prisma.run.findMany({
@@ -105,7 +105,7 @@ export async function GET(
         select: { locality: true },
         distinct: ['locality'],
       });
-      localities = localityResults.map(l => l.locality).filter(Boolean).sort() as string[];
+      localities = localityResults.map((l: (typeof localityResults)[number]) => l.locality).filter(Boolean).sort() as string[];
     }
 
     const response = {

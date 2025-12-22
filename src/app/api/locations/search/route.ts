@@ -173,7 +173,7 @@ async function buildSearchIndex(): Promise<void> {
     if (area.country && !countries.has(area.country)) {
       countries.add(area.country);
       const countryNorm = normalizeText(area.country);
-      const countryCount = skiAreas.filter(a => a.country === area.country).length;
+      const countryCount = skiAreas.filter((a: typeof area) => a.country === area.country).length;
 
       items.push({
         id: `country-${area.country}`,

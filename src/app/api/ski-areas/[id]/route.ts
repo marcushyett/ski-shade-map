@@ -57,12 +57,12 @@ export async function GET(
 
     // Build connected areas list (bidirectional)
     const connectedAreas = [
-      ...skiArea.connectedTo.map(c => c.toArea),
-      ...skiArea.connectedFrom.map(c => c.fromArea),
+      ...skiArea.connectedTo.map((c: (typeof skiArea.connectedTo)[number]) => c.toArea),
+      ...skiArea.connectedFrom.map((c: (typeof skiArea.connectedFrom)[number]) => c.fromArea),
     ];
 
     // Transform runs
-    const runs = skiArea.runs.map(run => ({
+    const runs = skiArea.runs.map((run: (typeof skiArea.runs)[number]) => ({
       id: run.id,
       osmId: run.osmId,
       name: run.name,
@@ -74,7 +74,7 @@ export async function GET(
     }));
 
     // Transform lifts
-    const lifts = skiArea.lifts.map(lift => ({
+    const lifts = skiArea.lifts.map((lift: (typeof skiArea.lifts)[number]) => ({
       id: lift.id,
       osmId: lift.osmId,
       name: lift.name,
@@ -88,10 +88,10 @@ export async function GET(
 
     // Collect unique localities from runs and lifts
     const localitySet = new Set<string>();
-    runs.forEach(run => {
+    runs.forEach((run: (typeof runs)[number]) => {
       if (run.locality) localitySet.add(run.locality);
     });
-    lifts.forEach(lift => {
+    lifts.forEach((lift: (typeof lifts)[number]) => {
       if (lift.locality) localitySet.add(lift.locality);
     });
     const localities = Array.from(localitySet).sort();
@@ -113,7 +113,7 @@ export async function GET(
 
         if (connected) {
           // Add connected runs
-          const connectedRuns = connected.runs.map(run => ({
+          const connectedRuns = connected.runs.map((run: (typeof connected.runs)[number]) => ({
             id: run.id,
             osmId: run.osmId,
             name: run.name,
@@ -126,7 +126,7 @@ export async function GET(
           allRuns = [...allRuns, ...connectedRuns];
 
           // Add connected lifts
-          const connectedLifts = connected.lifts.map(lift => ({
+          const connectedLifts = connected.lifts.map((lift: (typeof connected.lifts)[number]) => ({
             id: lift.id,
             osmId: lift.osmId,
             name: lift.name,
@@ -140,10 +140,10 @@ export async function GET(
           allLifts = [...allLifts, ...connectedLifts];
 
           // Add localities from connected areas
-          connectedRuns.forEach(run => {
+          connectedRuns.forEach((run: (typeof connectedRuns)[number]) => {
             if (run.locality) localitySet.add(run.locality);
           });
-          connectedLifts.forEach(lift => {
+          connectedLifts.forEach((lift: (typeof connectedLifts)[number]) => {
             if (lift.locality) localitySet.add(lift.locality);
           });
         }

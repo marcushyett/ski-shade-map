@@ -42,8 +42,8 @@ export async function GET(
     const areaIds = [skiArea.id];
     if (includeConnected) {
       areaIds.push(
-        ...skiArea.connectedTo.map(c => c.toAreaId),
-        ...skiArea.connectedFrom.map(c => c.fromAreaId)
+        ...skiArea.connectedTo.map((c: (typeof skiArea.connectedTo)[number]) => c.toAreaId),
+        ...skiArea.connectedFrom.map((c: (typeof skiArea.connectedFrom)[number]) => c.fromAreaId)
       );
     }
 
@@ -80,13 +80,13 @@ export async function GET(
     // Filter by bounding box if provided
     let filteredLifts = allLifts;
     if (bbox) {
-      filteredLifts = allLifts.filter(lift => {
+      filteredLifts = allLifts.filter((lift: (typeof allLifts)[number]) => {
         return liftIntersectsBbox(lift.geometry, bbox!);
       });
     }
 
     // Transform for response
-    const lifts = filteredLifts.map(lift => ({
+    const lifts = filteredLifts.map((lift: (typeof allLifts)[number]) => ({
       id: lift.id,
       osmId: lift.osmId,
       name: lift.name,
