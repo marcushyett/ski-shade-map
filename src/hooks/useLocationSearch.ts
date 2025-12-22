@@ -112,9 +112,11 @@ export function preloadLocationSearch(): Promise<void> {
         fallbackLoad().then(resolve).catch(reject);
       };
 
+      // Workers need absolute URLs since they don't have the same origin context
+      const absoluteUrl = `${window.location.origin}/api/locations/all`;
       worker.postMessage({
         type: 'start',
-        apiUrl: '/api/locations/all',
+        apiUrl: absoluteUrl,
       });
     } catch (error) {
       console.warn('Worker creation failed, falling back:', error);

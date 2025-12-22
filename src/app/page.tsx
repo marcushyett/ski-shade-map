@@ -137,6 +137,20 @@ interface StoredState {
 }
 
 // Memoized controls content to prevent re-renders
+interface StatusDebugInfo {
+  skiAreaId: string | null;
+  osmId: string | null;
+  hasLiveStatus: boolean | null;
+  statusFetchAttempted: boolean;
+  statusFetchError: string | null;
+  resortStatusData: {
+    lifts: number;
+    runs: number;
+    resortName: string | null;
+  } | null;
+  lastFetchTime: string | null;
+}
+
 const ControlsContent = memo(function ControlsContent({
   selectedArea,
   skiAreaDetails,
@@ -164,6 +178,7 @@ const ControlsContent = memo(function ControlsContent({
   onRemoveFavourite,
   onFakeLocationChange,
   onFakeLocationDropModeChange,
+  statusDebug,
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
@@ -191,6 +206,7 @@ const ControlsContent = memo(function ControlsContent({
   onRemoveFavourite: (runId: string) => void;
   onFakeLocationChange: (location: { lat: number; lng: number } | null) => void;
   onFakeLocationDropModeChange: (enabled: boolean) => void;
+  statusDebug: StatusDebugInfo;
 }) {
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
@@ -329,8 +345,8 @@ const ControlsContent = memo(function ControlsContent({
             <button
               onClick={handleReset}
               className="flex items-center gap-1.5 py-1 px-2 rounded hover:bg-white/10 transition-colors text-left"
-              style={{ 
-                fontSize: 10, 
+              style={{
+                fontSize: 10,
                 color: '#ff4d4f',
                 background: 'transparent',
                 border: 'none',
@@ -343,6 +359,30 @@ const ControlsContent = memo(function ControlsContent({
             <span style={{ fontSize: 9, color: '#555', paddingLeft: 4 }}>
               Clears all cached data and reloads the app
             </span>
+
+            {/* Status Debug Panel */}
+            <div className="mt-3 pt-2 border-t border-white/10">
+              <div style={{ fontSize: 9, color: '#888', marginBottom: 4 }}>STATUS DEBUG</div>
+              <div style={{ fontSize: 8, color: '#666', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                <div>skiAreaId: {statusDebug.skiAreaId || 'null'}</div>
+                <div>osmId: {statusDebug.osmId || 'null'}</div>
+                <div>hasLiveStatus: {statusDebug.hasLiveStatus === null ? 'null' : statusDebug.hasLiveStatus ? 'true' : 'false'}</div>
+                <div>fetchAttempted: {statusDebug.statusFetchAttempted ? 'true' : 'false'}</div>
+                {statusDebug.statusFetchError && (
+                  <div style={{ color: '#ff4d4f' }}>error: {statusDebug.statusFetchError}</div>
+                )}
+                {statusDebug.resortStatusData && (
+                  <>
+                    <div style={{ color: '#22c55e' }}>resortName: {statusDebug.resortStatusData.resortName}</div>
+                    <div style={{ color: '#22c55e' }}>lifts: {statusDebug.resortStatusData.lifts}</div>
+                    <div style={{ color: '#22c55e' }}>runs: {statusDebug.resortStatusData.runs}</div>
+                  </>
+                )}
+                {statusDebug.lastFetchTime && (
+                  <div>lastFetch: {new Date(statusDebug.lastFetchTime).toLocaleTimeString()}</div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -441,6 +481,17 @@ export default function Home() {
   const [resortStatus, setResortStatus] = useState<ResortStatus | null>(null);
   const [hasStatusData, setHasStatusData] = useState(false);
   const statusSummary = useMemo(() => getResortStatusSummary(resortStatus), [resortStatus]);
+
+  // Status debug info
+  const [statusDebug, setStatusDebug] = useState<StatusDebugInfo>({
+    skiAreaId: null,
+    osmId: null,
+    hasLiveStatus: null,
+    statusFetchAttempted: false,
+    statusFetchError: null,
+    resortStatusData: null,
+    lastFetchTime: null,
+  });
   const [navReturnPoint, setNavReturnPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [isWeatherCardCollapsed, setIsWeatherCardCollapsed] = useState(false);
   const [isNavPanelMinimized, setIsNavPanelMinimized] = useState(false);
@@ -700,13 +751,37 @@ export default function Home() {
     if (!skiAreaDetails?.id) {
       setResortStatus(null);
       setHasStatusData(false);
+      setStatusDebug({
+        skiAreaId: null,
+        osmId: null,
+        hasLiveStatus: null,
+        statusFetchAttempted: false,
+        statusFetchError: null,
+        resortStatusData: null,
+        lastFetchTime: null,
+      });
       return;
     }
 
     const fetchStatus = async () => {
+      // Update debug info
+      setStatusDebug(prev => ({
+        ...prev,
+        skiAreaId: skiAreaDetails.id,
+        osmId: skiAreaDetails.osmId,
+        statusFetchAttempted: true,
+        statusFetchError: null,
+        lastFetchTime: new Date().toISOString(),
+      }));
+
       // Need osmId to fetch status
       if (!skiAreaDetails.osmId) {
         setHasStatusData(false);
+        setStatusDebug(prev => ({
+          ...prev,
+          hasLiveStatus: false,
+          statusFetchError: 'No osmId available for this ski area',
+        }));
         return;
       }
 
@@ -714,14 +789,35 @@ export default function Home() {
         // Check if this resort has live status data available
         const hasStatus = await hasLiveStatus(skiAreaDetails.osmId);
         setHasStatusData(hasStatus);
+        setStatusDebug(prev => ({
+          ...prev,
+          hasLiveStatus: hasStatus,
+        }));
 
         if (hasStatus) {
           const status = await fetchResortStatus(skiAreaDetails.osmId);
           setResortStatus(status);
+          setStatusDebug(prev => ({
+            ...prev,
+            resortStatusData: status ? {
+              lifts: status.lifts?.length || 0,
+              runs: status.runs?.length || 0,
+              resortName: status.resort?.name || null,
+            } : null,
+          }));
+        } else {
+          setStatusDebug(prev => ({
+            ...prev,
+            statusFetchError: 'Resort not in supported list',
+          }));
         }
       } catch (error) {
         console.error('Failed to fetch resort status:', error);
         setHasStatusData(false);
+        setStatusDebug(prev => ({
+          ...prev,
+          statusFetchError: error instanceof Error ? error.message : 'Unknown error',
+        }));
       }
     };
 
@@ -2191,6 +2287,7 @@ export default function Home() {
           onRemoveFavourite={removeFavourite}
           onFakeLocationChange={setFakeLocation}
           onFakeLocationDropModeChange={setIsFakeLocationDropMode}
+          statusDebug={statusDebug}
         />
       </Drawer>
 
@@ -2223,6 +2320,7 @@ export default function Home() {
           onRemoveFavourite={removeFavourite}
           onFakeLocationChange={setFakeLocation}
           onFakeLocationDropModeChange={setIsFakeLocationDropMode}
+          statusDebug={statusDebug}
         />
       </div>
 
