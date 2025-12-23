@@ -591,6 +591,7 @@ export function buildNavigationGraph(
     let currentFromNode = originalEdge.fromNodeId;
     let currentSegmentStart = 0;
     let currentCoordStart = 0;
+    let previousIntersectionPoint: [number, number, number] | null = null;
 
     for (let i = intersections.length - 1; i >= 0; i--) { // Process from start to end
       const intersection = intersections[i];
@@ -610,10 +611,15 @@ export function buildNavigationGraph(
       adjacency.set(splitNodeId, []);
 
       // Create edge from current position to split point
-      const coordsToSplit = [
-        ...runData.orderedCoords.slice(currentCoordStart, intersection.segmentIndex + 1),
-        intersection.pointOnRun,
-      ] as [number, number, number?][];
+      // Include previous intersection point at start if this isn't the first segment
+      const coordsToSplit: [number, number, number?][] = [];
+      if (previousIntersectionPoint) {
+        coordsToSplit.push(previousIntersectionPoint);
+      }
+      coordsToSplit.push(
+        ...(runData.orderedCoords.slice(currentCoordStart, intersection.segmentIndex + 1) as [number, number, number?][])
+      );
+      coordsToSplit.push(intersection.pointOnRun);
 
       if (coordsToSplit.length >= 2) {
         const distToSplit = calculatePathDistance(coordsToSplit as number[][]);
@@ -645,6 +651,7 @@ export function buildNavigationGraph(
       currentFromNode = splitNodeId;
       currentSegmentStart = intersection.segmentIndex;
       currentCoordStart = intersection.segmentIndex + 1;
+      previousIntersectionPoint = intersection.pointOnRun;
     }
 
     // Create final edge from last split to end
@@ -1713,32 +1720,86 @@ export function addArbitraryPointToGraph(
     graph.nodes.set(nodeId, splitNode);
     graph.adjacency.set(nodeId, []);
 
-    // Find the original run edge
+    // Find the run edge that contains our split point
+    // The edge might be the original edge or a segment edge (if the run was already split)
     const runEdgeId = `edge-run-${run.id}`;
-    const originalEdge = graph.edges.get(runEdgeId);
+    let targetEdge = graph.edges.get(runEdgeId);
+    let targetEdgeId = runEdgeId;
 
-    if (originalEdge) {
-      // Remove the original edge from the start node's adjacency
-      const startAdj = graph.adjacency.get(originalEdge.fromNodeId) || [];
-      const filteredStartAdj = startAdj.filter((id) => id !== runEdgeId);
-      graph.adjacency.set(originalEdge.fromNodeId, filteredStartAdj);
+    // If the original edge doesn't exist, find the segment edge that contains our point
+    if (!targetEdge) {
+      // Look for segment edges that belong to this run
+      for (const [edgeId, edge] of graph.edges) {
+        if (edge.featureId === run.id && edge.type === 'run') {
+          // Check if our split point falls within this edge's coordinates
+          // by checking if the segment index falls within this edge's coordinate range
+          const edgeCoords = edge.coordinates;
+          if (edgeCoords.length >= 2) {
+            // Check if the split point is close to any point on this edge
+            for (let i = 0; i < edgeCoords.length - 1; i++) {
+              const c1 = edgeCoords[i];
+              const c2 = edgeCoords[i + 1];
+              const closest = closestPointOnSegment(
+                pointOnRun[0], pointOnRun[1],
+                c1[0], c1[1], (c1[2] as number) || 0,
+                c2[0], c2[1], (c2[2] as number) || 0
+              );
+              const dist = haversineDistance(pointOnRun[1], pointOnRun[0], closest.lat, closest.lng);
+              if (dist < 5) { // Within 5 meters - this is the right edge
+                targetEdge = edge;
+                targetEdgeId = edgeId;
+                break;
+              }
+            }
+          }
+          if (targetEdge) break;
+        }
+      }
+    }
+
+    if (targetEdge) {
+      // Remove the target edge from its start node's adjacency
+      const startAdj = graph.adjacency.get(targetEdge.fromNodeId) || [];
+      const filteredStartAdj = startAdj.filter((id) => id !== targetEdgeId);
+      graph.adjacency.set(targetEdge.fromNodeId, filteredStartAdj);
+      graph.edges.delete(targetEdgeId);
 
       // Calculate properties for the two new segments
       const speed = getSkiingSpeed(run.difficulty);
 
-      // Segment 1: From run start to split point (first part of run)
-      // Include all coords up to and including the segment start, plus the interpolated point
+      // Find where in the target edge's coordinates our split point falls
+      let splitCoordIndex = 0;
+      let minDist = Infinity;
+      const edgeCoords = targetEdge.coordinates;
+
+      for (let i = 0; i < edgeCoords.length - 1; i++) {
+        const c1 = edgeCoords[i];
+        const c2 = edgeCoords[i + 1];
+        const closest = closestPointOnSegment(
+          pointOnRun[0], pointOnRun[1],
+          c1[0], c1[1], (c1[2] as number) || 0,
+          c2[0], c2[1], (c2[2] as number) || 0
+        );
+        const dist = haversineDistance(pointOnRun[1], pointOnRun[0], closest.lat, closest.lng);
+        if (dist < minDist) {
+          minDist = dist;
+          splitCoordIndex = i;
+        }
+      }
+
+      // Segment 1: From edge start to split point
       const coordsToSplit = [
-        ...orderedCoords.slice(0, orderedSegmentIndex + 1),
+        ...edgeCoords.slice(0, splitCoordIndex + 1),
         pointOnRun,
       ] as [number, number, number?][];
+
       if (coordsToSplit.length >= 2) {
         const dist1 = calculatePathDistance(coordsToSplit as number[][]);
-        const elev1 = splitNode.elevation - (graph.nodes.get(originalEdge.fromNodeId)?.elevation || 0);
+        const elev1 = splitNode.elevation - (graph.nodes.get(targetEdge.fromNodeId)?.elevation || 0);
 
         const edge1: NavigationEdge = {
-          id: `edge-run-${run.id}-to-split`,
-          fromNodeId: originalEdge.fromNodeId,
+          id: `edge-run-${run.id}-to-split-${pointId}`,
+          fromNodeId: targetEdge.fromNodeId,
           toNodeId: nodeId,
           type: 'run',
           featureId: run.id,
@@ -1752,25 +1813,25 @@ export function addArbitraryPointToGraph(
         };
         graph.edges.set(edge1.id, edge1);
 
-        const startAdj2 = graph.adjacency.get(originalEdge.fromNodeId) || [];
+        const startAdj2 = graph.adjacency.get(targetEdge.fromNodeId) || [];
         startAdj2.push(edge1.id);
-        graph.adjacency.set(originalEdge.fromNodeId, startAdj2);
+        graph.adjacency.set(targetEdge.fromNodeId, startAdj2);
       }
 
-      // Segment 2: From split point to run end (rest of run)
-      // Start with the interpolated point, then include all coords from segment end onwards
+      // Segment 2: From split point to edge end
       const coordsFromSplit = [
         pointOnRun,
-        ...orderedCoords.slice(orderedSegmentIndex + 1),
+        ...edgeCoords.slice(splitCoordIndex + 1),
       ] as [number, number, number?][];
+
       if (coordsFromSplit.length >= 2) {
         const dist2 = calculatePathDistance(coordsFromSplit as number[][]);
-        const elev2 = (graph.nodes.get(originalEdge.toNodeId)?.elevation || 0) - splitNode.elevation;
+        const elev2 = (graph.nodes.get(targetEdge.toNodeId)?.elevation || 0) - splitNode.elevation;
 
         const edge2: NavigationEdge = {
-          id: `edge-run-${run.id}-from-split`,
+          id: `edge-run-${run.id}-from-split-${pointId}`,
           fromNodeId: nodeId,
-          toNodeId: originalEdge.toNodeId,
+          toNodeId: targetEdge.toNodeId,
           type: 'run',
           featureId: run.id,
           featureName: run.name,
