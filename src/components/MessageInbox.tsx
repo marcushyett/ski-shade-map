@@ -206,28 +206,12 @@ export const MessageInboxButton = memo(function MessageInboxButton({
   return (
     <MobileAwareTooltip title={unreadCount > 0 ? `${unreadCount} new message${unreadCount > 1 ? 's' : ''}` : 'Resort messages'} placement="left">
       <button
-        className="message-inbox-btn"
+        className={`location-btn ${unreadCount > 0 ? 'active' : ''}`}
         onClick={onClick}
         aria-label={`Resort messages${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: '50%',
-          background: unreadCount > 0 ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0, 0, 0, 0.6)',
-          border: unreadCount > 0 ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.2)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          transition: 'all 0.2s',
-        }}
       >
         <Badge count={unreadCount} size="small" offset={[2, -2]}>
-          <MailOutlined style={{
-            fontSize: 14,
-            color: unreadCount > 0 ? '#3b82f6' : '#fff',
-          }} />
+          <MailOutlined style={{ fontSize: 16 }} />
         </Badge>
       </button>
     </MobileAwareTooltip>

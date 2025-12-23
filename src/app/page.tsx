@@ -2676,7 +2676,7 @@ export default function Home() {
           />
 
           {/* Message inbox - only shown for resorts with live status */}
-          <div className="message-inbox-container">
+          <div className="location-controls">
             <MessageInbox
               allMessages={allMessages}
               unreadMessages={unreadMessages}
