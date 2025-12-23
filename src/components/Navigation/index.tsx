@@ -10,12 +10,12 @@ import type { EnrichedLiftData, EnrichedRunData } from '@/lib/lift-status-types'
 import {
   buildNavigationGraph,
   findStatusAwareRoute,
-  findNearestNode,
   findAlternativeRoutes,
   optimizeRoute,
   formatDuration,
   formatDistance,
   addPoiNodeToGraph,
+  addArbitraryPointToGraph,
   type NavigationGraph,
   type NavigationRoute,
   type LiveStatusData,
@@ -384,16 +384,17 @@ function NavigationPanelInner({
           if (point.type === 'closestToilet') {
             return null;
           }
-          
+
           // If nodeId is already set (e.g., from POI resolution), use it directly
           if (point.nodeId) {
             return point.nodeId;
           }
-          
+
           if (point.type === 'location' || point.type === 'mapPoint' || point.type === 'home') {
             if (point.lat && point.lng) {
-              const nearest = findNearestNode(graph, point.lat, point.lng);
-              return nearest?.id || null;
+              // Use addArbitraryPointToGraph for smart run-snapping
+              // This allows joining runs partway down rather than just finding nearest node
+              return addArbitraryPointToGraph(graph, skiArea, point.lat, point.lng, point.id);
             }
             return null;
           } else if (point.type === 'run') {
