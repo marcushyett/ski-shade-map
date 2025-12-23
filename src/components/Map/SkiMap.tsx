@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
-import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded } from '@/lib/shade-calculator';
+import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded, getDifficultyColorClosed } from '@/lib/shade-calculator';
 import { 
   startGeometryPrecomputation, 
   getGeometryCache, 
@@ -665,7 +665,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Closed runs layer - dashed lines with reduced opacity
+    // Closed runs layer - dashed lines with faded difficulty colors
     map.current.addLayer({
       id: 'ski-segments-closed',
       type: 'line',
@@ -676,9 +676,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'line-join': 'round',
       },
       paint: {
-        'line-color': '#666666',
+        'line-color': [
+          'match',
+          ['get', 'difficulty'],
+          'novice', getDifficultyColorClosed('novice'),
+          'easy', getDifficultyColorClosed('easy'),
+          'intermediate', getDifficultyColorClosed('intermediate'),
+          'advanced', getDifficultyColorClosed('advanced'),
+          'expert', getDifficultyColorClosed('expert'),
+          getDifficultyColorClosed(null) // default
+        ],
         'line-width': 3,
-        'line-opacity': 0.4,
+        'line-opacity': 0.6,
         'line-dasharray': [2, 2],
       },
     });
