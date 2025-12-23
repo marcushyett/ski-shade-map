@@ -911,7 +911,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       paint: {
         'line-color': [
           'case',
-          ['==', ['get', 'status'], 'closed'], '#888888',
+          ['==', ['get', 'status'], 'closed'], '#ef4444',
           ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
           '#888888'
@@ -939,7 +939,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'circle-radius': 3,
         'circle-color': [
           'case',
-          ['==', ['get', 'status'], 'closed'], '#888888',
+          ['==', ['get', 'status'], 'closed'], '#ef4444',
           ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
           '#888888'
