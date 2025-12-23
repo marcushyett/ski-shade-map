@@ -250,12 +250,21 @@ function matchRunStatus(runId: string, runName: string | null, runStatuses: RunS
 }
 
 /**
+ * Resort coordinates for timezone calculations
+ */
+export interface ResortCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
+/**
  * Enrich lifts with live status data
  */
 export function enrichLiftsWithStatus(
   lifts: LiftData[],
   resortStatus: ResortStatus | null,
-  currentTime: Date = new Date()
+  currentTime: Date = new Date(),
+  resortCoordinates?: ResortCoordinates
 ): EnrichedLiftData[] {
   return lifts.map(lift => {
     const enriched: EnrichedLiftData = {
@@ -272,7 +281,13 @@ export function enrichLiftsWithStatus(
         // Extract closing time
         if (liveStatus.openingTimes && liveStatus.openingTimes.length > 0) {
           enriched.closingTime = liveStatus.openingTimes[0].endTime;
-          enriched.minutesUntilClose = getMinutesUntilClose(enriched.closingTime, currentTime);
+          // Use resort coordinates for proper timezone conversion
+          enriched.minutesUntilClose = getMinutesUntilClose(
+            enriched.closingTime,
+            currentTime,
+            resortCoordinates?.latitude,
+            resortCoordinates?.longitude
+          );
         }
       }
     }
@@ -287,7 +302,8 @@ export function enrichLiftsWithStatus(
 export function enrichRunsWithStatus(
   runs: RunData[],
   resortStatus: ResortStatus | null,
-  currentTime: Date = new Date()
+  currentTime: Date = new Date(),
+  resortCoordinates?: ResortCoordinates
 ): EnrichedRunData[] {
   return runs.map(run => {
     const enriched: EnrichedRunData = {
@@ -304,7 +320,13 @@ export function enrichRunsWithStatus(
         // Extract closing time
         if (liveStatus.openingTimes && liveStatus.openingTimes.length > 0) {
           enriched.closingTime = liveStatus.openingTimes[0].endTime;
-          enriched.minutesUntilClose = getMinutesUntilClose(enriched.closingTime, currentTime);
+          // Use resort coordinates for proper timezone conversion
+          enriched.minutesUntilClose = getMinutesUntilClose(
+            enriched.closingTime,
+            currentTime,
+            resortCoordinates?.latitude,
+            resortCoordinates?.longitude
+          );
         }
       }
     }

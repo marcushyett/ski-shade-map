@@ -3,6 +3,7 @@
  */
 
 import type { OperationStatus } from './types';
+import { getResortLocalTime } from './route-sun-calculator';
 
 // Status values from the ski-resort-status API (same as OperationStatus)
 export type LiftOperatingStatus = OperationStatus;
@@ -108,9 +109,23 @@ export function parseTimeToMinutes(timeStr: string): number {
 }
 
 // Helper to get minutes until closing
-export function getMinutesUntilClose(closingTime: string, currentTime: Date): number {
+// Uses resort local time to properly compare against closing time (which is in resort local time)
+export function getMinutesUntilClose(
+  closingTime: string,
+  currentTime: Date,
+  latitude?: number,
+  longitude?: number
+): number {
   const closingMinutes = parseTimeToMinutes(closingTime);
-  const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+
+  // Convert currentTime to resort local time if coordinates are provided
+  // This fixes the bug where browser timezone was used instead of resort timezone
+  let localTime = currentTime;
+  if (latitude !== undefined && longitude !== undefined) {
+    localTime = getResortLocalTime(currentTime, latitude, longitude);
+  }
+
+  const currentMinutes = localTime.getHours() * 60 + localTime.getMinutes();
   return closingMinutes - currentMinutes;
 }
 

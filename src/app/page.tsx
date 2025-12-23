@@ -863,16 +863,25 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [skiAreaDetails?.id, skiAreaDetails?.osmId]);
 
+  // Resort coordinates for timezone-aware closing time calculations
+  const resortCoordinates = useMemo(() => {
+    if (!skiAreaDetails) return undefined;
+    return {
+      latitude: skiAreaDetails.latitude,
+      longitude: skiAreaDetails.longitude
+    };
+  }, [skiAreaDetails?.latitude, skiAreaDetails?.longitude]);
+
   // Enrich runs and lifts with live status
   const enrichedRuns = useMemo(() => {
     if (!skiAreaDetails?.runs) return [];
-    return enrichRunsWithStatus(skiAreaDetails.runs, resortStatus, selectedTime);
-  }, [skiAreaDetails?.runs, resortStatus, selectedTime]);
+    return enrichRunsWithStatus(skiAreaDetails.runs, resortStatus, selectedTime, resortCoordinates);
+  }, [skiAreaDetails?.runs, resortStatus, selectedTime, resortCoordinates]);
 
   const enrichedLifts = useMemo(() => {
     if (!skiAreaDetails?.lifts) return [];
-    return enrichLiftsWithStatus(skiAreaDetails.lifts, resortStatus, selectedTime);
-  }, [skiAreaDetails?.lifts, resortStatus, selectedTime]);
+    return enrichLiftsWithStatus(skiAreaDetails.lifts, resortStatus, selectedTime, resortCoordinates);
+  }, [skiAreaDetails?.lifts, resortStatus, selectedTime, resortCoordinates]);
 
   // Create enriched ski area details for map display
   const enrichedSkiAreaDetails = useMemo(() => {
