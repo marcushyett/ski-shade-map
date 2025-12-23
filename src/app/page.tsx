@@ -54,6 +54,7 @@ import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData, POIData } from 
 import type { WeatherData, UnitPreferences } from '@/lib/weather-types';
 import { analyzeResortSnowQuality, type ResortSnowSummary, type PisteSnowAnalysis, type SnowQualityAtPoint, getConditionInfo, calculateSnowQualityByAltitude } from '@/lib/snow-quality';
 import { getSunPosition } from '@/lib/suncalc';
+import { getResortLocalTime } from '@/lib/route-sun-calculator';
 import { trackEvent } from '@/lib/posthog';
 import { getCachedSkiArea, cacheSkiArea, clearExpiredCache } from '@/lib/ski-area-cache';
 import SnowConditionsPanel from '@/components/Controls/SnowConditionsPanel';
@@ -781,6 +782,28 @@ export default function Home() {
     }
   }, [navigationState?.isNavigating, navigationRoute, skiAreaDetails?.id, initialLoadDone]);
 
+  // Update selected time to resort's local timezone when a new resort is loaded
+  // This ensures the time slider shows the correct local time at the resort
+  const previousResortIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!skiAreaDetails?.id || !skiAreaDetails.latitude || !skiAreaDetails.longitude) return;
+
+    // Only update when switching to a different resort
+    if (previousResortIdRef.current === skiAreaDetails.id) return;
+    previousResortIdRef.current = skiAreaDetails.id;
+
+    // Get current time in the resort's local timezone
+    const now = new Date();
+    const resortLocalNow = getResortLocalTime(now, skiAreaDetails.latitude, skiAreaDetails.longitude);
+
+    // Create a new Date that represents the same "wall clock time" as the resort's local time
+    // This makes the time slider show the correct time at the resort
+    const adjustedTime = new Date();
+    adjustedTime.setHours(resortLocalNow.getHours(), resortLocalNow.getMinutes(), 0, 0);
+
+    setSelectedTime(adjustedTime);
+  }, [skiAreaDetails?.id, skiAreaDetails?.latitude, skiAreaDetails?.longitude]);
+
   // Fetch live lift/run status when ski area is loaded
   useEffect(() => {
     if (!skiAreaDetails?.id) {
@@ -863,16 +886,25 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [skiAreaDetails?.id, skiAreaDetails?.osmId]);
 
+  // Resort coordinates for timezone-aware closing time calculations
+  const resortCoordinates = useMemo(() => {
+    if (!skiAreaDetails) return undefined;
+    return {
+      latitude: skiAreaDetails.latitude,
+      longitude: skiAreaDetails.longitude
+    };
+  }, [skiAreaDetails?.latitude, skiAreaDetails?.longitude]);
+
   // Enrich runs and lifts with live status
   const enrichedRuns = useMemo(() => {
     if (!skiAreaDetails?.runs) return [];
-    return enrichRunsWithStatus(skiAreaDetails.runs, resortStatus, selectedTime);
-  }, [skiAreaDetails?.runs, resortStatus, selectedTime]);
+    return enrichRunsWithStatus(skiAreaDetails.runs, resortStatus, selectedTime, resortCoordinates);
+  }, [skiAreaDetails?.runs, resortStatus, selectedTime, resortCoordinates]);
 
   const enrichedLifts = useMemo(() => {
     if (!skiAreaDetails?.lifts) return [];
-    return enrichLiftsWithStatus(skiAreaDetails.lifts, resortStatus, selectedTime);
-  }, [skiAreaDetails?.lifts, resortStatus, selectedTime]);
+    return enrichLiftsWithStatus(skiAreaDetails.lifts, resortStatus, selectedTime, resortCoordinates);
+  }, [skiAreaDetails?.lifts, resortStatus, selectedTime, resortCoordinates]);
 
   // Create enriched ski area details for map display
   const enrichedSkiAreaDetails = useMemo(() => {
