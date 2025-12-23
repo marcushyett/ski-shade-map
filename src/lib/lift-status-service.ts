@@ -289,6 +289,11 @@ export function enrichLiftsWithStatus(
             resortCoordinates?.longitude
           );
         }
+
+        // Extract waiting time
+        if (liveStatus.waitingTime !== undefined) {
+          enriched.waitingTime = liveStatus.waitingTime;
+        }
       }
     }
 

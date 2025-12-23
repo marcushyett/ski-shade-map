@@ -65,9 +65,9 @@ function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): 
 
 const MAX_DISTANCE_FROM_SKI_AREA_KM = 10;
 
-// Helper to check if lift/run is enriched (has minutesUntilClose)
+// Helper to check if lift/run is enriched (has minutesUntilClose or waitingTime)
 function isEnrichedLift(lift: LiftData | EnrichedLiftData): lift is EnrichedLiftData {
-  return 'minutesUntilClose' in lift;
+  return 'minutesUntilClose' in lift || 'waitingTime' in lift;
 }
 
 function isEnrichedRun(run: RunData | EnrichedRunData): run is EnrichedRunData {
@@ -80,6 +80,7 @@ function buildLiveStatusData(skiArea: SkiAreaDetails): LiveStatusData {
   const closedRunIds = new Set<string>();
   const liftClosingTimes = new Map<string, number>();
   const runClosingTimes = new Map<string, number>();
+  const liftWaitingTimes = new Map<string, number>();
 
   for (const lift of skiArea.lifts) {
     if (lift.status === 'closed') {
@@ -88,6 +89,10 @@ function buildLiveStatusData(skiArea: SkiAreaDetails): LiveStatusData {
     // Check for enriched data with closing times
     if (isEnrichedLift(lift) && lift.minutesUntilClose !== undefined) {
       liftClosingTimes.set(lift.id, lift.minutesUntilClose);
+    }
+    // Check for enriched data with waiting times
+    if (isEnrichedLift(lift) && lift.waitingTime !== undefined) {
+      liftWaitingTimes.set(lift.id, lift.waitingTime);
     }
   }
 
@@ -106,6 +111,7 @@ function buildLiveStatusData(skiArea: SkiAreaDetails): LiveStatusData {
     closedRunIds,
     liftClosingTimes,
     runClosingTimes,
+    liftWaitingTimes,
   };
 }
 

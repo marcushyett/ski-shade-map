@@ -900,6 +900,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       features: area.lifts.map(lift => {
         const minutesUntilClose = 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
         const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+        const waitingTime = 'waitingTime' in lift ? (lift as EnrichedLiftData).waitingTime : null;
+        const longWait = typeof waitingTime === 'number' && waitingTime > 10;
         return {
           type: 'Feature' as const,
           properties: {
@@ -908,6 +910,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
             liftType: lift.liftType,
             status: lift.status,
             closingSoon,
+            longWait,
+            waitingTime,
           },
           geometry: lift.geometry,
         };
@@ -932,6 +936,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     });
 
     // Lift lines with status-based coloring and opacity
+    // Priority: closed (red) > long wait >10min (orange) > closing soon (orange) > open (green) > unknown (gray)
     map.current.addLayer({
       id: 'ski-lifts',
       type: 'line',
@@ -940,6 +945,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'line-color': [
           'case',
           ['==', ['get', 'status'], 'closed'], '#ef4444',
+          ['==', ['get', 'longWait'], true], '#f97316',
           ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
           '#888888'
@@ -968,6 +974,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'circle-color': [
           'case',
           ['==', ['get', 'status'], 'closed'], '#ef4444',
+          ['==', ['get', 'longWait'], true], '#f97316',
           ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
           '#888888'
@@ -1744,7 +1751,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     [skiArea?.runs]
   );
   const liftsWithLiveStatus = useMemo(() =>
-    skiArea?.lifts.filter(l => 'liveStatus' in l || 'minutesUntilClose' in l).length ?? 0,
+    skiArea?.lifts.filter(l => 'liveStatus' in l || 'minutesUntilClose' in l || 'waitingTime' in l).length ?? 0,
     [skiArea?.lifts]
   );
 
@@ -1859,6 +1866,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
           features: skiArea.lifts.map(lift => {
             const minutesUntilClose = 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
             const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+            const waitingTime = 'waitingTime' in lift ? (lift as EnrichedLiftData).waitingTime : null;
+            const longWait = typeof waitingTime === 'number' && waitingTime > 10;
             return {
               type: 'Feature' as const,
               properties: {
@@ -1867,6 +1876,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
                 liftType: lift.liftType,
                 status: lift.status,
                 closingSoon,
+                longWait,
+                waitingTime,
               },
               geometry: lift.geometry,
             };

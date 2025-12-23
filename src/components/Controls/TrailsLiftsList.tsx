@@ -12,6 +12,7 @@ import {
   ClockCircleOutlined,
   StopOutlined,
   CheckCircleOutlined,
+  FieldTimeOutlined,
 } from '@ant-design/icons';
 import type { RunData, LiftData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
@@ -275,6 +276,50 @@ const DifficultyHeader = memo(function DifficultyHeader({
   );
 });
 
+// Waiting time item component
+const WaitingTimeItem = memo(function WaitingTimeItem({
+  lift,
+  onClick
+}: {
+  lift: LiftData | EnrichedLiftData;
+  onClick: () => void;
+}) {
+  const enriched = isEnrichedLift(lift) ? lift : null;
+  const waitingTime = enriched?.waitingTime ?? enriched?.liveStatus?.waitingTime ?? 0;
+  const hasLongWait = waitingTime > 10;
+
+  return (
+    <div
+      className="waiting-time-item cursor-pointer flex items-center justify-between hover:bg-white/5"
+      onClick={onClick}
+      style={{ padding: '2px 4px' }}
+    >
+      <span
+        className="truncate"
+        style={{
+          fontSize: 9,
+          color: hasLongWait ? '#f97316' : '#ccc',
+          lineHeight: '14px',
+          flex: 1
+        }}
+      >
+        {lift.name || 'Unnamed'}
+      </span>
+      <span
+        style={{
+          fontSize: 9,
+          color: hasLongWait ? '#f97316' : '#22c55e',
+          fontWeight: 600,
+          marginLeft: 8,
+          flexShrink: 0
+        }}
+      >
+        {waitingTime === 0 ? 'No wait' : `${waitingTime} min`}
+      </span>
+    </div>
+  );
+});
+
 function TrailsListInner({
   runs,
   lifts,
@@ -286,6 +331,7 @@ function TrailsListInner({
   const [searchText, setSearchText] = useState('');
   const [runsExpanded, setRunsExpanded] = useState(false);
   const [liftsExpanded, setLiftsExpanded] = useState(false);
+  const [waitingTimesExpanded, setWaitingTimesExpanded] = useState(false);
   const [expandedLocalities, setExpandedLocalities] = useState<Set<string>>(new Set());
   const [expandedDifficulties, setExpandedDifficulties] = useState<Set<string>>(new Set());
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
@@ -365,6 +411,26 @@ function TrailsListInner({
   const closedRunsCount = useMemo(() =>
     filteredRuns.filter(r => r.status === 'closed').length
   , [filteredRuns]);
+
+  // Top 10 lifts with longest waiting times
+  const liftsWithWaitingTimes = useMemo(() => {
+    return lifts
+      .filter(lift => {
+        if (!isEnrichedLift(lift)) return false;
+        const waitTime = lift.waitingTime ?? lift.liveStatus?.waitingTime;
+        return typeof waitTime === 'number';
+      })
+      .map(lift => {
+        const enriched = lift as EnrichedLiftData;
+        const waitTime = enriched.waitingTime ?? enriched.liveStatus?.waitingTime ?? 0;
+        return { lift, waitTime };
+      })
+      .sort((a, b) => b.waitTime - a.waitTime)
+      .slice(0, 10)
+      .map(item => item.lift);
+  }, [lifts]);
+
+  const hasWaitingTimeData = liftsWithWaitingTimes.length > 0;
 
   // Group runs by locality, then by difficulty
   const runsByLocalityAndDifficulty = useMemo(() => {
@@ -584,6 +650,35 @@ function TrailsListInner({
 
       {isPending && (
         <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>Filtering...</div>
+      )}
+
+      {/* Waiting Times Section - only show if we have waiting time data */}
+      {hasWaitingTimeData && (
+        <div className="mb-1">
+          <div
+            className="flex items-center gap-2 py-1 cursor-pointer hover:bg-white/5 rounded"
+            onClick={() => setWaitingTimesExpanded(!waitingTimesExpanded)}
+          >
+            {waitingTimesExpanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
+            <FieldTimeOutlined style={{ fontSize: 10, color: '#f97316' }} />
+            <span style={{ fontSize: 10, color: '#f97316' }}>Queue Times</span>
+          </div>
+
+          {waitingTimesExpanded && (
+            <div className="ml-3">
+              {liftsWithWaitingTimes.map(lift => (
+                <WaitingTimeItem
+                  key={lift.id}
+                  lift={lift}
+                  onClick={() => onSelectLift?.(lift)}
+                />
+              ))}
+              {liftsWithWaitingTimes.length === 0 && (
+                <span style={{ fontSize: 10, color: '#666' }}>No queue data available</span>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Runs Section */}

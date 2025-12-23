@@ -1586,6 +1586,7 @@ export interface LiveStatusData {
   closedRunIds: Set<string>;
   liftClosingTimes: Map<string, number>; // lift ID -> minutes until close
   runClosingTimes: Map<string, number>;  // run ID -> minutes until close
+  liftWaitingTimes: Map<string, number>; // lift ID -> waiting time in minutes
 }
 
 export interface StatusAwareRouteOptions {
@@ -1743,7 +1744,17 @@ export function findRouteWithArrivalTimes(
         }
       }
 
-      const newTime = current.elapsedTime + edge.travelTime;
+      // Calculate total time including waiting time for lifts
+      let edgeTotalTime = edge.travelTime;
+      if (liveStatus && edge.type === 'lift') {
+        const waitingTime = liveStatus.liftWaitingTimes.get(edge.featureId);
+        if (waitingTime !== undefined && waitingTime > 0) {
+          // Add waiting time (convert from minutes to seconds)
+          edgeTotalTime += waitingTime * 60;
+        }
+      }
+
+      const newTime = current.elapsedTime + edgeTotalTime;
       const neighborBest = bestTime.get(edge.toNodeId);
 
       if (neighborBest === undefined || newTime < neighborBest) {

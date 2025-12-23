@@ -77,6 +77,7 @@ export async function GET(
         operating: lift.operating,
         openingStatus: lift.openingStatus,
         message: lift.message,
+        waitingTime: lift.waitingTime,
       })),
       runs: rawData.runs.map((run: Record<string, unknown>) => ({
         name: run.name,

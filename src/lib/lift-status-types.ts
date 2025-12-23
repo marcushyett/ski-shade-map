@@ -32,6 +32,7 @@ export interface LiftStatus {
   operating?: boolean;
   openingStatus?: string;  // "OPEN", "CLOSED", etc.
   message?: string;        // Status message (if any)
+  waitingTime?: number;    // Queue waiting time in minutes
 }
 
 export interface RunStatus {
@@ -85,6 +86,7 @@ export interface EnrichedLiftData {
   liveStatus?: LiftStatus;
   closingTime?: string;  // "16:20" format
   minutesUntilClose?: number;
+  waitingTime?: number;  // Queue waiting time in minutes
 }
 
 export interface EnrichedRunData {
