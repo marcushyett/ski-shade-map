@@ -2,6 +2,7 @@
 
 import { memo, useMemo, ReactNode } from 'react';
 import { Tooltip } from 'antd';
+import { format } from 'date-fns';
 import {
   SunOutlined,
   MoonOutlined,
@@ -66,22 +67,26 @@ function WeatherIcon({ code, isDay }: { code: number; isDay: boolean }): ReactNo
 function WeatherTimelineInner({ hourlyWeather, selectedTime, units }: WeatherTimelineProps) {
   // Get weather for 3-hour intervals throughout the day
   const timelineData = useMemo(() => {
-    const today = selectedTime.toDateString();
+    const targetDateStr = format(selectedTime, 'yyyy-MM-dd');
     const intervals: { hour: number; weather: HourlyWeather }[] = [];
-    
+
     // Get weather at 6am, 9am, 12pm, 3pm, 6pm, 9pm
     const hours = [6, 9, 12, 15, 18, 21];
-    
+
     hours.forEach(hour => {
+      // Use string comparison to avoid timezone parsing issues
+      // h.time format is "2024-12-23T10:00" from Open-Meteo API
+      const hourPadded = hour.toString().padStart(2, '0');
       const match = hourlyWeather.find(h => {
-        const d = new Date(h.time);
-        return d.toDateString() === today && d.getHours() === hour;
+        const dateStr = h.time.slice(0, 10);
+        const hourStr = h.time.slice(11, 13);
+        return dateStr === targetDateStr && hourStr === hourPadded;
       });
       if (match) {
         intervals.push({ hour, weather: match });
       }
     });
-    
+
     return intervals;
   }, [hourlyWeather, selectedTime]);
 
