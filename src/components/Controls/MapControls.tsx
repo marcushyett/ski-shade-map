@@ -64,29 +64,36 @@ function MapControlsInner({
   // Only show compass reset button when bearing is not north
   const showCompassReset = Math.abs(bearing) > 1;
 
+  // Hide zoom buttons on touch devices (pinch-to-zoom is available)
+  const isTouch = isTouchDevice();
+
   return (
     <div className="map-controls">
-      {/* Zoom In */}
-      <MobileAwareTooltip title="Zoom in" placement="left">
-        <button
-          className="location-btn"
-          onClick={handleZoomIn}
-          aria-label="Zoom in"
-        >
-          <PlusOutlined style={{ fontSize: 14 }} />
-        </button>
-      </MobileAwareTooltip>
+      {/* Zoom In - hidden on mobile (use pinch-to-zoom) */}
+      {!isTouch && (
+        <MobileAwareTooltip title="Zoom in" placement="left">
+          <button
+            className="location-btn"
+            onClick={handleZoomIn}
+            aria-label="Zoom in"
+          >
+            <PlusOutlined style={{ fontSize: 14 }} />
+          </button>
+        </MobileAwareTooltip>
+      )}
 
-      {/* Zoom Out */}
-      <MobileAwareTooltip title="Zoom out" placement="left">
-        <button
-          className="location-btn"
-          onClick={handleZoomOut}
-          aria-label="Zoom out"
-        >
-          <MinusOutlined style={{ fontSize: 14 }} />
-        </button>
-      </MobileAwareTooltip>
+      {/* Zoom Out - hidden on mobile (use pinch-to-zoom) */}
+      {!isTouch && (
+        <MobileAwareTooltip title="Zoom out" placement="left">
+          <button
+            className="location-btn"
+            onClick={handleZoomOut}
+            aria-label="Zoom out"
+          >
+            <MinusOutlined style={{ fontSize: 14 }} />
+          </button>
+        </MobileAwareTooltip>
+      )}
 
       {/* Compass / Reset Bearing - only visible when rotated */}
       {showCompassReset && (
