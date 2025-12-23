@@ -32,6 +32,7 @@ import SearchBar from '@/components/SearchBar';
 import LocationControls from '@/components/LocationControls';
 import type { MountainHome, UserLocation } from '@/components/LocationControls';
 import { RunDetailOverlay } from '@/components/RunDetailPanel';
+import { LiftDetailOverlay } from '@/components/LiftDetailPanel';
 import dynamic from 'next/dynamic';
 import { NavigationButton, WCButton, type NavigationState, type SelectedPoint } from '@/components/NavigationPanel';
 import { buildNavigationGraph, findNearestNode, findRoute, addPoiNodeToGraph, type NavigationGraph } from '@/lib/navigation';
@@ -443,6 +444,7 @@ export default function Home() {
   const [highlightedFeatureId, setHighlightedFeatureId] = useState<string | null>(null);
   const [highlightedFeatureType, setHighlightedFeatureType] = useState<'run' | 'lift' | null>(null);
   const [selectedRunDetail, setSelectedRunDetail] = useState<{ runId: string; lngLat: { lng: number; lat: number } } | null>(null);
+  const [selectedLiftDetail, setSelectedLiftDetail] = useState<{ liftId: string; lngLat: { lng: number; lat: number } } | null>(null);
   const [searchPlaceMarker, setSearchPlaceMarker] = useState<{ latitude: number; longitude: number; name: string; placeType?: string } | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -1312,6 +1314,7 @@ export default function Home() {
 
   const handleCloseRunDetail = useCallback(() => {
     setSelectedRunDetail(null);
+    setSelectedLiftDetail(null);
   }, []);
 
   // Handle arbitrary map click (background, not on a feature)
@@ -1863,7 +1866,7 @@ export default function Home() {
     setExternalNavDestination(null);
   }, []);
 
-  // Handle lift click for navigation destination
+  // Handle lift click for navigation destination or showing detail overlay
   const handleLiftClick = useCallback((liftId: string, lngLat: { lng: number; lat: number }) => {
     // If navigation map click mode is active, set the point
     if (navMapClickMode && isNavigationOpen && skiAreaDetails) {
@@ -1876,14 +1879,14 @@ export default function Home() {
           nodeId: `lift-${lift.id}-start`,
           liftType: lift.liftType,
         };
-        
+
         if (navMapClickMode === 'origin') {
           setExternalNavOrigin(point);
         } else {
           setExternalNavDestination(point);
         }
         setNavMapClickMode(null);
-        
+
         trackEvent('navigation_destination_from_click', {
           type: 'lift',
           lift_id: liftId,
@@ -1893,7 +1896,21 @@ export default function Home() {
         return;
       }
     }
-  }, [navMapClickMode, isNavigationOpen, skiAreaDetails]);
+
+    // Show lift detail overlay
+    trackEvent('lift_detail_viewed', {
+      lift_id: liftId,
+      ski_area_id: selectedArea?.id,
+    });
+    setSelectedLiftDetail({ liftId, lngLat });
+    // Close run detail if open
+    setSelectedRunDetail(null);
+  }, [navMapClickMode, isNavigationOpen, skiAreaDetails, selectedArea]);
+
+  // Close lift detail overlay
+  const handleCloseLiftDetail = useCallback(() => {
+    setSelectedLiftDetail(null);
+  }, []);
 
   // Convert location types for map - use effective location (which may be fake for debugging)
   const userLocationMarker: UserLocationMarker | null = effectiveUserLocation
@@ -2132,6 +2149,17 @@ export default function Home() {
 
     return { run, analysis, stats, isFavourite, temperatureData };
   }, [selectedRunDetail?.runId, skiAreaDetails, enrichedRuns, selectedTime, weather?.hourly, weather?.elevation, favourites]);
+
+  // Calculate data for the selected lift overlay
+  const selectedLiftData = useMemo(() => {
+    if (!selectedLiftDetail?.liftId || !skiAreaDetails) return null;
+
+    // Use enrichedLifts to get status information
+    const lift = enrichedLifts.find(l => l.id === selectedLiftDetail.liftId);
+    if (!lift) return null;
+
+    return { lift };
+  }, [selectedLiftDetail?.liftId, skiAreaDetails, enrichedLifts]);
 
   // Don't render anything until initial state is loaded to prevent flicker
   if (!initialLoadDone) {
@@ -2420,6 +2448,16 @@ export default function Home() {
             onToggleFavourite={() => {
               toggleFavourite(selectedRunData.run);
             }}
+          />
+        )}
+
+        {/* Lift detail overlay - shows when a lift is clicked */}
+        {selectedLiftData && selectedLiftDetail && (
+          <LiftDetailOverlay
+            lift={selectedLiftData.lift}
+            lngLat={selectedLiftDetail.lngLat}
+            mapRef={mapRef}
+            onClose={handleCloseLiftDetail}
           />
         )}
 

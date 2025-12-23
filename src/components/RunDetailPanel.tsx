@@ -3,12 +3,32 @@
 import { memo, useEffect, useState, useCallback } from 'react';
 import { Tooltip, Button } from 'antd';
 import type { MapRef } from '@/components/Map/SkiMap';
-import { CloseOutlined, StarOutlined, EnvironmentOutlined, DeleteOutlined } from '@ant-design/icons';
+import { CloseOutlined, StarOutlined, EnvironmentOutlined, DeleteOutlined, ClockCircleOutlined, CheckCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import type { RunData } from '@/lib/types';
+import type { EnrichedRunData, GroomingStatus } from '@/lib/lift-status-types';
 import type { RunSunAnalysis, RunStats } from '@/lib/sunny-time-calculator';
 import { getDifficultyColor } from '@/lib/shade-calculator';
 import { getConditionInfo, type SnowCondition, type SnowQualityAtPoint } from '@/lib/snow-quality';
 import { ConditionIcon } from '@/components/SnowQualityBadge';
+
+// Helper to format grooming status
+function formatGroomingLabel(status: GroomingStatus): { label: string; icon: string; color: string } {
+  switch (status) {
+    case 'GROOMED':
+      return { label: 'Groomed', icon: '✓', color: '#22c55e' };
+    case 'PARTIALLY_GROOMED':
+      return { label: 'Partially Groomed', icon: '◐', color: '#eab308' };
+    case 'NOT_GROOMED':
+      return { label: 'Not Groomed', icon: '○', color: '#888' };
+    default:
+      return { label: status, icon: '?', color: '#888' };
+  }
+}
+
+// Helper to check if run is enriched
+function isEnrichedRun(run: RunData | EnrichedRunData): run is EnrichedRunData {
+  return 'liveStatus' in run || 'closingTime' in run || 'minutesUntilClose' in run;
+}
 
 // Hourly sun data type
 interface HourlySunData {
@@ -448,7 +468,7 @@ export function ElevationProfileChart({
 
 // Props for the panel
 export interface RunDetailPanelProps {
-  run: RunData;
+  run: RunData | EnrichedRunData;
   analysis?: RunSunAnalysis;
   stats: RunStats | null;
   snowQuality?: SnowQualityPoint[];
@@ -476,11 +496,22 @@ export const RunDetailPanel = memo(function RunDetailPanel({
   const difficultyColor = getDifficultyColor(run.difficulty || 'unknown');
   const sunLevel = analysis?.sunLevel;
   const hasSunInfo = analysis?.sunniestWindow && sunLevel && sunLevel !== 'none';
-  const sunnyTime = hasSunInfo 
+  const sunnyTime = hasSunInfo
     ? `${formatTime(analysis.sunniestWindow!.startTime)}-${formatTime(analysis.sunniestWindow!.endTime)}`
     : null;
   const sunColor = sunLevel === 'full' ? '#faad14' : sunLevel === 'partial' ? '#d4a017' : '#888';
-  
+
+  // Extract enriched data if available
+  const enriched = isEnrichedRun(run) ? run : null;
+  const liveStatus = enriched?.liveStatus;
+  const groomingStatus = liveStatus?.groomingStatus;
+  const liveSnowQuality = liveStatus?.snowQuality;
+  const openingTimes = liveStatus?.openingTimes?.[0];
+  const statusMessage = liveStatus?.message;
+  const closingTime = enriched?.closingTime;
+  const minutesUntilClose = enriched?.minutesUntilClose;
+  const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+
   // Get the dominant condition (most common)
   const conditionCounts = snowQuality && snowQuality.length > 0
     ? snowQuality.reduce((acc, sq) => {
@@ -488,8 +519,8 @@ export const RunDetailPanel = memo(function RunDetailPanel({
         return acc;
       }, {} as Record<string, number>)
     : null;
-  
-  const mainCondition = conditionCounts 
+
+  const mainCondition = conditionCounts
     ? Object.entries(conditionCounts).sort((a, b) => b[1] - a[1])[0]?.[0] as SnowCondition
     : null;
   
@@ -563,8 +594,8 @@ export const RunDetailPanel = memo(function RunDetailPanel({
         </button>
       </div>
       
-      {/* Quick info row */}
-      <div className="flex items-center gap-3 mb-3" style={{ fontSize: 10, color: '#888' }}>
+      {/* Quick info row - sun exposure and conditions */}
+      <div className="flex items-center gap-3 mb-2 flex-wrap" style={{ fontSize: 10, color: '#888' }}>
         {hasSunInfo && (
           <span style={{ color: sunColor }} className="flex items-center gap-1">
             <SunIcon level={sunLevel} />
@@ -573,10 +604,10 @@ export const RunDetailPanel = memo(function RunDetailPanel({
         )}
         {mainCondition && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-            Snow: 
-            <ConditionIcon 
-              iconType={getConditionInfo(mainCondition).iconType} 
-              style={{ fontSize: 10, color: getConditionInfo(mainCondition).color }} 
+            Snow:
+            <ConditionIcon
+              iconType={getConditionInfo(mainCondition).iconType}
+              style={{ fontSize: 10, color: getConditionInfo(mainCondition).color }}
             />
             <span style={{ color: getConditionInfo(mainCondition).color, fontWeight: 600 }}>
               {getConditionInfo(mainCondition).label}
@@ -584,6 +615,55 @@ export const RunDetailPanel = memo(function RunDetailPanel({
           </span>
         )}
       </div>
+
+      {/* Live status info - opening times, grooming, snow quality from resort API */}
+      {(openingTimes || groomingStatus || liveSnowQuality) && (
+        <div className="flex items-center gap-3 mb-3 flex-wrap" style={{ fontSize: 10, color: '#888' }}>
+          {openingTimes && (
+            <span className="flex items-center gap-1">
+              <ClockCircleOutlined style={{ fontSize: 10 }} />
+              <span>{openingTimes.beginTime} - {openingTimes.endTime}</span>
+              {closingSoon && (
+                <span style={{ color: '#eab308', fontWeight: 600 }}>({minutesUntilClose}min)</span>
+              )}
+            </span>
+          )}
+          {groomingStatus && (
+            <span style={{ color: formatGroomingLabel(groomingStatus).color }} className="flex items-center gap-1">
+              {groomingStatus === 'GROOMED' ? (
+                <CheckCircleOutlined style={{ fontSize: 10 }} />
+              ) : groomingStatus === 'NOT_GROOMED' ? (
+                <MinusCircleOutlined style={{ fontSize: 10 }} />
+              ) : (
+                <span style={{ fontSize: 10 }}>◐</span>
+              )}
+              <span>{formatGroomingLabel(groomingStatus).label}</span>
+            </span>
+          )}
+          {liveSnowQuality && (
+            <span style={{ color: '#60a5fa' }} className="flex items-center gap-1">
+              <ConditionIcon iconType="snowflake" style={{ fontSize: 10 }} />
+              <span>{liveSnowQuality.replace(/_/g, ' ').toLowerCase()}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Status message from resort API */}
+      {statusMessage && (
+        <div
+          className="mb-3"
+          style={{
+            fontSize: 10,
+            color: '#f97316',
+            padding: '6px 8px',
+            background: 'rgba(249, 115, 22, 0.1)',
+            borderRadius: 4
+          }}
+        >
+          {statusMessage}
+        </div>
+      )}
       
       {/* Sun distribution chart or "No sun today" message */}
       {analysis && (

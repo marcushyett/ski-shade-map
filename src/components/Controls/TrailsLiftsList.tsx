@@ -19,8 +19,6 @@ import type { EnrichedLiftData, EnrichedRunData, ResortStatus } from '@/lib/lift
 import {
   getClosingUrgency,
   formatTimeUntilClose,
-  formatGroomingStatus,
-  formatSnowQuality,
 } from '@/lib/lift-status-types';
 
 const { Text } = Typography;
@@ -129,50 +127,42 @@ const RunItem = memo(function RunItem({
   const minutesUntilClose = enriched?.minutesUntilClose;
   const urgency = getClosingUrgency(minutesUntilClose);
   const groomingStatus = enriched?.liveStatus?.groomingStatus;
-  const snowQuality = enriched?.liveStatus?.snowQuality;
-
-  // Build tooltip content
-  let tooltipContent = name;
-  if (groomingStatus) tooltipContent += ` - ${formatGroomingStatus(groomingStatus)}`;
-  if (snowQuality) tooltipContent += ` - ${formatSnowQuality(snowQuality)}`;
 
   return (
-    <Tooltip title={tooltipContent} placement="left" mouseEnterDelay={0.5}>
-      <div
-        className={`run-item cursor-pointer flex items-center justify-between hover:bg-white/5 ${isClosed ? 'opacity-50' : ''}`}
-        onClick={onClick}
-        style={{
-          padding: '1px 4px',
-          textDecoration: isClosed ? 'line-through' : 'none',
-        }}
-      >
-        <div className="flex items-center gap-1 truncate">
-          <span
-            className="truncate"
-            style={{
-              fontSize: 9,
-              color: urgency === 'urgent' ? STATUS_COLORS.closed : urgency === 'warning' ? STATUS_COLORS.scheduled : '#ccc',
-              lineHeight: '14px'
-            }}
-          >
-            {name}
+    <div
+      className={`run-item cursor-pointer flex items-center justify-between hover:bg-white/5 ${isClosed ? 'opacity-50' : ''}`}
+      onClick={onClick}
+      style={{
+        padding: '1px 4px',
+        textDecoration: isClosed ? 'line-through' : 'none',
+      }}
+    >
+      <div className="flex items-center gap-1 truncate">
+        <span
+          className="truncate"
+          style={{
+            fontSize: 9,
+            color: urgency === 'urgent' ? STATUS_COLORS.closed : urgency === 'warning' ? STATUS_COLORS.scheduled : '#ccc',
+            lineHeight: '14px'
+          }}
+        >
+          {name}
+        </span>
+        {groomingStatus && (
+          <span style={{ fontSize: 7, color: '#888' }}>
+            {groomingStatus === 'GROOMED' ? '✓' : groomingStatus === 'NOT_GROOMED' ? '○' : '◐'}
           </span>
-          {groomingStatus && (
-            <span style={{ fontSize: 7, color: '#888' }}>
-              {groomingStatus === 'GROOMED' ? '✓' : groomingStatus === 'NOT_GROOMED' ? '○' : '◐'}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-          <StatusIndicator status={run.status} minutesUntilClose={minutesUntilClose} size="tiny" />
-          {showLocality && run.locality && (
-            <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
-              {run.locality}
-            </span>
-          )}
-        </div>
+        )}
       </div>
-    </Tooltip>
+      <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
+        <StatusIndicator status={run.status} minutesUntilClose={minutesUntilClose} size="tiny" />
+        {showLocality && run.locality && (
+          <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
+            {run.locality}
+          </span>
+        )}
+      </div>
+    </div>
   );
 });
 
@@ -191,52 +181,40 @@ const LiftItem = memo(function LiftItem({
   const enriched = isEnrichedLift(lift) ? lift : null;
   const minutesUntilClose = enriched?.minutesUntilClose;
   const urgency = getClosingUrgency(minutesUntilClose);
-  const liveStatus = enriched?.liveStatus;
-
-  // Build tooltip content
-  let tooltipContent = name;
-  if (lift.liftType) tooltipContent += ` (${lift.liftType})`;
-  if (liveStatus?.openingTimes?.[0]) {
-    tooltipContent += ` - ${liveStatus.openingTimes[0].beginTime} to ${liveStatus.openingTimes[0].endTime}`;
-  }
-  if (liveStatus?.speed) tooltipContent += ` - ${liveStatus.speed} m/s`;
-  if (liveStatus?.uphillCapacity) tooltipContent += ` - ${liveStatus.uphillCapacity} pers/h`;
 
   return (
-    <Tooltip title={tooltipContent} placement="left" mouseEnterDelay={0.5}>
-      <div
-        className={`lift-item cursor-pointer flex justify-between hover:bg-white/5 ${isClosed ? 'opacity-50' : ''}`}
-        onClick={onClick}
+    <div
+      className={`lift-item cursor-pointer flex justify-between hover:bg-white/5 ${isClosed ? 'opacity-50' : ''}`}
+      onClick={onClick}
+      style={{
+        padding: '1px 4px',
+        textDecoration: isClosed ? 'line-through' : 'none',
+      }}
+    >
+      <span
         style={{
-          padding: '1px 4px',
-          textDecoration: isClosed ? 'line-through' : 'none',
+          fontSize: 9,
+          color: urgency === 'urgent' ? STATUS_COLORS.closed : urgency === 'warning' ? STATUS_COLORS.scheduled : '#ccc',
+          lineHeight: '14px'
         }}
+        className="truncate"
       >
-        <span
-          style={{
-            fontSize: 9,
-            color: urgency === 'urgent' ? STATUS_COLORS.closed : urgency === 'warning' ? STATUS_COLORS.scheduled : '#ccc',
-            lineHeight: '14px'
-          }}
-          className="truncate"
-        >
-          {name}
-        </span>
-        <div className="flex items-center" style={{ flexShrink: 0 }}>
-          <StatusIndicator status={lift.status} minutesUntilClose={minutesUntilClose} size="tiny" />
-          {lift.liftType && (
-            <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
-              {lift.liftType}
-            </span>
-          )}
-          {showLocality && lift.locality && (
-            <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
-              {lift.locality}
-            </span>
-          )}
-        </div>
+        {name}
+      </span>
+      <div className="flex items-center" style={{ flexShrink: 0 }}>
+        <StatusIndicator status={lift.status} minutesUntilClose={minutesUntilClose} size="tiny" />
+        {lift.liftType && (
+          <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
+            {lift.liftType}
+          </span>
+        )}
+        {showLocality && lift.locality && (
+          <span style={{ fontSize: 8, color: '#666', marginLeft: 4 }}>
+            {lift.locality}
+          </span>
+        )}
       </div>
-    </Tooltip>
+    </div>
   );
 });
 

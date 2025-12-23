@@ -30,6 +30,7 @@ export interface LiftStatus {
   openingTimes?: OpeningTime[];
   operating?: boolean;
   openingStatus?: string;  // "OPEN", "CLOSED", etc.
+  message?: string;        // Status message (if any)
 }
 
 export interface RunStatus {
@@ -47,6 +48,7 @@ export interface RunStatus {
   openingStatus?: string;
   groomingStatus?: GroomingStatus;
   snowQuality?: SnowQuality;
+  message?: string;  // Status message (if any)
 }
 
 export interface ResortStatus {

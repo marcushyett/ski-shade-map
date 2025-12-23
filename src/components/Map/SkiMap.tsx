@@ -14,7 +14,8 @@ import {
 } from '@/lib/geometry-cache';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { trackEvent } from '@/lib/posthog';
-import type { SkiAreaDetails, RunData, POIData } from '@/lib/types';
+import type { SkiAreaDetails, RunData, LiftData, POIData, OperationStatus } from '@/lib/types';
+import type { EnrichedRunData, EnrichedLiftData, LiftStatus, RunStatus } from '@/lib/lift-status-types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 import type { NavigationRoute } from '@/lib/navigation';
 
@@ -124,6 +125,9 @@ interface SegmentProperties {
   runId: string;
   runName: string | null;
   difficulty: string | null;
+  status: string | null;
+  isClosed: boolean;
+  closingSoon: boolean;
   segmentIndex: number;
   isShaded: boolean;
   bearing: number;
@@ -516,6 +520,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const layersToRemove = [
       'sun-rays', 'sun-icon-glow', 'sun-icon',
       'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-closed', 'ski-segments-closed-markers',
+      'ski-segments-closing-soon',
       'ski-runs-line', 'ski-runs-favourite', 'ski-lifts', 'ski-lifts-touch', 'ski-lifts-symbols',
       'ski-segments-sunny-glow',
       'ski-runs-polygon-fill-sunny', 'ski-runs-polygon-fill-shaded',
@@ -699,6 +704,24 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
+    // Closing soon runs - orange glow underneath (only for open runs closing within 60 min)
+    map.current.addLayer({
+      id: 'ski-segments-closing-soon',
+      type: 'line',
+      source: 'ski-segments',
+      filter: ['all', ['==', ['get', 'closingSoon'], true], ['!=', ['get', 'isClosed'], true]],
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#f97316',
+        'line-width': 8,
+        'line-opacity': 0.4,
+        'line-blur': 2,
+      },
+    }, 'ski-segments-sunny'); // Place below the main segment layers
+
     // Polygon runs source (for fill) - only runs that are polygons
     // Calculate sun/shade for each polygon based on its orientation (sunPos already defined above)
     const polygonRunsGeoJSON = {
@@ -846,16 +869,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Lifts source and layer
     const liftsGeoJSON = {
       type: 'FeatureCollection' as const,
-      features: area.lifts.map(lift => ({
-        type: 'Feature' as const,
-        properties: {
-          id: lift.id,
-          name: lift.name,
-          liftType: lift.liftType,
-          status: lift.status,
-        },
-        geometry: lift.geometry,
-      })),
+      features: area.lifts.map(lift => {
+        const minutesUntilClose = 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
+        const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+        return {
+          type: 'Feature' as const,
+          properties: {
+            id: lift.id,
+            name: lift.name,
+            liftType: lift.liftType,
+            status: lift.status,
+            closingSoon,
+          },
+          geometry: lift.geometry,
+        };
+      }),
     };
 
     map.current.addSource('ski-lifts', {
@@ -875,7 +903,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Lift lines with status-based coloring
+    // Lift lines with status-based coloring and opacity
     map.current.addLayer({
       id: 'ski-lifts',
       type: 'line',
@@ -883,11 +911,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       paint: {
         'line-color': [
           'case',
+          ['==', ['get', 'status'], 'closed'], '#888888',
+          ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
-          ['==', ['get', 'status'], 'closed'], '#ff4d4f',
           '#888888'
         ],
-        'line-width': 2,
+        'line-width': [
+          'case',
+          ['==', ['get', 'status'], 'closed'], 1.5,
+          2
+        ],
+        'line-opacity': [
+          'case',
+          ['==', ['get', 'status'], 'closed'], 0.4,
+          1
+        ],
         'line-dasharray': [4, 2],
       },
     });
@@ -901,12 +939,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'circle-radius': 3,
         'circle-color': [
           'case',
+          ['==', ['get', 'status'], 'closed'], '#888888',
+          ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
-          ['==', ['get', 'status'], 'closed'], '#ff4d4f',
           '#888888'
         ],
         'circle-stroke-color': '#000',
         'circle-stroke-width': 1,
+        'circle-opacity': [
+          'case',
+          ['==', ['get', 'status'], 'closed'], 0.4,
+          1
+        ],
       },
     });
 
@@ -1264,27 +1308,67 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const liftStatusColor = lift?.status ? statusColors[lift.status] : statusColors.unknown;
       const liftStatusLabel = lift?.status ? statusLabels[lift.status] : '';
 
+      // Extract enriched data for runs
+      const runLiveStatus = run && 'liveStatus' in run ? (run as EnrichedRunData).liveStatus : null;
+      const runOpeningTimes = runLiveStatus?.openingTimes?.[0];
+      const runGroomingStatus = runLiveStatus?.groomingStatus;
+      const runSnowQuality = runLiveStatus?.snowQuality;
+      const runMessage = runLiveStatus?.message;
+      const runMinutesUntilClose = run && 'minutesUntilClose' in run ? (run as EnrichedRunData).minutesUntilClose : null;
+      const runClosingSoon = typeof runMinutesUntilClose === 'number' && runMinutesUntilClose > 0 && runMinutesUntilClose <= 60;
+
+      // Extract enriched data for lifts
+      const liftLiveStatus = lift && 'liveStatus' in lift ? (lift as EnrichedLiftData).liveStatus : null;
+      const liftOpeningTimes = liftLiveStatus?.openingTimes?.[0];
+      const liftSpeed = liftLiveStatus?.speed;
+      const liftCapacity = liftLiveStatus?.uphillCapacity;
+      const liftMessage = liftLiveStatus?.message;
+      const liftMinutesUntilClose = lift && 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
+      const liftClosingSoon = typeof liftMinutesUntilClose === 'number' && liftMinutesUntilClose > 0 && liftMinutesUntilClose <= 60;
+
+      // Grooming status labels (text only for HTML popups)
+      const groomingLabels: Record<string, { label: string; color: string }> = {
+        GROOMED: { label: 'Groomed', color: '#22c55e' },
+        PARTIALLY_GROOMED: { label: 'Partial', color: '#eab308' },
+        NOT_GROOMED: { label: 'Ungroomed', color: '#888' },
+      };
+      const groomingInfo = runGroomingStatus ? groomingLabels[runGroomingStatus] : null;
+
       const popupContent = isRun
-        ? `<div class="run-popup" style="min-width: 180px;">
-            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+        ? `<div class="run-popup" style="min-width: 180px; max-width: 240px;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
               <span style="width: 10px; height: 10px; border-radius: 50%; background: ${getDifficultyColor(run.difficulty || 'unknown')}; flex-shrink: 0;"></span>
               <strong style="font-size: 13px;">${run.name || 'Unnamed Run'}</strong>
-              ${run?.status ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${runStatusColor}20; color: ${runStatusColor}; font-weight: 500; margin-left: auto;">${runStatusLabel}</span>` : ''}
+              ${run?.status && run.status !== 'unknown' ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${runStatusColor}20; color: ${runStatusColor}; font-weight: 500; margin-left: auto;">${runStatusLabel}</span>` : ''}
             </div>
-            ${run.difficulty ? `<div style="font-size: 10px; color: ${getDifficultyColor(run.difficulty)}; margin-bottom: 4px;">${run.difficulty}</div>` : ''}
-            ${runStats?.distance ? `<div style="font-size: 10px; color: #888; margin-bottom: 2px;">📏 ${runStats.distance}</div>` : ''}
-            ${runStats?.elevation ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${runStats.elevation}</div>` : ''}
-            ${snowAnalysis ? `<div style="font-size: 11px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px; margin-top: 6px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; font-size: 10px;">
+              ${run.difficulty ? `<span style="color: ${getDifficultyColor(run.difficulty)};">${run.difficulty}</span>` : ''}
+              ${runStats?.distance ? `<span style="color: #888;">${runStats.distance}</span>` : ''}
+              ${runStats?.elevation ? `<span style="color: #888;">${runStats.elevation}</span>` : ''}
+            </div>
+            ${runOpeningTimes || groomingInfo || runSnowQuality ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; font-size: 10px;">
+              ${runOpeningTimes ? `<span style="color: #aaa;">${runOpeningTimes.beginTime}-${runOpeningTimes.endTime}${runClosingSoon ? ` <span style="color: #eab308;">(${runMinutesUntilClose}min)</span>` : ''}</span>` : ''}
+              ${groomingInfo ? `<span style="color: ${groomingInfo.color};">${groomingInfo.label}</span>` : ''}
+              ${runSnowQuality ? `<span style="color: #60a5fa;">${runSnowQuality.replace(/_/g, ' ').toLowerCase()}</span>` : ''}
+            </div>` : ''}
+            ${runMessage ? `<div style="font-size: 10px; color: #f97316; padding: 4px 6px; background: rgba(249, 115, 22, 0.1); border-radius: 4px; margin-bottom: 4px;">${runMessage}</div>` : ''}
+            ${snowAnalysis ? `<div style="font-size: 10px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px;">
               Snow: <span style="color: ${snowScoreColor}; font-weight: 600;">${Math.round(snowAnalysis.score)}%</span>
               <span style="color: #888;">${snowAnalysis.conditionLabel}</span>
             </div>` : ''}
           </div>`
-        : `<div class="lift-popup" style="min-width: 150px;">
+        : `<div class="lift-popup" style="min-width: 160px; max-width: 220px;">
             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
               <strong style="font-size: 13px;">${lift?.name || 'Unnamed Lift'}</strong>
-              ${lift?.status ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${liftStatusColor}20; color: ${liftStatusColor}; font-weight: 500; margin-left: auto;">${liftStatusLabel}</span>` : ''}
+              ${lift?.status && lift.status !== 'unknown' ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${liftStatusColor}20; color: ${liftStatusColor}; font-weight: 500; margin-left: auto;">${liftStatusLabel}</span>` : ''}
             </div>
-            ${lift?.liftType ? `<div style="opacity: 0.7; font-size: 11px;">${lift.liftType}</div>` : ''}
+            ${lift?.liftType ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${lift.liftType}</div>` : ''}
+            ${liftOpeningTimes || liftSpeed || liftCapacity ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px; margin-bottom: 4px;">
+              ${liftOpeningTimes ? `<span style="color: #aaa;">${liftOpeningTimes.beginTime}-${liftOpeningTimes.endTime}${liftClosingSoon ? ` <span style="color: #eab308;">(${liftMinutesUntilClose}min)</span>` : ''}</span>` : ''}
+              ${liftSpeed ? `<span style="color: #888;">${liftSpeed} m/s</span>` : ''}
+              ${liftCapacity ? `<span style="color: #888;">${liftCapacity} pers/h</span>` : ''}
+            </div>` : ''}
+            ${liftMessage ? `<div style="font-size: 10px; color: #f97316; padding: 4px 6px; background: rgba(249, 115, 22, 0.1); border-radius: 4px;">${liftMessage}</div>` : ''}
           </div>`;
 
       highlightPopupRef.current = new maplibregl.Popup({
@@ -1614,17 +1698,23 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   // Track what we've rendered to detect progressive loading updates
   const lastRenderedRunsRef = useRef<string | null>(null);
   const lastRenderedLiftsRef = useRef<string | null>(null);
+  const lastRunsCountRef = useRef<string | null>(null);
 
-  // Update map sources when runs/lifts are progressively loaded
+  // Update map sources when runs/lifts are progressively loaded or status changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !layersInitialized.current || !skiArea) return;
 
-    // Create a simple key based on ski area id and counts
-    const runsKey = `${skiArea.id}-${skiArea.runs.length}`;
-    const liftsKey = `${skiArea.id}-${skiArea.lifts.length}`;
+    // Create keys that include count AND status data to detect when status is enriched
+    // Count how many items have non-null status to detect when status data arrives
+    const runsWithStatus = skiArea.runs.filter(r => r.status && r.status !== 'unknown').length;
+    const liftsWithStatus = skiArea.lifts.filter(l => l.status && l.status !== 'unknown').length;
+    const runsKey = `${skiArea.id}-${skiArea.runs.length}-${runsWithStatus}`;
+    const liftsKey = `${skiArea.id}-${skiArea.lifts.length}-${liftsWithStatus}`;
+    const runsCountKey = `${skiArea.id}-${skiArea.runs.length}`;
 
     const runsChanged = runsKey !== lastRenderedRunsRef.current;
     const liftsChanged = liftsKey !== lastRenderedLiftsRef.current;
+    const runsCountChanged = runsCountKey !== lastRunsCountRef.current;
 
     // Skip if nothing to update or no data loaded yet
     if (!runsChanged && !liftsChanged) return;
@@ -1633,9 +1723,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Update the tracking refs
     lastRenderedRunsRef.current = runsKey;
     lastRenderedLiftsRef.current = liftsKey;
+    lastRunsCountRef.current = runsCountKey;
 
-    // Start geometry precomputation for new runs
-    if (runsChanged && skiArea.runs.length > 0) {
+    // Start geometry precomputation only when new runs are loaded (not just status changes)
+    if (runsCountChanged && skiArea.runs.length > 0) {
       geometryCacheRef.current = startGeometryPrecomputation(
         skiArea.id,
         skiArea.runs
@@ -1719,16 +1810,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       if (liftsSource) {
         const liftsGeoJSON = {
           type: 'FeatureCollection' as const,
-          features: skiArea.lifts.map(lift => ({
-            type: 'Feature' as const,
-            properties: {
-              id: lift.id,
-              name: lift.name,
-              liftType: lift.liftType,
-              status: lift.status,
-            },
-            geometry: lift.geometry,
-          })),
+          features: skiArea.lifts.map(lift => {
+            const minutesUntilClose = 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
+            const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+            return {
+              type: 'Feature' as const,
+              properties: {
+                id: lift.id,
+                name: lift.name,
+                liftType: lift.liftType,
+                status: lift.status,
+                closingSoon,
+              },
+              geometry: lift.geometry,
+            };
+          }),
         };
         liftsSource.setData(liftsGeoJSON);
       }
@@ -1791,7 +1887,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     if (!navigationRoute) {
       // Reset all layer opacities to normal
       const layersToReset = [
-        'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-closed', 'ski-segments-closed-markers', 'ski-segments-sunny-glow',
+        'ski-segments-sunny', 'ski-segments-shaded', 'ski-segments-closed', 'ski-segments-closed-markers',
+        'ski-segments-closing-soon', 'ski-segments-sunny-glow',
         'ski-lifts', 'ski-lifts-symbols', 'ski-runs-labels', 'ski-lifts-labels',
       ];
       layersToReset.forEach(layerId => {
@@ -1844,6 +1941,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const dimLayers = [
       { id: 'ski-segments-sunny', prop: 'line-opacity' },
       { id: 'ski-segments-shaded', prop: 'line-opacity' },
+      { id: 'ski-segments-closing-soon', prop: 'line-opacity' },
       { id: 'ski-segments-sunny-glow', prop: 'line-opacity' },
       { id: 'ski-lifts', prop: 'line-opacity' },
       { id: 'ski-lifts-symbols', prop: 'circle-opacity' },
@@ -2084,13 +2182,25 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       currentSunAzimuth.current = sunPos.azimuthDegrees;
       currentSkiAreaRef.current = area;
 
+      // Build status and minutes until close maps for runs
+      const runStatusMap = new Map<string, OperationStatus>();
+      const runMinutesUntilCloseMap = new Map<string, number | undefined>();
+      area.runs.forEach(run => {
+        if (run.status) {
+          runStatusMap.set(run.id, run.status);
+        }
+        if ('minutesUntilClose' in run) {
+          runMinutesUntilCloseMap.set(run.id, (run as EnrichedRunData).minutesUntilClose);
+        }
+      });
+
       // Prepare segment data first (outside of map updates)
       const cache = getGeometryCache(area.id);
       let segments: GeoJSON.FeatureCollection;
 
       if (cache && cache.isComplete && cache.segments.size > 0) {
         // Use precomputed geometry - much faster, only calculates isShaded
-        segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+        segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees, runStatusMap, runMinutesUntilCloseMap);
       } else {
         // Fallback to on-demand calculation (initial load or cache still processing)
         segments = createRunSegments(area, time, area.latitude, area.longitude);
@@ -2289,12 +2399,12 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Lift click handler (shared for both visible and touch layers)
     const handleLiftClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
       if (!e.features?.length || !map.current) return;
-      if (isEditingHomeRef.current) return; // Don't show popup in edit mode
-      
+      if (isEditingHomeRef.current) return; // Don't trigger in edit mode
+
       const feature = e.features[0];
       const props = feature.properties;
       const liftId = props.id;
-      
+
       // Track lift click
       trackEvent('lift_selected', {
         lift_id: liftId,
@@ -2302,31 +2412,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         lift_type: props.liftType || undefined,
         ski_area_id: currentSkiAreaId.current || undefined,
       });
-      
-      // Call the onLiftClick callback with map coordinates (for navigation)
-      onLiftClickRef.current?.(liftId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
-      
-      // Only show popup if not in navigation click mode
-      if (!navMapClickModeRef.current) {
-        // Determine status styling
-        const status = props.status as string | undefined;
-        const statusColor = status === 'open' ? '#22c55e' : status === 'closed' ? '#ef4444' : status === 'scheduled' ? '#eab308' : '#888';
-        const statusBg = status === 'open' ? 'rgba(34, 197, 94, 0.15)' : status === 'closed' ? 'rgba(239, 68, 68, 0.15)' : status === 'scheduled' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(136, 136, 136, 0.15)';
-        const statusLabel = status === 'open' ? 'Open' : status === 'closed' ? 'Closed' : status === 'scheduled' ? 'Scheduled' : null;
 
-        new maplibregl.Popup()
-          .setLngLat(e.lngLat)
-          .setHTML(`
-            <div style="padding: 8px; min-width: 140px;">
-              <div style="font-weight: 600; font-size: 14px; color: #fff; margin-bottom: 4px;">${props.name || 'Unnamed Lift'}</div>
-              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                <span style="font-size: 11px; color: #888;">Type: ${props.liftType || 'Unknown'}</span>
-                ${statusLabel ? `<span style="font-size: 9px; color: ${statusColor}; background: ${statusBg}; padding: 1px 5px; border-radius: 3px; font-weight: 600;">${statusLabel}</span>` : ''}
-              </div>
-            </div>
-          `)
-          .addTo(map.current);
-      }
+      // Call the onLiftClick callback with map coordinates - this will show the overlay
+      onLiftClickRef.current?.(liftId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
     };
 
     map.current.on('click', 'ski-lifts', handleLiftClick);
@@ -2603,12 +2691,21 @@ function createRunSegments(
       
       const isShaded = isNight ? true : calculateSegmentShade(slopeAspect, sunAzimuth, sunAltitude);
 
+      // Get status info from the run
+      const status = run.status;
+      const isClosed = status === 'closed';
+      const minutesUntilClose = 'minutesUntilClose' in run ? (run as EnrichedRunData).minutesUntilClose : null;
+      const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+
       features.push({
         type: 'Feature',
         properties: {
           runId: run.id,
           runName: run.name,
           difficulty: run.difficulty,
+          status,
+          isClosed,
+          closingSoon,
           segmentIndex: i,
           isShaded,
           bearing,

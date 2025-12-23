@@ -272,7 +272,8 @@ export function generateShadedGeoJSON(
   cache: GeometryCache,
   sunAzimuth: number,
   sunAltitude: number,
-  runStatusMap?: Map<string, OperationStatus>
+  runStatusMap?: Map<string, OperationStatus>,
+  runMinutesUntilCloseMap?: Map<string, number | undefined>
 ): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
 
@@ -288,6 +289,10 @@ export function generateShadedGeoJSON(
       const status = runStatusMap?.get(segment.runId) ?? segment.status;
       const isClosed = status === 'closed';
 
+      // Check if closing soon (within 60 minutes, but still open)
+      const minutesUntilClose = runMinutesUntilCloseMap?.get(segment.runId);
+      const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+
       features.push({
         type: 'Feature',
         properties: {
@@ -296,6 +301,7 @@ export function generateShadedGeoJSON(
           difficulty: segment.difficulty,
           status,
           isClosed,
+          closingSoon,
           segmentIndex: segment.segmentIndex,
           isShaded,
           bearing: segment.bearing,
