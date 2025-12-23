@@ -1700,14 +1700,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const lastRenderedLiftsRef = useRef<string | null>(null);
   const lastRunsCountRef = useRef<string | null>(null);
 
+  // Compute status counts outside useEffect so they can be dependencies
+  const runsWithStatus = useMemo(() =>
+    skiArea?.runs.filter(r => r.status && r.status !== 'unknown').length ?? 0,
+    [skiArea?.runs]
+  );
+  const liftsWithStatus = useMemo(() =>
+    skiArea?.lifts.filter(l => l.status && l.status !== 'unknown').length ?? 0,
+    [skiArea?.lifts]
+  );
+
   // Update map sources when runs/lifts are progressively loaded or status changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !layersInitialized.current || !skiArea) return;
 
     // Create keys that include count AND status data to detect when status is enriched
-    // Count how many items have non-null status to detect when status data arrives
-    const runsWithStatus = skiArea.runs.filter(r => r.status && r.status !== 'unknown').length;
-    const liftsWithStatus = skiArea.lifts.filter(l => l.status && l.status !== 'unknown').length;
     const runsKey = `${skiArea.id}-${skiArea.runs.length}-${runsWithStatus}`;
     const liftsKey = `${skiArea.id}-${skiArea.lifts.length}-${liftsWithStatus}`;
     const runsCountKey = `${skiArea.id}-${skiArea.runs.length}`;
@@ -1829,7 +1836,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         liftsSource.setData(liftsGeoJSON);
       }
     }
-  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, mapLoaded, selectedTime]);
+  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, runsWithStatus, liftsWithStatus, mapLoaded, selectedTime]);
 
   // Update POI source when pois change
   useEffect(() => {
