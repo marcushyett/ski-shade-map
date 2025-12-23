@@ -35,7 +35,7 @@ export const LiftDetailPanel = memo(function LiftDetailPanel({
     unknown: { bg: 'rgba(136, 136, 136, 0.15)', color: '#888', label: 'Unknown' },
   };
 
-  const statusStyle = lift.status ? statusColors[lift.status] : statusColors.unknown;
+  const statusStyle = lift.status && statusColors[lift.status] ? statusColors[lift.status] : statusColors.unknown;
 
   // Extract enriched data if available
   const enriched = isEnrichedLift(lift) ? lift : null;

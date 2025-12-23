@@ -19,13 +19,6 @@ export async function GET() {
       platform: r.platform,
     }));
 
-    console.log(`[LiftStatus] Supported resorts: ${formatted.length} resorts`);
-    // Log a few examples with their openskimap IDs
-    console.log('[LiftStatus] Sample supported resorts:', formatted.slice(0, 5).map(r => ({
-      name: r.name,
-      openskimapId: r.openskimapId,
-    })));
-
     return NextResponse.json(formatted);
   } catch (error) {
     console.error('[LiftStatus] Failed to get supported resorts:', error);

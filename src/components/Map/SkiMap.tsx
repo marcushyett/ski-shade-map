@@ -1312,10 +1312,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         unknown: 'Unknown',
       };
 
-      const runStatusColor = run?.status ? statusColors[run.status] : statusColors.unknown;
-      const runStatusLabel = run?.status ? statusLabels[run.status] : '';
-      const liftStatusColor = lift?.status ? statusColors[lift.status] : statusColors.unknown;
-      const liftStatusLabel = lift?.status ? statusLabels[lift.status] : '';
+      const runStatusColor = run?.status && statusColors[run.status] ? statusColors[run.status] : statusColors.unknown;
+      const runStatusLabel = run?.status && statusLabels[run.status] ? statusLabels[run.status] : '';
+      const liftStatusColor = lift?.status && statusColors[lift.status] ? statusColors[lift.status] : statusColors.unknown;
+      const liftStatusLabel = lift?.status && statusLabels[lift.status] ? statusLabels[lift.status] : '';
 
       // Extract enriched data for runs
       const runLiveStatus = run && 'liveStatus' in run ? (run as EnrichedRunData).liveStatus : null;

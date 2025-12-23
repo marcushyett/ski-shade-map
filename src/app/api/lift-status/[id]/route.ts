@@ -29,8 +29,6 @@ export async function GET(
 ) {
   const { id: openskimapId } = await params;
 
-  console.log(`[LiftStatus] Request for openskimapId: ${openskimapId}`);
-
   // Check for cache-buster param - if present, skip server cache
   const url = new URL(request.url);
   const version = url.searchParams.get('v');
@@ -39,39 +37,22 @@ export async function GET(
   if (!version) {
     const cached = cache.get(openskimapId);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      console.log(`[LiftStatus] Cache hit for ${openskimapId}`);
       return NextResponse.json(cached.data);
     }
   } else {
-    console.log(`[LiftStatus] Skipping server cache due to version param: ${version}`);
     // Clear any existing cached data for this ID
     cache.delete(openskimapId);
   }
 
   // Get resort ID
-  const { resortId, matchedResort } = getResortIdForOpenskimapId(openskimapId);
-  console.log(`[LiftStatus] Resort lookup for ${openskimapId}:`, {
-    found: !!resortId,
-    resortId,
-    resortName: matchedResort?.name,
-    platform: matchedResort?.platform,
-  });
+  const { resortId } = getResortIdForOpenskimapId(openskimapId);
 
   if (!resortId) {
-    console.log(`[LiftStatus] Resort not supported: ${openskimapId}`);
     return NextResponse.json({ error: 'Resort not supported', supported: false }, { status: 404 });
   }
 
   try {
-    console.log(`[LiftStatus] Fetching status for resort: ${resortId} (${matchedResort?.name})`);
-
     const rawData = await fetchResortStatus(resortId);
-
-    // Debug: log raw data structure
-    const rawSampleLift = rawData.lifts?.[0];
-    console.log(`[LiftStatus] Raw lift count: ${rawData.lifts?.length}`);
-    console.log(`[LiftStatus] Raw sample lift JSON: ${JSON.stringify(rawSampleLift)?.slice(0, 500)}`);
-    console.log(`[LiftStatus] Raw sample lift openskimap_ids: ${JSON.stringify(rawSampleLift?.openskimap_ids)}`);
 
     // Transform to our types
     const data = {
@@ -114,13 +95,6 @@ export async function GET(
       })),
       fetchedAt: Date.now(),
     };
-
-    console.log(`[LiftStatus] Success for ${openskimapId}:`, {
-      lifts: data.lifts.length,
-      runs: data.runs.length,
-      liftSample: data.lifts.slice(0, 2).map((l: { name: unknown; status: unknown; openskimapIds: unknown }) => ({ name: l.name, status: l.status, openskimapIds: l.openskimapIds })),
-      runSample: data.runs.slice(0, 2).map((r: { name: unknown; status: unknown; openskimapIds: unknown }) => ({ name: r.name, status: r.status, openskimapIds: r.openskimapIds })),
-    });
 
     // Cache the result
     cache.set(openskimapId, { data, timestamp: Date.now() });
