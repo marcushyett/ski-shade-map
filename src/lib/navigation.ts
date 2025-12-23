@@ -135,6 +135,9 @@ const SPEEDS = {
   },
 };
 
+// Lift wait time constant (seconds) - average time waiting for a lift
+const LIFT_WAIT_TIME = 180; // 3 minutes
+
 // Maximum distance to connect endpoints (meters) - default for automatic connections
 const MAX_CONNECTION_DISTANCE = 150;
 // Maximum elevation difference for walking connections (meters) - default
@@ -210,7 +213,19 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
     const distance = calculatePathDistance(coords);
     const elevationChange = endNode.elevation - startNode.elevation;
     const speed = getLiftSpeed(lift.liftType);
-    const travelTime = distance / speed;
+
+    // Check for actual lift duration from properties (in minutes)
+    // This comes from live status data when available
+    const actualDuration = lift.properties?.duration as number | undefined;
+
+    let travelTime: number;
+    if (actualDuration !== undefined && actualDuration > 0) {
+      // Use actual lift duration (convert minutes to seconds) + wait time
+      travelTime = (actualDuration * 60) + LIFT_WAIT_TIME;
+    } else {
+      // Calculate from distance and speed + wait time
+      travelTime = (distance / speed) + LIFT_WAIT_TIME;
+    }
 
     const edge: NavigationEdge = {
       id: `edge-lift-${lift.id}`,
@@ -305,6 +320,22 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
     addEdge(edge);
   }
 
+  /**
+   * Helper function to determine if walking is appropriate for given terrain
+   * Prevents downhill walking - downhill movement should be skiing, not walking
+   */
+  function canWalkTerrain(fromElev: number, toElev: number, distance: number): boolean {
+    if (distance === 0) return true; // Zero distance is always walkable
+
+    const elevChange = toElev - fromElev;
+    const slope = elevChange / distance; // meters per meter
+
+    // Allow flat terrain (±2% grade) or uphill
+    // Reject downhill slopes (skiing territory)
+    // -0.02 means 2% downhill is acceptable (very gentle)
+    return slope >= -0.02;
+  }
+
   // Create walk/connection edges between nearby endpoints
   // IMPORTANT: Only create walking connections where there's no better piste option
   // Walking should be a last resort, not a shortcut
@@ -378,43 +409,51 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
       // This ensures the router prefers actual ski routes over walking shortcuts
       const WALKING_TIME_PENALTY = 3.0; // Walking takes 3x longer than calculated
 
-      // Create bidirectional walk edges
-      const walkEdgeAB: NavigationEdge = {
-        id: `walk-${nodeA.id}-${nodeB.id}`,
-        fromNodeId: nodeA.id,
-        toNodeId: nodeB.id,
-        type: 'walk',
-        featureId: `connection`,
-        featureName: 'Connection',
-        distance: dist3D,
-        elevationChange: elevDiff,
-        travelTime: (dist3D / speedAtoB) * WALKING_TIME_PENALTY,
-        speed: speedAtoB,
-        coordinates: [
-          [nodeA.lng, nodeA.lat, nodeA.elevation],
-          [nodeB.lng, nodeB.lat, nodeB.elevation],
-        ],
-      };
+      // Validate terrain for each direction before creating walk edges
+      // Only allow walking on flat or uphill terrain (not downhill)
+      const canWalkAtoB = canWalkTerrain(nodeA.elevation, nodeB.elevation, dist3D);
+      const canWalkBtoA = canWalkTerrain(nodeB.elevation, nodeA.elevation, dist3D);
 
-      const walkEdgeBA: NavigationEdge = {
-        id: `walk-${nodeB.id}-${nodeA.id}`,
-        fromNodeId: nodeB.id,
-        toNodeId: nodeA.id,
-        type: 'walk',
-        featureId: `connection`,
-        featureName: 'Connection',
-        distance: dist3D,
-        elevationChange: -elevDiff,
-        travelTime: (dist3D / speedBtoA) * WALKING_TIME_PENALTY,
-        speed: speedBtoA,
-        coordinates: [
-          [nodeB.lng, nodeB.lat, nodeB.elevation],
-          [nodeA.lng, nodeA.lat, nodeA.elevation],
-        ],
-      };
+      // Create walk edges only for valid directions
+      if (canWalkAtoB) {
+        const walkEdgeAB: NavigationEdge = {
+          id: `walk-${nodeA.id}-${nodeB.id}`,
+          fromNodeId: nodeA.id,
+          toNodeId: nodeB.id,
+          type: 'walk',
+          featureId: `connection`,
+          featureName: 'Connection',
+          distance: dist3D,
+          elevationChange: elevDiff,
+          travelTime: (dist3D / speedAtoB) * WALKING_TIME_PENALTY,
+          speed: speedAtoB,
+          coordinates: [
+            [nodeA.lng, nodeA.lat, nodeA.elevation],
+            [nodeB.lng, nodeB.lat, nodeB.elevation],
+          ],
+        };
+        addEdge(walkEdgeAB);
+      }
 
-      addEdge(walkEdgeAB);
-      addEdge(walkEdgeBA);
+      if (canWalkBtoA) {
+        const walkEdgeBA: NavigationEdge = {
+          id: `walk-${nodeB.id}-${nodeA.id}`,
+          fromNodeId: nodeB.id,
+          toNodeId: nodeA.id,
+          type: 'walk',
+          featureId: `connection`,
+          featureName: 'Connection',
+          distance: dist3D,
+          elevationChange: -elevDiff,
+          travelTime: (dist3D / speedBtoA) * WALKING_TIME_PENALTY,
+          speed: speedBtoA,
+          coordinates: [
+            [nodeB.lng, nodeB.lat, nodeB.elevation],
+            [nodeA.lng, nodeA.lat, nodeA.elevation],
+          ],
+        };
+        addEdge(walkEdgeBA);
+      }
     }
   }
 
@@ -485,43 +524,51 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         speedBtoA = SPEEDS.walk.uphill;
       }
 
-      // Create bidirectional extended walk edges with higher penalty
-      const extWalkEdgeAB: NavigationEdge = {
-        id: `extwalk-${nodeA.id}-${nodeB.id}`,
-        fromNodeId: nodeA.id,
-        toNodeId: nodeB.id,
-        type: 'walk',
-        featureId: `extended-connection`,
-        featureName: 'Extended Walk',
-        distance: dist3D,
-        elevationChange: elevDiff,
-        travelTime: (dist3D / speedAtoB) * EXTENDED_WALKING_TIME_PENALTY,
-        speed: speedAtoB,
-        coordinates: [
-          [nodeA.lng, nodeA.lat, nodeA.elevation],
-          [nodeB.lng, nodeB.lat, nodeB.elevation],
-        ],
-      };
+      // Validate terrain for each direction before creating extended walk edges
+      // Only allow walking on flat or uphill terrain (not downhill)
+      const canWalkAtoB = canWalkTerrain(nodeA.elevation, nodeB.elevation, dist3D);
+      const canWalkBtoA = canWalkTerrain(nodeB.elevation, nodeA.elevation, dist3D);
 
-      const extWalkEdgeBA: NavigationEdge = {
-        id: `extwalk-${nodeB.id}-${nodeA.id}`,
-        fromNodeId: nodeB.id,
-        toNodeId: nodeA.id,
-        type: 'walk',
-        featureId: `extended-connection`,
-        featureName: 'Extended Walk',
-        distance: dist3D,
-        elevationChange: -elevDiff,
-        travelTime: (dist3D / speedBtoA) * EXTENDED_WALKING_TIME_PENALTY,
-        speed: speedBtoA,
-        coordinates: [
-          [nodeB.lng, nodeB.lat, nodeB.elevation],
-          [nodeA.lng, nodeA.lat, nodeA.elevation],
-        ],
-      };
+      // Create extended walk edges only for valid directions
+      if (canWalkAtoB) {
+        const extWalkEdgeAB: NavigationEdge = {
+          id: `extwalk-${nodeA.id}-${nodeB.id}`,
+          fromNodeId: nodeA.id,
+          toNodeId: nodeB.id,
+          type: 'walk',
+          featureId: `extended-connection`,
+          featureName: 'Extended Walk',
+          distance: dist3D,
+          elevationChange: elevDiff,
+          travelTime: (dist3D / speedAtoB) * EXTENDED_WALKING_TIME_PENALTY,
+          speed: speedAtoB,
+          coordinates: [
+            [nodeA.lng, nodeA.lat, nodeA.elevation],
+            [nodeB.lng, nodeB.lat, nodeB.elevation],
+          ],
+        };
+        addEdge(extWalkEdgeAB);
+      }
 
-      addEdge(extWalkEdgeAB);
-      addEdge(extWalkEdgeBA);
+      if (canWalkBtoA) {
+        const extWalkEdgeBA: NavigationEdge = {
+          id: `extwalk-${nodeB.id}-${nodeA.id}`,
+          fromNodeId: nodeB.id,
+          toNodeId: nodeA.id,
+          type: 'walk',
+          featureId: `extended-connection`,
+          featureName: 'Extended Walk',
+          distance: dist3D,
+          elevationChange: -elevDiff,
+          travelTime: (dist3D / speedBtoA) * EXTENDED_WALKING_TIME_PENALTY,
+          speed: speedBtoA,
+          coordinates: [
+            [nodeB.lng, nodeB.lat, nodeB.elevation],
+            [nodeA.lng, nodeA.lat, nodeA.elevation],
+          ],
+        };
+        addEdge(extWalkEdgeBA);
+      }
     }
   }
 
@@ -729,7 +776,162 @@ export function optimizeRoute(
           }
         }
       }
-      
+
+      // OPTIMIZATION 4: Refine edge transitions by finding closest points
+      // This allows routes to join/leave pistes mid-way instead of only at endpoints
+      if (!optimized && nextSegment &&
+          (segment.type === 'run' || segment.type === 'lift') &&
+          (nextSegment.type === 'run' || nextSegment.type === 'lift')) {
+
+        // Find closest points between end of current segment and start of next segment
+        const closestPair = findClosestPointsBetweenLines(
+          segment.coordinates,
+          nextSegment.coordinates
+        );
+
+        if (closestPair && closestPair.distance < 50) {
+          // Segments are close enough to refine the transition
+          // Truncate current segment at closest point
+          const truncatedCoords1 = extractSubLineString(
+            segment.coordinates,
+            0, 0,
+            closestPair.line1Index,
+            closestPair.line1T
+          );
+
+          // Start next segment from its closest point
+          const truncatedCoords2 = extractSubLineString(
+            nextSegment.coordinates,
+            closestPair.line2Index,
+            closestPair.line2T,
+            nextSegment.coordinates.length - 1,
+            0
+          );
+
+          if (truncatedCoords1.length > 1 && truncatedCoords2.length > 1) {
+            const dist1 = calculatePathDistance(truncatedCoords1 as number[][]);
+            const dist2 = calculatePathDistance(truncatedCoords2 as number[][]);
+
+            const startElev1 = (truncatedCoords1[0][2] as number) || 0;
+            const endElev1 = (truncatedCoords1[truncatedCoords1.length - 1][2] as number) || 0;
+            const startElev2 = (truncatedCoords2[0][2] as number) || 0;
+            const endElev2 = (truncatedCoords2[truncatedCoords2.length - 1][2] as number) || 0;
+
+            // Add refined current segment
+            newSegments.push({
+              ...segment,
+              coordinates: truncatedCoords1 as [number, number, number?][],
+              distance: dist1,
+              time: dist1 / (segment.distance / segment.time || 1),
+              elevationChange: endElev1 - startElev1,
+            });
+
+            // Add refined next segment
+            newSegments.push({
+              ...nextSegment,
+              coordinates: truncatedCoords2 as [number, number, number?][],
+              distance: dist2,
+              time: dist2 / (nextSegment.distance / nextSegment.time || 1),
+              elevationChange: endElev2 - startElev2,
+            });
+
+            i++; // Skip next segment as we've processed it
+            optimized = true;
+            madeChanges = true;
+          }
+        }
+      }
+
+      // OPTIMIZATION 5: Insert connector segments for smooth transitions
+      // If there's a gap between segments, try to find a run that bridges it
+      if (!optimized && nextSegment && segment.coordinates.length > 0 && nextSegment.coordinates.length > 0) {
+        const segmentEnd = segment.coordinates[segment.coordinates.length - 1];
+        const nextSegmentStart = nextSegment.coordinates[0];
+
+        // Check if there's a significant gap (> 10m but < 100m)
+        const gap = haversineDistance(
+          segmentEnd[1], segmentEnd[0],
+          nextSegmentStart[1], nextSegmentStart[0]
+        );
+
+        if (gap > 10 && gap < 100) {
+          // Look for a run that could bridge this gap
+          let bestConnector: {
+            coords: [number, number, number?][];
+            distance: number;
+            runName: string | null;
+            difficulty: string | null;
+          } | null = null;
+          let bestTotalDist = Infinity;
+
+          for (const run of skiArea.runs) {
+            if (!run.geometry || run.geometry.type !== 'LineString') continue;
+            const runCoords = run.geometry.coordinates as [number, number, number?][];
+
+            // Find closest points on this run to both segment end and next segment start
+            const closestToEnd = findClosestPointOnLineString(segmentEnd, runCoords);
+            const closestToStart = findClosestPointOnLineString(nextSegmentStart, runCoords);
+
+            // If both points are close to the run and in the right order
+            if (closestToEnd.distance < 30 && closestToStart.distance < 30 &&
+                closestToEnd.pointIndex < closestToStart.pointIndex) {
+
+              // Extract the connector portion of this run
+              const connectorCoords = extractSubLineString(
+                runCoords,
+                closestToEnd.pointIndex,
+                closestToEnd.segmentT,
+                closestToStart.pointIndex,
+                closestToStart.segmentT
+              );
+
+              if (connectorCoords.length > 1) {
+                const connectorDist = calculatePathDistance(connectorCoords as number[][]);
+                const totalDist = closestToEnd.distance + connectorDist + closestToStart.distance;
+
+                // Use this connector if it's better than what we've found
+                if (totalDist < bestTotalDist && totalDist < gap * 1.5) {
+                  bestConnector = {
+                    coords: connectorCoords,
+                    distance: connectorDist,
+                    runName: run.name,
+                    difficulty: run.difficulty,
+                  };
+                  bestTotalDist = totalDist;
+                }
+              }
+            }
+          }
+
+          // If we found a good connector, insert it
+          if (bestConnector) {
+            const startElev = (bestConnector.coords[0][2] as number) || 0;
+            const endElev = (bestConnector.coords[bestConnector.coords.length - 1][2] as number) || 0;
+
+            // Add current segment
+            newSegments.push(segment);
+
+            // Add connector segment
+            newSegments.push({
+              type: 'run' as const,
+              name: bestConnector.runName,
+              difficulty: bestConnector.difficulty,
+              distance: bestConnector.distance,
+              time: bestConnector.distance / 6, // Average skiing speed
+              elevationChange: endElev - startElev,
+              coordinates: bestConnector.coords,
+            });
+
+            // Add next segment
+            newSegments.push(nextSegment);
+
+            i++; // Skip next segment as we've processed it
+            optimized = true;
+            madeChanges = true;
+          }
+        }
+      }
+
       if (!optimized) {
         newSegments.push(segment);
       }
@@ -1460,6 +1662,206 @@ function extractPolygonCenterline(ring: number[][]): number[][] {
   return [ring[highestIdx], ring[lowestIdx]];
 }
 
+// ============================================================================
+// Geometry Refinement Utilities
+// ============================================================================
+
+/**
+ * Project a point onto a line segment and find the closest point on that segment
+ */
+function projectPointToLineSegment(
+  point: [number, number, number?],
+  segStart: [number, number, number?],
+  segEnd: [number, number, number?]
+): { point: [number, number, number?]; distance: number; t: number } {
+  const [px, py] = point;
+  const [x1, y1] = segStart;
+  const [x2, y2] = segEnd;
+
+  // Vector from start to end of segment
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  // If segment is a point, return that point
+  if (dx === 0 && dy === 0) {
+    const dist = haversineDistance(py, px, y1, x1);
+    return { point: segStart, distance: dist, t: 0 };
+  }
+
+  // Parameter t represents position along segment (0 = start, 1 = end)
+  // Project point onto infinite line, then clamp to segment
+  const t = Math.max(0, Math.min(1,
+    ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)
+  ));
+
+  // Closest point on segment
+  const closestX = x1 + t * dx;
+  const closestY = y1 + t * dy;
+  const closestZ = segStart[2] !== undefined && segEnd[2] !== undefined
+    ? segStart[2] + t * (segEnd[2] - segStart[2])
+    : undefined;
+
+  const closestPoint: [number, number, number?] = closestZ !== undefined
+    ? [closestX, closestY, closestZ]
+    : [closestX, closestY];
+
+  const dist = haversineDistance(py, px, closestY, closestX);
+
+  return { point: closestPoint, distance: dist, t };
+}
+
+/**
+ * Find the closest point on a LineString to a target point
+ */
+function findClosestPointOnLineString(
+  targetPoint: [number, number, number?],
+  lineCoords: [number, number, number?][]
+): { pointIndex: number; point: [number, number, number?]; distance: number; segmentT: number } {
+  if (lineCoords.length === 0) {
+    return { pointIndex: 0, point: targetPoint, distance: Infinity, segmentT: 0 };
+  }
+
+  if (lineCoords.length === 1) {
+    const dist = haversineDistance(
+      targetPoint[1], targetPoint[0],
+      lineCoords[0][1], lineCoords[0][0]
+    );
+    return { pointIndex: 0, point: lineCoords[0], distance: dist, segmentT: 0 };
+  }
+
+  let bestDist = Infinity;
+  let bestPoint = lineCoords[0];
+  let bestIndex = 0;
+  let bestT = 0;
+
+  // Check each segment of the LineString
+  for (let i = 0; i < lineCoords.length - 1; i++) {
+    const segStart = lineCoords[i];
+    const segEnd = lineCoords[i + 1];
+
+    const projection = projectPointToLineSegment(targetPoint, segStart, segEnd);
+
+    if (projection.distance < bestDist) {
+      bestDist = projection.distance;
+      bestPoint = projection.point;
+      bestIndex = i;
+      bestT = projection.t;
+    }
+  }
+
+  // Also check endpoints directly
+  for (let i = 0; i < lineCoords.length; i++) {
+    const dist = haversineDistance(
+      targetPoint[1], targetPoint[0],
+      lineCoords[i][1], lineCoords[i][0]
+    );
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestPoint = lineCoords[i];
+      bestIndex = i;
+      bestT = 0;
+    }
+  }
+
+  return { pointIndex: bestIndex, point: bestPoint, distance: bestDist, segmentT: bestT };
+}
+
+/**
+ * Extract a sub-LineString between two indices
+ * Handles interpolation when indices don't align with coordinate points
+ */
+function extractSubLineString(
+  coords: [number, number, number?][],
+  startIdx: number,
+  startT: number, // 0-1 parameter within segment at startIdx
+  endIdx: number,
+  endT: number     // 0-1 parameter within segment at endIdx
+): [number, number, number?][] {
+  if (coords.length === 0) return [];
+  if (startIdx === endIdx && startT === endT) return [coords[startIdx]];
+
+  const result: [number, number, number?][] = [];
+
+  // Add interpolated start point if needed
+  if (startT > 0 && startIdx < coords.length - 1) {
+    const seg1 = coords[startIdx];
+    const seg2 = coords[startIdx + 1];
+    const interpX = seg1[0] + startT * (seg2[0] - seg1[0]);
+    const interpY = seg1[1] + startT * (seg2[1] - seg1[1]);
+    const interpZ = seg1[2] !== undefined && seg2[2] !== undefined
+      ? seg1[2] + startT * (seg2[2] - seg1[2])
+      : undefined;
+    result.push(interpZ !== undefined ? [interpX, interpY, interpZ] : [interpX, interpY]);
+  } else {
+    result.push(coords[startIdx]);
+  }
+
+  // Add all intermediate points
+  for (let i = startIdx + 1; i <= endIdx && i < coords.length; i++) {
+    if (i === endIdx && endT < 1 && i < coords.length - 1) {
+      // Interpolate end point
+      const seg1 = coords[i];
+      const seg2 = coords[i + 1];
+      const interpX = seg1[0] + endT * (seg2[0] - seg1[0]);
+      const interpY = seg1[1] + endT * (seg2[1] - seg1[1]);
+      const interpZ = seg1[2] !== undefined && seg2[2] !== undefined
+        ? seg1[2] + endT * (seg2[2] - seg1[2])
+        : undefined;
+      result.push(interpZ !== undefined ? [interpX, interpY, interpZ] : [interpX, interpY]);
+    } else {
+      result.push(coords[i]);
+    }
+  }
+
+  return result.length > 0 ? result : [coords[startIdx]];
+}
+
+/**
+ * Find the closest pair of points between two LineStrings
+ */
+function findClosestPointsBetweenLines(
+  line1Coords: [number, number, number?][],
+  line2Coords: [number, number, number?][]
+): {
+  line1Index: number;
+  line1Point: [number, number, number?];
+  line1T: number;
+  line2Index: number;
+  line2Point: [number, number, number?];
+  line2T: number;
+  distance: number;
+} | null {
+  if (line1Coords.length === 0 || line2Coords.length === 0) return null;
+
+  let bestDist = Infinity;
+  let bestResult = null;
+
+  // For efficiency, sample last 5 points of line1 and first 5 points of line2
+  const line1Sample = line1Coords.slice(-5);
+  const line2Sample = line2Coords.slice(0, 5);
+  const line1Offset = Math.max(0, line1Coords.length - 5);
+
+  for (let i = 0; i < line1Sample.length; i++) {
+    const point1 = line1Sample[i];
+    const closest = findClosestPointOnLineString(point1, line2Sample);
+
+    if (closest.distance < bestDist) {
+      bestDist = closest.distance;
+      bestResult = {
+        line1Index: line1Offset + i,
+        line1Point: point1,
+        line1T: 0,
+        line2Index: closest.pointIndex,
+        line2Point: closest.point,
+        line2T: closest.segmentT,
+        distance: closest.distance
+      };
+    }
+  }
+
+  return bestResult;
+}
+
 /**
  * Find multiple alternative routes using Yen's k-shortest paths algorithm (simplified)
  * This is useful for sunny routing where we want to compare different routes.
@@ -1586,6 +1988,7 @@ export interface LiveStatusData {
   closedRunIds: Set<string>;
   liftClosingTimes: Map<string, number>; // lift ID -> minutes until close
   runClosingTimes: Map<string, number>;  // run ID -> minutes until close
+  liftDurations?: Map<string, number>;   // lift ID -> actual duration in minutes (optional)
 }
 
 export interface StatusAwareRouteOptions {
