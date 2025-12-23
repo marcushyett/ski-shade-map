@@ -13,6 +13,11 @@ import {
   StopOutlined,
   CheckCircleOutlined,
   FieldTimeOutlined,
+  ThunderboltOutlined,
+  RocketOutlined,
+  TeamOutlined,
+  ColumnHeightOutlined,
+  ArrowUpOutlined,
 } from '@ant-design/icons';
 import type { RunData, LiftData } from '@/lib/types';
 import { getDifficultyColor } from '@/lib/shade-calculator';
@@ -320,6 +325,64 @@ const WaitingTimeItem = memo(function WaitingTimeItem({
   );
 });
 
+// Lift highlight item component for showing ranking stats
+const LiftHighlightItem = memo(function LiftHighlightItem({
+  lift,
+  rank,
+  value,
+  unit,
+  onClick
+}: {
+  lift: LiftData | EnrichedLiftData;
+  rank: number;
+  value: string | number;
+  unit: string;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      className="lift-highlight-item cursor-pointer flex items-center justify-between hover:bg-white/5"
+      onClick={onClick}
+      style={{ padding: '2px 4px' }}
+    >
+      <div className="flex items-center gap-1.5" style={{ flex: 1, minWidth: 0 }}>
+        <span
+          style={{
+            fontSize: 8,
+            color: rank <= 3 ? '#fbbf24' : '#666',
+            fontWeight: rank <= 3 ? 600 : 400,
+            width: 14,
+            flexShrink: 0
+          }}
+        >
+          #{rank}
+        </span>
+        <span
+          className="truncate"
+          style={{
+            fontSize: 9,
+            color: '#ccc',
+            lineHeight: '14px'
+          }}
+        >
+          {lift.name || 'Unnamed'}
+        </span>
+      </div>
+      <span
+        style={{
+          fontSize: 9,
+          color: '#60a5fa',
+          fontWeight: 500,
+          marginLeft: 8,
+          flexShrink: 0
+        }}
+      >
+        {value} {unit}
+      </span>
+    </div>
+  );
+});
+
 function TrailsListInner({
   runs,
   lifts,
@@ -332,6 +395,12 @@ function TrailsListInner({
   const [runsExpanded, setRunsExpanded] = useState(false);
   const [liftsExpanded, setLiftsExpanded] = useState(false);
   const [waitingTimesExpanded, setWaitingTimesExpanded] = useState(false);
+  const [liftHighlightsExpanded, setLiftHighlightsExpanded] = useState(false);
+  const [fastestLiftsExpanded, setFastestLiftsExpanded] = useState(false);
+  const [fastestChairliftsExpanded, setFastestChairliftsExpanded] = useState(false);
+  const [highestCapacityExpanded, setHighestCapacityExpanded] = useState(false);
+  const [longestLiftsExpanded, setLongestLiftsExpanded] = useState(false);
+  const [highestAltitudeGainExpanded, setHighestAltitudeGainExpanded] = useState(false);
   const [expandedLocalities, setExpandedLocalities] = useState<Set<string>>(new Set());
   const [expandedDifficulties, setExpandedDifficulties] = useState<Set<string>>(new Set());
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
@@ -431,6 +500,119 @@ function TrailsListInner({
   }, [lifts]);
 
   const hasWaitingTimeData = liftsWithWaitingTimes.length > 0;
+
+  // Helper to get speed for a lift (either direct speed field or calculated from length/duration)
+  const getLiftSpeed = useCallback((lift: LiftData | EnrichedLiftData): number | null => {
+    const enriched = isEnrichedLift(lift) ? lift : null;
+    const liveStatus = enriched?.liveStatus;
+
+    // Try direct speed field first
+    if (liveStatus?.speed && liveStatus.speed > 0) {
+      return liveStatus.speed;
+    }
+
+    // Calculate from length and duration
+    const length = liveStatus?.length;
+    const duration = liveStatus?.duration;
+    if (length && length > 0 && duration && duration > 0) {
+      // length is meters, duration is minutes -> convert to m/s
+      return length / (duration * 60);
+    }
+
+    return null;
+  }, []);
+
+  // Top 10 fastest lifts (by speed in m/s)
+  const fastestLifts = useMemo(() => {
+    return lifts
+      .map(lift => {
+        const speed = getLiftSpeed(lift);
+        return { lift, speed };
+      })
+      .filter((item): item is { lift: typeof item.lift; speed: number } => item.speed !== null)
+      .sort((a, b) => b.speed - a.speed)
+      .slice(0, 10);
+  }, [lifts, getLiftSpeed]);
+
+  // Top 10 fastest chairlifts
+  const fastestChairlifts = useMemo(() => {
+    const chairliftTypes = ['chair_lift', 'chairlift', 'chair'];
+    return lifts
+      .filter(lift => {
+        const liftType = lift.liftType?.toLowerCase() || '';
+        const enriched = isEnrichedLift(lift) ? lift : null;
+        const liveType = enriched?.liveStatus?.liftType?.toLowerCase() || '';
+        return chairliftTypes.some(t => liftType.includes(t) || liveType.includes(t));
+      })
+      .map(lift => {
+        const speed = getLiftSpeed(lift);
+        return { lift, speed };
+      })
+      .filter((item): item is { lift: typeof item.lift; speed: number } => item.speed !== null)
+      .sort((a, b) => b.speed - a.speed)
+      .slice(0, 10);
+  }, [lifts, getLiftSpeed]);
+
+  // Top 10 highest capacity lifts (people per hour)
+  const highestCapacityLifts = useMemo(() => {
+    return lifts
+      .map(lift => {
+        const enriched = isEnrichedLift(lift) ? lift : null;
+        const liveStatus = enriched?.liveStatus;
+        // Use uphillCapacity if available, otherwise capacity
+        const capacity = liveStatus?.uphillCapacity ?? liveStatus?.capacity ?? lift.capacity;
+        return { lift, capacity };
+      })
+      .filter((item): item is { lift: typeof item.lift; capacity: number } =>
+        item.capacity !== null && item.capacity !== undefined && item.capacity > 0
+      )
+      .sort((a, b) => b.capacity - a.capacity)
+      .slice(0, 10);
+  }, [lifts]);
+
+  // Top 10 longest lifts (by length in meters)
+  const longestLifts = useMemo(() => {
+    return lifts
+      .map(lift => {
+        const enriched = isEnrichedLift(lift) ? lift : null;
+        const length = enriched?.liveStatus?.length;
+        return { lift, length };
+      })
+      .filter((item): item is { lift: typeof item.lift; length: number } =>
+        item.length !== null && item.length !== undefined && item.length > 0
+      )
+      .sort((a, b) => b.length - a.length)
+      .slice(0, 10);
+  }, [lifts]);
+
+  // Top 10 highest altitude gain lifts
+  const highestAltitudeGainLifts = useMemo(() => {
+    return lifts
+      .map(lift => {
+        const enriched = isEnrichedLift(lift) ? lift : null;
+        const liveStatus = enriched?.liveStatus;
+        const arrival = liveStatus?.arrivalAltitude;
+        const departure = liveStatus?.departureAltitude;
+        if (arrival !== undefined && departure !== undefined) {
+          const gain = arrival - departure;
+          return { lift, altitudeGain: gain };
+        }
+        return { lift, altitudeGain: null };
+      })
+      .filter((item): item is { lift: typeof item.lift; altitudeGain: number } =>
+        item.altitudeGain !== null && item.altitudeGain > 0
+      )
+      .sort((a, b) => b.altitudeGain - a.altitudeGain)
+      .slice(0, 10);
+  }, [lifts]);
+
+  // Check if we have any lift highlights data
+  const hasLiftHighlightsData =
+    fastestLifts.length > 0 ||
+    fastestChairlifts.length > 0 ||
+    highestCapacityLifts.length > 0 ||
+    longestLifts.length > 0 ||
+    highestAltitudeGainLifts.length > 0;
 
   // Group runs by locality, then by difficulty
   const runsByLocalityAndDifficulty = useMemo(() => {
@@ -842,6 +1024,174 @@ function TrailsListInner({
           </div>
         )}
       </div>
+
+      {/* Lift Highlights Section - only show if we have highlight data */}
+      {hasLiftHighlightsData && (
+        <div className="mb-1">
+          <div
+            className="flex items-center gap-2 py-1 cursor-pointer hover:bg-white/5 rounded"
+            onClick={() => setLiftHighlightsExpanded(!liftHighlightsExpanded)}
+          >
+            {liftHighlightsExpanded ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
+            <ThunderboltOutlined style={{ fontSize: 10, color: '#fbbf24' }} />
+            <span style={{ fontSize: 10, color: '#fbbf24' }}>Lift Highlights</span>
+          </div>
+
+          {liftHighlightsExpanded && (
+            <div className="ml-3">
+              {/* Fastest Lifts */}
+              {fastestLifts.length > 0 && (
+                <div className="mb-0.5">
+                  <div
+                    className="flex items-center gap-1.5 py-0.5 cursor-pointer hover:bg-white/5 rounded"
+                    onClick={() => setFastestLiftsExpanded(!fastestLiftsExpanded)}
+                  >
+                    {fastestLiftsExpanded ? <DownOutlined style={{ fontSize: 7 }} /> : <RightOutlined style={{ fontSize: 7 }} />}
+                    <RocketOutlined style={{ fontSize: 9, color: '#22d3ee' }} />
+                    <span style={{ fontSize: 10, color: '#888' }}>
+                      Fastest Lifts ({fastestLifts.length})
+                    </span>
+                  </div>
+                  {fastestLiftsExpanded && (
+                    <div className="ml-3">
+                      {fastestLifts.map((item, idx) => (
+                        <LiftHighlightItem
+                          key={item.lift.id}
+                          lift={item.lift}
+                          rank={idx + 1}
+                          value={(item.speed * 3.6).toFixed(1)}
+                          unit="km/h"
+                          onClick={() => onSelectLift?.(item.lift)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Fastest Chairlifts */}
+              {fastestChairlifts.length > 0 && (
+                <div className="mb-0.5">
+                  <div
+                    className="flex items-center gap-1.5 py-0.5 cursor-pointer hover:bg-white/5 rounded"
+                    onClick={() => setFastestChairliftsExpanded(!fastestChairliftsExpanded)}
+                  >
+                    {fastestChairliftsExpanded ? <DownOutlined style={{ fontSize: 7 }} /> : <RightOutlined style={{ fontSize: 7 }} />}
+                    <RocketOutlined style={{ fontSize: 9, color: '#a78bfa' }} />
+                    <span style={{ fontSize: 10, color: '#888' }}>
+                      Fastest Chairlifts ({fastestChairlifts.length})
+                    </span>
+                  </div>
+                  {fastestChairliftsExpanded && (
+                    <div className="ml-3">
+                      {fastestChairlifts.map((item, idx) => (
+                        <LiftHighlightItem
+                          key={item.lift.id}
+                          lift={item.lift}
+                          rank={idx + 1}
+                          value={(item.speed * 3.6).toFixed(1)}
+                          unit="km/h"
+                          onClick={() => onSelectLift?.(item.lift)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Highest Capacity */}
+              {highestCapacityLifts.length > 0 && (
+                <div className="mb-0.5">
+                  <div
+                    className="flex items-center gap-1.5 py-0.5 cursor-pointer hover:bg-white/5 rounded"
+                    onClick={() => setHighestCapacityExpanded(!highestCapacityExpanded)}
+                  >
+                    {highestCapacityExpanded ? <DownOutlined style={{ fontSize: 7 }} /> : <RightOutlined style={{ fontSize: 7 }} />}
+                    <TeamOutlined style={{ fontSize: 9, color: '#4ade80' }} />
+                    <span style={{ fontSize: 10, color: '#888' }}>
+                      Highest Capacity ({highestCapacityLifts.length})
+                    </span>
+                  </div>
+                  {highestCapacityExpanded && (
+                    <div className="ml-3">
+                      {highestCapacityLifts.map((item, idx) => (
+                        <LiftHighlightItem
+                          key={item.lift.id}
+                          lift={item.lift}
+                          rank={idx + 1}
+                          value={item.capacity.toLocaleString()}
+                          unit="p/h"
+                          onClick={() => onSelectLift?.(item.lift)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Longest Lifts */}
+              {longestLifts.length > 0 && (
+                <div className="mb-0.5">
+                  <div
+                    className="flex items-center gap-1.5 py-0.5 cursor-pointer hover:bg-white/5 rounded"
+                    onClick={() => setLongestLiftsExpanded(!longestLiftsExpanded)}
+                  >
+                    {longestLiftsExpanded ? <DownOutlined style={{ fontSize: 7 }} /> : <RightOutlined style={{ fontSize: 7 }} />}
+                    <ColumnHeightOutlined style={{ fontSize: 9, color: '#fb923c' }} />
+                    <span style={{ fontSize: 10, color: '#888' }}>
+                      Longest Lifts ({longestLifts.length})
+                    </span>
+                  </div>
+                  {longestLiftsExpanded && (
+                    <div className="ml-3">
+                      {longestLifts.map((item, idx) => (
+                        <LiftHighlightItem
+                          key={item.lift.id}
+                          lift={item.lift}
+                          rank={idx + 1}
+                          value={(item.length / 1000).toFixed(2)}
+                          unit="km"
+                          onClick={() => onSelectLift?.(item.lift)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Highest Altitude Gain */}
+              {highestAltitudeGainLifts.length > 0 && (
+                <div className="mb-0.5">
+                  <div
+                    className="flex items-center gap-1.5 py-0.5 cursor-pointer hover:bg-white/5 rounded"
+                    onClick={() => setHighestAltitudeGainExpanded(!highestAltitudeGainExpanded)}
+                  >
+                    {highestAltitudeGainExpanded ? <DownOutlined style={{ fontSize: 7 }} /> : <RightOutlined style={{ fontSize: 7 }} />}
+                    <ArrowUpOutlined style={{ fontSize: 9, color: '#f472b6' }} />
+                    <span style={{ fontSize: 10, color: '#888' }}>
+                      Highest Altitude Gain ({highestAltitudeGainLifts.length})
+                    </span>
+                  </div>
+                  {highestAltitudeGainExpanded && (
+                    <div className="ml-3">
+                      {highestAltitudeGainLifts.map((item, idx) => (
+                        <LiftHighlightItem
+                          key={item.lift.id}
+                          lift={item.lift}
+                          rank={idx + 1}
+                          value={item.altitudeGain.toLocaleString()}
+                          unit="m"
+                          onClick={() => onSelectLift?.(item.lift)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
