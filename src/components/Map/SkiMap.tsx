@@ -2439,17 +2439,24 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         const capacity = liveStatus?.uphillCapacity;
         const message = liveStatus?.message;
 
-        new maplibregl.Popup()
+        new maplibregl.Popup({
+          closeButton: true,
+          closeOnClick: false,
+          className: 'search-highlight-popup',
+        })
           .setLngLat(e.lngLat)
           .setHTML(`
-            <div style="padding: 8px; min-width: 160px; max-width: 220px;">
-              <div style="font-weight: 600; font-size: 13px; color: #fff; margin-bottom: 4px;">${props.name || 'Unnamed Lift'}</div>
-              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px;">
-                <span style="font-size: 10px; color: #888;">${props.liftType || 'Lift'}</span>
-                ${statusLabel ? `<span style="font-size: 9px; color: ${statusColor}; background: ${statusBg}; padding: 1px 5px; border-radius: 3px; font-weight: 600;">${statusLabel}</span>` : ''}
+            <div class="lift-popup" style="min-width: 160px; max-width: 220px;">
+              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <strong style="font-size: 13px;">${props.name || 'Unnamed Lift'}</strong>
+                ${statusLabel ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${statusBg}; color: ${statusColor}; font-weight: 500; margin-left: auto;">${statusLabel}</span>` : ''}
               </div>
-              ${timesStr ? `<div style="font-size: 10px; color: #aaa; margin-bottom: 2px;">${timesStr}${closingSoon ? ` <span style="color: #eab308;">(${minutesUntilClose}min left)</span>` : ''}</div>` : ''}
-              ${speed || capacity ? `<div style="font-size: 9px; color: #666; margin-bottom: 2px;">${speed ? `${speed} m/s` : ''}${speed && capacity ? ' · ' : ''}${capacity ? `${capacity} pers/h` : ''}</div>` : ''}
+              ${props.liftType ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${props.liftType}</div>` : ''}
+              ${timesStr || speed || capacity ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px; margin-bottom: 4px;">
+                ${timesStr ? `<span style="color: #aaa;">${timesStr}${closingSoon ? ` <span style="color: #eab308;">(${minutesUntilClose}min)</span>` : ''}</span>` : ''}
+                ${speed ? `<span style="color: #888;">${speed} m/s</span>` : ''}
+                ${capacity ? `<span style="color: #888;">${capacity} pers/h</span>` : ''}
+              </div>` : ''}
               ${message ? `<div style="font-size: 10px; color: #f97316; padding: 4px 6px; background: rgba(249, 115, 22, 0.1); border-radius: 4px;">${message}</div>` : ''}
             </div>
           `)
