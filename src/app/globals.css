@@ -1042,6 +1042,28 @@ h5.ant-typography {
   font-size: 14px;
 }
 
+/* Message inbox container */
+.message-inbox-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.message-inbox-container .message-inbox-btn {
+  width: 29px !important;
+  height: 29px !important;
+  min-width: 29px !important;
+  border-radius: var(--radius) !important;
+  background: var(--background-secondary) !important;
+  border-color: var(--border) !important;
+}
+
+.message-inbox-container .message-inbox-btn:hover {
+  background: var(--background-tertiary) !important;
+  border-color: var(--foreground-muted) !important;
+}
+
 /* View toggle button (3D/2D text) */
 .view-toggle-btn {
   font-size: 11px !important;

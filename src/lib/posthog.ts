@@ -119,7 +119,11 @@ export type AnalyticsEvent =
   | 'wc_navigation_started'
   
   // Donate
-  | 'donate_clicked';
+  | 'donate_clicked'
+
+  // Resort messages
+  | 'message_acknowledged'
+  | 'all_messages_acknowledged';
 
 export interface AnalyticsProperties {
   // Common properties
@@ -162,6 +166,12 @@ export interface AnalyticsProperties {
   snow_score?: number;
   snow_condition?: string;
   
+  // Message properties
+  message_id?: string;
+  message_type?: 'lift' | 'run';
+  asset_name?: string;
+  message_count?: number;
+
   // Generic
   [key: string]: unknown;
 }

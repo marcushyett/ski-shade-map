@@ -61,6 +61,8 @@ import DonateButton from '@/components/DonateButton';
 import Onboarding from '@/components/Onboarding';
 import { fetchResortStatus, hasLiveStatus, enrichLiftsWithStatus, enrichRunsWithStatus, getResortStatusSummary, type ResortStatusSummary } from '@/lib/lift-status-service';
 import type { ResortStatus, EnrichedLiftData, EnrichedRunData } from '@/lib/lift-status-types';
+import MessageInbox from '@/components/MessageInbox';
+import { useResortMessages } from '@/hooks/useResortMessages';
 
 const { Text } = Typography;
 
@@ -571,6 +573,16 @@ export default function Home() {
     toggleFavourite, 
     removeFavourite 
   } = useFavourites(skiAreaDetails?.id || null, skiAreaDetails?.name || null);
+
+  // Resort messages (closures, alerts from live status)
+  const {
+    allMessages,
+    unreadMessages,
+    readMessages,
+    unreadCount,
+    acknowledgeMessage,
+    acknowledgeAllMessages,
+  } = useResortMessages(skiAreaDetails?.id || null, resortStatus);
 
   // Register service worker and clear expired cache
   useEffect(() => {
@@ -2662,6 +2674,20 @@ export default function Home() {
             onEditingHomeChange={setIsEditingHome}
             pendingHomeLocation={pendingHomeLocation}
           />
+
+          {/* Message inbox - only shown for resorts with live status */}
+          <div className="message-inbox-container">
+            <MessageInbox
+              allMessages={allMessages}
+              unreadMessages={unreadMessages}
+              readMessages={readMessages}
+              unreadCount={unreadCount}
+              onAcknowledge={acknowledgeMessage}
+              onAcknowledgeAll={acknowledgeAllMessages}
+              skiAreaName={skiAreaDetails?.name || null}
+              hasLiveStatus={statusDebug.hasLiveStatus === true}
+            />
+          </div>
 
           {/* Navigation button */}
           {skiAreaDetails && !isNavigationOpen && (
