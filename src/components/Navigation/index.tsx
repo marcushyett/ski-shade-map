@@ -5,11 +5,11 @@ import { CompassOutlined, CloseOutlined, DownOutlined, UpOutlined } from '@ant-d
 import { Tooltip } from 'antd';
 import { trackEvent } from '@/lib/posthog';
 import LoadingSpinner from '../LoadingSpinner';
-import type { SkiAreaDetails, POIData } from '@/lib/types';
+import type { SkiAreaDetails, POIData, LiftData, RunData } from '@/lib/types';
+import type { EnrichedLiftData, EnrichedRunData } from '@/lib/lift-status-types';
 import {
   buildNavigationGraph,
-  findRoute,
-  findRouteWithDiagnostics,
+  findStatusAwareRoute,
   findNearestNode,
   findAlternativeRoutes,
   optimizeRoute,
@@ -18,6 +18,7 @@ import {
   addPoiNodeToGraph,
   type NavigationGraph,
   type NavigationRoute,
+  type LiveStatusData,
 } from '@/lib/navigation';
 import {
   analyzeRouteSunExposure,
@@ -63,6 +64,50 @@ function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): 
 }
 
 const MAX_DISTANCE_FROM_SKI_AREA_KM = 10;
+
+// Helper to check if lift/run is enriched (has minutesUntilClose)
+function isEnrichedLift(lift: LiftData | EnrichedLiftData): lift is EnrichedLiftData {
+  return 'minutesUntilClose' in lift;
+}
+
+function isEnrichedRun(run: RunData | EnrichedRunData): run is EnrichedRunData {
+  return 'minutesUntilClose' in run;
+}
+
+// Build LiveStatusData from ski area lifts and runs
+function buildLiveStatusData(skiArea: SkiAreaDetails): LiveStatusData {
+  const closedLiftIds = new Set<string>();
+  const closedRunIds = new Set<string>();
+  const liftClosingTimes = new Map<string, number>();
+  const runClosingTimes = new Map<string, number>();
+
+  for (const lift of skiArea.lifts) {
+    if (lift.status === 'closed') {
+      closedLiftIds.add(lift.id);
+    }
+    // Check for enriched data with closing times
+    if (isEnrichedLift(lift) && lift.minutesUntilClose !== undefined) {
+      liftClosingTimes.set(lift.id, lift.minutesUntilClose);
+    }
+  }
+
+  for (const run of skiArea.runs) {
+    if (run.status === 'closed') {
+      closedRunIds.add(run.id);
+    }
+    // Check for enriched data with closing times
+    if (isEnrichedRun(run) && run.minutesUntilClose !== undefined) {
+      runClosingTimes.set(run.id, run.minutesUntilClose);
+    }
+  }
+
+  return {
+    closedLiftIds,
+    closedRunIds,
+    liftClosingTimes,
+    runClosingTimes,
+  };
+}
 
 interface NavigationPanelProps {
   skiArea: SkiAreaDetails;
@@ -353,10 +398,13 @@ function NavigationPanelInner({
         const toNodeId = getNodeId(resolvedDestination);
 
         if (fromNodeId && toNodeId) {
-          const result = findRouteWithDiagnostics(graph, fromNodeId, toNodeId, skiArea);
+          // Build live status data to filter out closed lifts/runs
+          const liveStatus = buildLiveStatusData(skiArea);
+          const result = findStatusAwareRoute(graph, fromNodeId, toNodeId, skiArea, { liveStatus });
 
           if (result.route) {
-            let optimizedRoute = optimizeRoute(result.route, skiArea);
+            // Route is already optimized by findStatusAwareRoute
+            let optimizedRoute = result.route;
             let analysis: RouteSunAnalysis | null = null;
 
             if (sunnyRouteEnabled) {
@@ -395,7 +443,13 @@ function NavigationPanelInner({
               segment_count: optimizedRoute.segments.length,
               sun_percentage: analysis?.sunPercentage ?? null,
               sunny_routing_enabled: sunnyRouteEnabled,
+              status_warnings: result.warnings.length > 0 ? result.warnings : null,
             });
+
+            // Show warning if route includes closed lifts/runs (fallback route)
+            if (result.warnings.length > 0 && result.warnings.some(w => w.includes('closed'))) {
+              setError(result.warnings[0]);
+            }
           } else {
             setError('No route found. Try a different origin or destination.');
             setRoute(null);
