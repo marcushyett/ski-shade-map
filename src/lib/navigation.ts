@@ -144,14 +144,41 @@ const MAX_WALK_ELEVATION_DIFF = 50;
 const MAX_EXTENDED_WALK_DISTANCE = 500; // Up to 500m walking as user requested
 const MAX_EXTENDED_WALK_ELEVATION = 100; // Allow more elevation for extended walks
 
+// Intermediate node settings for flexible piste entry/exit
+const SEGMENT_TARGET_LENGTH = 75; // Target segment length in meters
+const MIN_SEGMENT_LENGTH = 30; // Minimum segment length to avoid too many nodes
+
+// Queue time for lifts (average wait time to board)
+const LIFT_QUEUE_TIME_SECONDS = 180; // 3 minutes default queue time
+
 // ============================================================================
 // Graph Building
 // ============================================================================
 
 /**
- * Build a navigation graph from ski area data
+ * Options for building the navigation graph
  */
-export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
+export interface BuildGraphOptions {
+  /** Map of lift IDs to their actual ride duration in minutes (from live status API) */
+  liftDurations?: Map<string, number>;
+  /** Queue time in seconds to add to each lift (default: 180 = 3 minutes) */
+  liftQueueTime?: number;
+}
+
+/**
+ * Build a navigation graph from ski area data
+ *
+ * This creates a flexible graph where:
+ * - Runs have intermediate nodes every ~75m allowing entry/exit at any point
+ * - Lifts include queue time in their travel time
+ * - Walking connections are created sparingly and only where needed
+ */
+export function buildNavigationGraph(
+  skiArea: SkiAreaDetails,
+  options: BuildGraphOptions = {}
+): NavigationGraph {
+  const { liftDurations, liftQueueTime = LIFT_QUEUE_TIME_SECONDS } = options;
+
   const nodes = new Map<string, NavigationNode>();
   const edges = new Map<string, NavigationEdge>();
   const adjacency = new Map<string, string[]>();
@@ -175,7 +202,7 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
   // Process lifts - they go from start (bottom) to end (top)
   for (const lift of skiArea.lifts) {
     if (!lift.geometry || lift.geometry.type !== 'LineString') continue;
-    
+
     const coords = lift.geometry.coordinates;
     if (coords.length < 2) continue;
 
@@ -210,7 +237,19 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
     const distance = calculatePathDistance(coords);
     const elevationChange = endNode.elevation - startNode.elevation;
     const speed = getLiftSpeed(lift.liftType);
-    const travelTime = distance / speed;
+
+    // Use actual lift duration from API if available, otherwise calculate from distance/speed
+    let rideTime: number;
+    const actualDuration = liftDurations?.get(lift.id);
+    if (actualDuration !== undefined && actualDuration > 0) {
+      // actualDuration is in minutes, convert to seconds
+      rideTime = actualDuration * 60;
+    } else {
+      rideTime = distance / speed;
+    }
+
+    // Add queue time to the total travel time
+    const travelTime = rideTime + liftQueueTime;
 
     const edge: NavigationEdge = {
       id: `edge-lift-${lift.id}`,
@@ -231,9 +270,10 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
   }
 
   // Process runs - they go from top to bottom (downhill direction)
+  // Create intermediate nodes along runs to allow flexible entry/exit points
   for (const run of skiArea.runs) {
     let coords: number[][];
-    
+
     if (run.geometry.type === 'LineString') {
       coords = run.geometry.coordinates;
     } else if (run.geometry.type === 'Polygon') {
@@ -249,78 +289,117 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
     // Determine direction - runs go downhill
     const firstElev = (coords[0][2] as number) || 0;
     const lastElev = (coords[coords.length - 1][2] as number) || 0;
-    
+
     // If first point is higher, it's the start; otherwise reverse
     const isCorrectDirection = firstElev >= lastElev;
     const orderedCoords = isCorrectDirection ? coords : [...coords].reverse();
 
-    const startCoord = orderedCoords[0];
-    const endCoord = orderedCoords[orderedCoords.length - 1];
-
-    // Create nodes for run endpoints
-    const startNode: NavigationNode = {
-      id: `run-${run.id}-start`,
-      lng: startCoord[0],
-      lat: startCoord[1],
-      elevation: (startCoord[2] as number) || 0,
-      type: 'run_start',
-      featureId: run.id,
-      featureName: run.name,
-    };
-
-    const endNode: NavigationNode = {
-      id: `run-${run.id}-end`,
-      lng: endCoord[0],
-      lat: endCoord[1],
-      elevation: (endCoord[2] as number) || 0,
-      type: 'run_end',
-      featureId: run.id,
-      featureName: run.name,
-    };
-
-    addNode(startNode);
-    addNode(endNode);
-
-    // Calculate edge properties
-    const distance = calculatePathDistance(orderedCoords);
-    const elevationChange = endNode.elevation - startNode.elevation; // Negative for downhill
+    // Calculate total run length
+    const totalDistance = calculatePathDistance(orderedCoords);
     const speed = getSkiingSpeed(run.difficulty);
-    const travelTime = distance / speed;
 
-    const edge: NavigationEdge = {
-      id: `edge-run-${run.id}`,
-      fromNodeId: startNode.id,
-      toNodeId: endNode.id,
-      type: 'run',
-      featureId: run.id,
-      featureName: run.name,
-      difficulty: run.difficulty,
-      distance,
-      elevationChange,
-      travelTime,
-      speed,
-      coordinates: orderedCoords as [number, number, number?][],
-    };
+    // Determine how many segments to create based on run length
+    // Aim for segments of ~75m, but ensure at least 2 points (start and end)
+    const numSegments = Math.max(1, Math.floor(totalDistance / SEGMENT_TARGET_LENGTH));
 
-    addEdge(edge);
+    // Sample points along the run at regular intervals
+    const sampledPoints = samplePointsAlongPath(orderedCoords, numSegments + 1);
+
+    // Create nodes for all sampled points
+    const runNodes: NavigationNode[] = [];
+    for (let i = 0; i < sampledPoints.length; i++) {
+      const point = sampledPoints[i];
+      const isStart = i === 0;
+      const isEnd = i === sampledPoints.length - 1;
+
+      const nodeType: NavigationNode['type'] = isStart ? 'run_start' : isEnd ? 'run_end' : 'connection';
+      const nodeId = isStart
+        ? `run-${run.id}-start`
+        : isEnd
+          ? `run-${run.id}-end`
+          : `run-${run.id}-mid-${i}`;
+
+      const node: NavigationNode = {
+        id: nodeId,
+        lng: point[0],
+        lat: point[1],
+        elevation: (point[2] as number) || 0,
+        type: nodeType,
+        featureId: run.id,
+        featureName: run.name,
+      };
+
+      addNode(node);
+      runNodes.push(node);
+    }
+
+    // Create edges between consecutive nodes (going downhill)
+    for (let i = 0; i < runNodes.length - 1; i++) {
+      const fromNode = runNodes[i];
+      const toNode = runNodes[i + 1];
+
+      // Get the segment coordinates between these two nodes
+      const segmentCoords = getSegmentCoordinates(
+        orderedCoords,
+        sampledPoints[i],
+        sampledPoints[i + 1]
+      );
+
+      const segmentDistance = calculatePathDistance(segmentCoords as number[][]);
+      const segmentElevChange = toNode.elevation - fromNode.elevation;
+      const segmentTime = segmentDistance / speed;
+
+      const edge: NavigationEdge = {
+        id: `edge-run-${run.id}-seg-${i}`,
+        fromNodeId: fromNode.id,
+        toNodeId: toNode.id,
+        type: 'run',
+        featureId: run.id,
+        featureName: run.name,
+        difficulty: run.difficulty,
+        distance: segmentDistance,
+        elevationChange: segmentElevChange,
+        travelTime: segmentTime,
+        speed,
+        coordinates: segmentCoords,
+      };
+
+      addEdge(edge);
+    }
   }
 
-  // Create walk/connection edges between nearby endpoints
-  // IMPORTANT: Only create walking connections where there's no better piste option
-  // Walking should be a last resort, not a shortcut
+  // Create walk/connection edges between nearby nodes
+  // The graph now has intermediate nodes along runs ('connection' type) which enables:
+  // - Joining a run partway down
+  // - Transferring between runs at intersection points
+  // - Walking is only needed for flat/uphill or crossing gaps between pistes
   const nodeList = Array.from(nodes.values());
+
+  // Helper to determine if a node is on a run (start, mid, or end)
+  const isRunNode = (node: NavigationNode) =>
+    node.type === 'run_start' || node.type === 'run_end' || node.type === 'connection';
+  const isLiftNode = (node: NavigationNode) =>
+    node.type === 'lift_start' || node.type === 'lift_end';
+
+  // Walking time penalty - lower for short distances, higher for longer walks
+  const getWalkingTimePenalty = (distance: number, elevChange: number) => {
+    // Uphill walking is heavily penalized
+    if (elevChange > 5) return 5.0;
+    // Flat walking is moderately penalized
+    if (Math.abs(elevChange) <= 5) return 2.5;
+    // Downhill walking is lightly penalized (you could ski if on a piste)
+    return 1.5;
+  };
+
   for (let i = 0; i < nodeList.length; i++) {
     for (let j = i + 1; j < nodeList.length; j++) {
       const nodeA = nodeList[i];
       const nodeB = nodeList[j];
 
-      // Don't connect start and end of same feature
+      // Don't connect nodes on the same feature - the graph already has proper edges
       if (nodeA.featureId === nodeB.featureId) continue;
 
-      const horizontalDist = haversineDistance(
-        nodeA.lat, nodeA.lng,
-        nodeB.lat, nodeB.lng
-      );
+      const horizontalDist = haversineDistance(nodeA.lat, nodeA.lng, nodeB.lat, nodeB.lng);
 
       // Only connect if close enough
       if (horizontalDist > MAX_CONNECTION_DISTANCE) continue;
@@ -330,28 +409,26 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
 
       // Skip if too much elevation change for walking
       if (absElevDiff > MAX_WALK_ELEVATION_DIFF) continue;
-      
-      // RESTRICT walking connections to meaningful transitions:
-      // Only create walking connections between:
-      // 1. Lift end -> Run start (getting off lift to ski)
-      // 2. Run end -> Lift start (finishing run to take lift)
-      // 3. Lift end -> Lift start (lift-to-lift transfer)
-      // Do NOT create: Run end -> Run start (these should follow pistes, not shortcuts)
-      const isRunToRun = (
-        (nodeA.type === 'run_end' && nodeB.type === 'run_start') ||
-        (nodeA.type === 'run_start' && nodeB.type === 'run_end')
-      );
-      
-      // Skip run-to-run connections UNLESS they're between different ski areas (for cross-region routing)
+
+      // Determine connection validity based on node types
+      // We want to allow:
+      // 1. Any lift node <-> any run node (getting on/off lifts at any point on a run)
+      // 2. Run nodes from DIFFERENT runs (transferring between pistes)
+      // 3. Lift end -> lift start (lift-to-lift transfer)
+      const isLiftToRun =
+        (isLiftNode(nodeA) && isRunNode(nodeB)) || (isRunNode(nodeA) && isLiftNode(nodeB));
+      const isLiftToLift = isLiftNode(nodeA) && isLiftNode(nodeB);
+      const isRunToRun = isRunNode(nodeA) && isRunNode(nodeB);
+
+      // For run-to-run connections, only allow if they're different features
+      // (same-feature connections are already handled by the run segment edges)
       if (isRunToRun) {
-        // Allow if features are from different ski areas (enables cross-region routing)
-        // Otherwise skip (prevents shortcuts within same area)
-        const nodeASkiArea = nodeA.featureId?.split('-')[0]; // Extract ski area prefix if exists
-        const nodeBSkiArea = nodeB.featureId?.split('-')[0];
-        if (nodeASkiArea === nodeBSkiArea) {
-          continue; // Skip shortcuts within same area
-        }
+        // Already checked above that featureIds are different
+        // This enables run-to-run transfers at intersection points
       }
+
+      // All connection types are valid if we reach here
+      if (!isLiftToRun && !isLiftToLift && !isRunToRun) continue;
 
       // Calculate 3D distance
       const dist3D = Math.sqrt(horizontalDist * horizontalDist + absElevDiff * absElevDiff);
@@ -373,10 +450,10 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         speedAtoB = SPEEDS.walk.downhill_gentle;
         speedBtoA = SPEEDS.walk.uphill;
       }
-      
+
       // Add a time penalty to walking to make it less desirable than following pistes
-      // This ensures the router prefers actual ski routes over walking shortcuts
-      const WALKING_TIME_PENALTY = 3.0; // Walking takes 3x longer than calculated
+      const penaltyAB = getWalkingTimePenalty(dist3D, elevDiff);
+      const penaltyBA = getWalkingTimePenalty(dist3D, -elevDiff);
 
       // Create bidirectional walk edges
       const walkEdgeAB: NavigationEdge = {
@@ -388,12 +465,9 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         featureName: 'Connection',
         distance: dist3D,
         elevationChange: elevDiff,
-        travelTime: (dist3D / speedAtoB) * WALKING_TIME_PENALTY,
+        travelTime: (dist3D / speedAtoB) * penaltyAB,
         speed: speedAtoB,
-        coordinates: [
-          [nodeA.lng, nodeA.lat, nodeA.elevation],
-          [nodeB.lng, nodeB.lat, nodeB.elevation],
-        ],
+        coordinates: [[nodeA.lng, nodeA.lat, nodeA.elevation], [nodeB.lng, nodeB.lat, nodeB.elevation]],
       };
 
       const walkEdgeBA: NavigationEdge = {
@@ -405,12 +479,9 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         featureName: 'Connection',
         distance: dist3D,
         elevationChange: -elevDiff,
-        travelTime: (dist3D / speedBtoA) * WALKING_TIME_PENALTY,
+        travelTime: (dist3D / speedBtoA) * penaltyBA,
         speed: speedBtoA,
-        coordinates: [
-          [nodeB.lng, nodeB.lat, nodeB.elevation],
-          [nodeA.lng, nodeA.lat, nodeA.elevation],
-        ],
+        coordinates: [[nodeB.lng, nodeB.lat, nodeB.elevation], [nodeA.lng, nodeA.lat, nodeA.elevation]],
       };
 
       addEdge(walkEdgeAB);
@@ -420,25 +491,21 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
 
   // Second pass: Create EXTENDED walking connections (up to 500m)
   // These have a much higher time penalty but allow cross-region connections
-  // Only create these if no shorter path already exists
   const EXTENDED_WALKING_TIME_PENALTY = 5.0; // Very slow - discourages but allows
-  
+
   for (let i = 0; i < nodeList.length; i++) {
     for (let j = i + 1; j < nodeList.length; j++) {
       const nodeA = nodeList[i];
       const nodeB = nodeList[j];
 
-      // Don't connect start and end of same feature
+      // Don't connect nodes on the same feature
       if (nodeA.featureId === nodeB.featureId) continue;
 
-      const horizontalDist = haversineDistance(
-        nodeA.lat, nodeA.lng,
-        nodeB.lat, nodeB.lng
-      );
+      const horizontalDist = haversineDistance(nodeA.lat, nodeA.lng, nodeB.lat, nodeB.lng);
 
       // Skip if already connected with regular walk (under 150m)
       if (horizontalDist <= MAX_CONNECTION_DISTANCE) continue;
-      
+
       // Only create extended connections up to 500m
       if (horizontalDist > MAX_EXTENDED_WALK_DISTANCE) continue;
 
@@ -447,10 +514,10 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
 
       // Skip if too much elevation change for extended walking
       if (absElevDiff > MAX_EXTENDED_WALK_ELEVATION) continue;
-      
-      // For extended walks, allow run-to-run connections (needed for cross-region)
-      // But only for meaningful connections (lift ends to run starts, etc.)
-      const validConnection = (
+
+      // For extended walks, only connect endpoint-type nodes (not intermediate nodes)
+      // This prevents too many long-distance connections
+      const validConnection =
         // Lift end to run start (getting off lift)
         (nodeA.type === 'lift_end' && nodeB.type === 'run_start') ||
         (nodeB.type === 'lift_end' && nodeA.type === 'run_start') ||
@@ -460,11 +527,10 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         // Lift end to lift start (lift-to-lift transfer)
         (nodeA.type === 'lift_end' && nodeB.type === 'lift_start') ||
         (nodeB.type === 'lift_end' && nodeA.type === 'lift_start') ||
-        // Run end to run start (for cross-region routing only)
+        // Run end to run start (for cross-region routing)
         (nodeA.type === 'run_end' && nodeB.type === 'run_start') ||
-        (nodeB.type === 'run_end' && nodeA.type === 'run_start')
-      );
-      
+        (nodeB.type === 'run_end' && nodeA.type === 'run_start');
+
       if (!validConnection) continue;
 
       // Calculate 3D distance
@@ -497,10 +563,7 @@ export function buildNavigationGraph(skiArea: SkiAreaDetails): NavigationGraph {
         elevationChange: elevDiff,
         travelTime: (dist3D / speedAtoB) * EXTENDED_WALKING_TIME_PENALTY,
         speed: speedAtoB,
-        coordinates: [
-          [nodeA.lng, nodeA.lat, nodeA.elevation],
-          [nodeB.lng, nodeB.lat, nodeB.elevation],
-        ],
+        coordinates: [[nodeA.lng, nodeA.lat, nodeA.elevation], [nodeB.lng, nodeB.lat, nodeB.elevation]],
       };
 
       const extWalkEdgeBA: NavigationEdge = {
@@ -1437,13 +1500,13 @@ function getLiftSpeed(liftType: string | null): number {
  */
 function extractPolygonCenterline(ring: number[][]): number[][] {
   if (ring.length < 3) return ring;
-  
+
   // Find the highest and lowest points
   let highestIdx = 0;
   let lowestIdx = 0;
   let highestElev = (ring[0][2] as number) || 0;
   let lowestElev = highestElev;
-  
+
   for (let i = 1; i < ring.length; i++) {
     const elev = (ring[i][2] as number) || 0;
     if (elev > highestElev) {
@@ -1455,9 +1518,140 @@ function extractPolygonCenterline(ring: number[][]): number[][] {
       lowestIdx = i;
     }
   }
-  
+
   // Return a simple line from highest to lowest
   return [ring[highestIdx], ring[lowestIdx]];
+}
+
+/**
+ * Sample N points evenly distributed along a path
+ * Returns array of [lng, lat, elevation] points
+ */
+function samplePointsAlongPath(
+  coords: number[][],
+  numPoints: number
+): [number, number, number][] {
+  if (coords.length < 2 || numPoints < 2) {
+    // Return start and end points only
+    return [
+      [coords[0][0], coords[0][1], (coords[0][2] as number) || 0],
+      [
+        coords[coords.length - 1][0],
+        coords[coords.length - 1][1],
+        (coords[coords.length - 1][2] as number) || 0,
+      ],
+    ];
+  }
+
+  const totalDistance = calculatePathDistance(coords);
+  if (totalDistance === 0) {
+    return [
+      [coords[0][0], coords[0][1], (coords[0][2] as number) || 0],
+      [
+        coords[coords.length - 1][0],
+        coords[coords.length - 1][1],
+        (coords[coords.length - 1][2] as number) || 0,
+      ],
+    ];
+  }
+
+  const intervalDistance = totalDistance / (numPoints - 1);
+  const sampledPoints: [number, number, number][] = [];
+
+  // Always include the first point
+  sampledPoints.push([coords[0][0], coords[0][1], (coords[0][2] as number) || 0]);
+
+  let accumulatedDistance = 0;
+  let nextSampleDistance = intervalDistance;
+
+  for (let i = 1; i < coords.length && sampledPoints.length < numPoints - 1; i++) {
+    const [lng1, lat1, elev1] = coords[i - 1];
+    const [lng2, lat2, elev2] = coords[i];
+
+    const segmentHorizontalDist = haversineDistance(lat1, lng1, lat2, lng2);
+    const elevDiff = ((elev2 as number) || 0) - ((elev1 as number) || 0);
+    const segmentLength = Math.sqrt(
+      segmentHorizontalDist * segmentHorizontalDist + elevDiff * elevDiff
+    );
+
+    while (
+      accumulatedDistance + segmentLength >= nextSampleDistance &&
+      sampledPoints.length < numPoints - 1
+    ) {
+      // Interpolate point along this segment
+      const distanceIntoSegment = nextSampleDistance - accumulatedDistance;
+      const ratio = segmentLength > 0 ? distanceIntoSegment / segmentLength : 0;
+
+      const sampledLng = lng1 + ratio * (lng2 - lng1);
+      const sampledLat = lat1 + ratio * (lat2 - lat1);
+      const sampledElev =
+        ((elev1 as number) || 0) + ratio * (((elev2 as number) || 0) - ((elev1 as number) || 0));
+
+      sampledPoints.push([sampledLng, sampledLat, sampledElev]);
+      nextSampleDistance += intervalDistance;
+    }
+
+    accumulatedDistance += segmentLength;
+  }
+
+  // Always include the last point
+  const lastCoord = coords[coords.length - 1];
+  sampledPoints.push([lastCoord[0], lastCoord[1], (lastCoord[2] as number) || 0]);
+
+  return sampledPoints;
+}
+
+/**
+ * Get the segment of coordinates between two points along a path
+ * Returns the coordinates from startPoint to endPoint, including both endpoints
+ */
+function getSegmentCoordinates(
+  fullPath: number[][],
+  startPoint: [number, number, number],
+  endPoint: [number, number, number]
+): [number, number, number?][] {
+  // Find the indices of the closest points to start and end
+  let startIdx = 0;
+  let endIdx = fullPath.length - 1;
+  let minStartDist = Infinity;
+  let minEndDist = Infinity;
+
+  for (let i = 0; i < fullPath.length; i++) {
+    const [lng, lat] = fullPath[i];
+    const startDist = Math.abs(lng - startPoint[0]) + Math.abs(lat - startPoint[1]);
+    const endDist = Math.abs(lng - endPoint[0]) + Math.abs(lat - endPoint[1]);
+
+    if (startDist < minStartDist) {
+      minStartDist = startDist;
+      startIdx = i;
+    }
+    if (endDist < minEndDist) {
+      minEndDist = endDist;
+      endIdx = i;
+    }
+  }
+
+  // Ensure proper order
+  if (startIdx > endIdx) {
+    [startIdx, endIdx] = [endIdx, startIdx];
+  }
+
+  // Extract the segment, including interpolated start and end points
+  const segment: [number, number, number?][] = [];
+
+  // Add the exact start point
+  segment.push(startPoint);
+
+  // Add intermediate points from the original path (excluding the boundary points we're replacing)
+  for (let i = startIdx + 1; i < endIdx; i++) {
+    const coord = fullPath[i];
+    segment.push([coord[0], coord[1], (coord[2] as number) || 0]);
+  }
+
+  // Add the exact end point
+  segment.push(endPoint);
+
+  return segment;
 }
 
 /**

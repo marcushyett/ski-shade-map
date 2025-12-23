@@ -202,8 +202,20 @@ function NavigationPanelInner({
       graphRef.current = null;
     }
     if (!graphRef.current) {
-      // Use prebuilt graph if available, otherwise build from scratch
-      graphRef.current = prebuiltGraph || buildNavigationGraph(skiArea);
+      // Extract lift durations from enriched lift data (if available from live status)
+      const liftDurations = new Map<string, number>();
+      for (const lift of skiArea.lifts) {
+        if (isEnrichedLift(lift) && lift.liveStatus?.duration) {
+          liftDurations.set(lift.id, lift.liveStatus.duration);
+        }
+      }
+
+      // Use prebuilt graph if available, otherwise build from scratch with lift durations
+      graphRef.current =
+        prebuiltGraph ||
+        buildNavigationGraph(skiArea, {
+          liftDurations: liftDurations.size > 0 ? liftDurations : undefined,
+        });
       graphSkiAreaIdRef.current = skiArea.id;
     }
 

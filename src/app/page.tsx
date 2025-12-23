@@ -1378,35 +1378,35 @@ export default function Home() {
 
   // Handle run click on map - show detail overlay or set navigation point
   const handleRunClick = useCallback((runId: string, lngLat: { lng: number; lat: number }) => {
-    // If navigation map click mode is active, set the point
-    if (navMapClickMode && isNavigationOpen && skiAreaDetails) {
-      const run = skiAreaDetails.runs.find(r => r.id === runId);
-      if (run) {
-        const point: SelectedPoint = {
-          type: 'run',
-          id: run.id,
-          name: run.name || 'Unnamed Run',
-          nodeId: `run-${run.id}-start`,
-          difficulty: run.difficulty,
-        };
-        
-        if (navMapClickMode === 'origin') {
-          setExternalNavOrigin(point);
-        } else {
-          setExternalNavDestination(point);
-        }
-        setNavMapClickMode(null);
-        
-        trackEvent('navigation_destination_from_click', {
-          type: 'run',
-          run_id: runId,
-          run_name: run.name || undefined,
-          field: navMapClickMode,
-        });
-        return;
+    // If navigation map click mode is active, place a pin at the exact click location
+    // This allows routing to any point on the map, even if it's on a run
+    if (navMapClickMode && isNavigationOpen) {
+      const run = skiAreaDetails?.runs.find(r => r.id === runId);
+      const point: SelectedPoint = {
+        type: 'mapPoint',
+        id: `map-${lngLat.lat.toFixed(5)}-${lngLat.lng.toFixed(5)}`,
+        name: run?.name ? `On ${run.name}` : 'Map location',
+        lat: lngLat.lat,
+        lng: lngLat.lng,
+      };
+
+      if (navMapClickMode === 'origin') {
+        setExternalNavOrigin(point);
+      } else {
+        setExternalNavDestination(point);
       }
+      setNavMapClickMode(null);
+
+      trackEvent('navigation_destination_from_click', {
+        type: 'mapPoint',
+        latitude: lngLat.lat,
+        longitude: lngLat.lng,
+        run_name: run?.name || undefined,
+        field: navMapClickMode,
+      });
+      return;
     }
-    
+
     trackEvent('run_detail_viewed', {
       run_id: runId,
       ski_area_id: selectedArea?.id,
@@ -1999,33 +1999,33 @@ export default function Home() {
 
   // Handle lift click for navigation destination or showing detail overlay
   const handleLiftClick = useCallback((liftId: string, lngLat: { lng: number; lat: number }) => {
-    // If navigation map click mode is active, set the point
-    if (navMapClickMode && isNavigationOpen && skiAreaDetails) {
-      const lift = skiAreaDetails.lifts.find(l => l.id === liftId);
-      if (lift) {
-        const point: SelectedPoint = {
-          type: 'lift',
-          id: lift.id,
-          name: lift.name || 'Unnamed Lift',
-          nodeId: `lift-${lift.id}-start`,
-          liftType: lift.liftType,
-        };
+    // If navigation map click mode is active, place a pin at the exact click location
+    // This allows routing to any point on the map, even if it's on a lift
+    if (navMapClickMode && isNavigationOpen) {
+      const lift = skiAreaDetails?.lifts.find(l => l.id === liftId);
+      const point: SelectedPoint = {
+        type: 'mapPoint',
+        id: `map-${lngLat.lat.toFixed(5)}-${lngLat.lng.toFixed(5)}`,
+        name: lift?.name ? `Near ${lift.name}` : 'Map location',
+        lat: lngLat.lat,
+        lng: lngLat.lng,
+      };
 
-        if (navMapClickMode === 'origin') {
-          setExternalNavOrigin(point);
-        } else {
-          setExternalNavDestination(point);
-        }
-        setNavMapClickMode(null);
-
-        trackEvent('navigation_destination_from_click', {
-          type: 'lift',
-          lift_id: liftId,
-          lift_name: lift.name || undefined,
-          field: navMapClickMode,
-        });
-        return;
+      if (navMapClickMode === 'origin') {
+        setExternalNavOrigin(point);
+      } else {
+        setExternalNavDestination(point);
       }
+      setNavMapClickMode(null);
+
+      trackEvent('navigation_destination_from_click', {
+        type: 'mapPoint',
+        latitude: lngLat.lat,
+        longitude: lngLat.lng,
+        lift_name: lift?.name || undefined,
+        field: navMapClickMode,
+      });
+      return;
     }
 
     // Show lift detail overlay
