@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "prisma generate && prisma migrate deploy && tsx scripts/generate-locations.ts",
+    "prebuild": "prisma generate && prisma migrate deploy && tsx scripts/generate-locations.ts && tsx scripts/generate-resort-bundles.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

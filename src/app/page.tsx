@@ -439,6 +439,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsLoadProgress, setRunsLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const [dataSource, setDataSource] = useState<'bundle' | 'cache' | 'network' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -864,12 +865,12 @@ export default function Home() {
       return;
     }
 
-    // Progressive loading strategy:
-    // 0. Check IndexedDB cache for 24hr cached data (instant if cached)
-    // 1. Map has already navigated to the location (instant via handleLocationSelect)
-    // 2. Fetch basic ski area info in background (for bounds, geometry, etc.)
-    // 3. Fetch runs and lifts progressively - they appear on the map as they load
-    // 4. Weather loads in parallel
+    // Optimized loading strategy:
+    // 1. Try static bundle first (/data/resorts/{id}.json) - 20-50ms if bundled
+    // 2. Fall back to IndexedDB cache (7d geometry, 5min status) - 10-30ms if cached
+    // 3. Fall back to parallel network fetch (info + runs + lifts) - 300-400ms
+    // 4. Weather loads in parallel independently
+    // 5. Progressive rendering only for network fetches (instant for bundles/cache)
 
     // Only show full loading overlay on initial load (no resort loaded before)
     // When switching resorts, the map is already showing so we just use progressive loading
@@ -946,38 +947,106 @@ export default function Home() {
       addNextBatch();
     };
 
-    // Try to load from cache first (24hr TTL)
+    // Helper to fetch and apply status data
+    const fetchAndApplyStatus = async (osmId: string) => {
+      if (!osmId) return;
+
+      try {
+        const hasStatus = await hasLiveStatus(osmId);
+        setHasStatusData(hasStatus);
+
+        if (hasStatus) {
+          const status = await fetchResortStatus(osmId);
+          if (!signal.aborted) {
+            setResortStatus(status);
+            console.log(`[Status] Fetched live status for osmId: ${osmId}`);
+          }
+        }
+      } catch (error) {
+        console.error('[Status] Failed to fetch status:', error);
+      }
+    };
+
+    // Optimized loading with bundle-first strategy
     const loadData = async () => {
+      // TIER 1: Try static bundle first (fastest - 20-50ms if bundled)
+      try {
+        const bundlePath = `/data/resorts/${selectedArea.id}.json`;
+        const bundleRes = await fetch(bundlePath, { signal });
+
+        if (bundleRes.ok && !signal.aborted) {
+          const bundle = await bundleRes.json();
+          console.log(`[Bundle] Using pre-generated bundle for ${bundle.name}`);
+
+          // Construct SkiAreaDetails from bundle
+          const basicInfo: SkiAreaDetails = {
+            id: bundle.id,
+            osmId: bundle.osmId || null,
+            name: bundle.name,
+            country: bundle.country || null,
+            region: bundle.region || null,
+            latitude: bundle.latitude,
+            longitude: bundle.longitude,
+            bounds: bundle.bounds || null,
+            geometry: bundle.geometry || null,
+            properties: bundle.properties || null,
+            localities: bundle.localities || [],
+            runs: [],
+            lifts: [],
+          };
+
+          // Fetch status in parallel BEFORE setting skiAreaDetails
+          // This ensures enrichment happens on first render
+          if (bundle.osmId) {
+            await fetchAndApplyStatus(bundle.osmId);
+          }
+
+          if (signal.aborted) return;
+
+          // Set data - enrichment will now include fresh status
+          setSkiAreaDetails({ ...basicInfo, runs: bundle.runs, lifts: bundle.lifts });
+          setDataSource('bundle');
+
+          if (!selectedArea.name && basicInfo.name) {
+            setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
+          }
+
+          setLoading(false);
+          setRunsLoading(false); // Instant - no progressive loading needed
+          setRunsLoadProgress(null);
+
+          // Background: Fetch fresh weather (changes frequently)
+          fetchWeatherData();
+
+          // Cache the bundle data to IndexedDB for offline support
+          cacheSkiArea(selectedArea.id, bundle.runs, bundle.lifts, basicInfo).catch(console.error);
+
+          return; // Exit - bundle loaded successfully
+        }
+      } catch (err) {
+        // Bundle not found or fetch failed - continue to cache/network
+        console.log(`[Bundle] No bundle found for ${selectedArea.id}, trying cache...`);
+      }
+
+      // TIER 2: Try IndexedDB cache (fast - 10-30ms if cached)
       try {
         const cached = await getCachedSkiArea(selectedArea.id);
 
         if (cached && !signal.aborted) {
-          // Cache hit! Use cached data instantly
           const cachedInfo = cached.info as Record<string, unknown>;
-          console.log(`[Cache] Using cached data for ${selectedArea.id}`, {
-            hasOsmId: !!cachedInfo.osmId,
-            osmId: cachedInfo.osmId,
-            name: cachedInfo.name,
-          });
 
           // If cached data is missing osmId, clear cache and fetch fresh
           if (!cachedInfo.osmId) {
-            console.log(`[Cache] Missing osmId, clearing cache and fetching fresh data for ${selectedArea.id}`);
-            // Clear the stale cache entry
-            try {
-              const { clearCachedSkiArea } = await import('@/lib/ski-area-cache');
-              await clearCachedSkiArea(selectedArea.id);
-              console.log(`[Cache] Cleared stale cache for ${selectedArea.id}`);
-            } catch (e) {
-              console.error('[Cache] Failed to clear cache:', e);
-            }
-            // Don't return - fall through to network fetch below
+            console.log(`[Cache] Invalid cache (missing osmId), fetching fresh data for ${selectedArea.id}`);
+            const { clearCachedSkiArea } = await import('@/lib/ski-area-cache');
+            await clearCachedSkiArea(selectedArea.id).catch(console.error);
           } else {
-            // Cache is valid with osmId - use it
+            // Cache is valid - use it
+            console.log(`[Cache] Using cached data for ${selectedArea.id}`);
+
             const allRuns = cached.runs as RunData[];
             const allLifts = cached.lifts as LiftData[];
 
-            // Construct a properly typed SkiAreaDetails from cached data
             const basicInfo: SkiAreaDetails = {
               id: cachedInfo.id as string,
               osmId: (cachedInfo.osmId as string) || null,
@@ -994,29 +1063,35 @@ export default function Home() {
               lifts: [],
             };
 
-            // Set basic info immediately
-            setSkiAreaDetails(basicInfo);
+            // Fetch status BEFORE setting skiAreaDetails
+            if (basicInfo.osmId) {
+              await fetchAndApplyStatus(basicInfo.osmId);
+            }
+
+            if (signal.aborted) return;
+
+            // Set data - enrichment will now include fresh status
+            setSkiAreaDetails({ ...basicInfo, runs: allRuns, lifts: allLifts });
+            setDataSource('cache');
 
             if (!selectedArea.name && basicInfo.name) {
               setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
             }
 
             setLoading(false);
-            setRunsLoadProgress({ loaded: 0, total: allRuns.length });
+            setRunsLoading(false); // Instant - no progressive loading
+            setRunsLoadProgress(null);
 
-            // Progressively add runs/lifts
-            progressivelyAddData(allRuns, allLifts, basicInfo);
-
-            // Still fetch weather fresh (it changes frequently)
+            // Fetch weather fresh
             fetchWeatherData();
-            return; // Exit early - cache was valid
+            return; // Exit - cache was valid
           }
         }
       } catch (err) {
         console.error('[Cache] Failed to check cache:', err);
       }
 
-      // Cache miss, invalid cache (missing osmId), or error - fetch from network
+      // TIER 3: Fetch from network (slowest - 300-500ms)
       fetchFromNetwork();
     };
 
@@ -1057,62 +1132,16 @@ export default function Home() {
     };
 
     const fetchFromNetwork = async () => {
-      // Phase 1: Fetch basic info immediately - allows map to show instantly
-      let basicInfo: SkiAreaDetails | null = null;
-      let runCount: number | undefined;
+      console.log(`[Network] Fetching all data in parallel for ${selectedArea.id}`);
+      setDataSource('network');
 
+      // Fetch info, runs, lifts, AND weather ALL in parallel (one round-trip)
       try {
-        const rawInfo = await fetchBasicInfo();
-        if (signal.aborted) return;
-
-        console.log(`[Network] Fetched ski area info for ${rawInfo.id}`, {
-          hasOsmId: !!rawInfo.osmId,
-          osmId: rawInfo.osmId,
-          name: rawInfo.name,
-        });
-
-        // Extract runCount/liftCount for progress indicator (not part of SkiAreaDetails type)
-        runCount = rawInfo.runCount as number | undefined;
-
-        // Construct a properly typed SkiAreaDetails from API response
-        basicInfo = {
-          id: rawInfo.id as string,
-          osmId: (rawInfo.osmId as string) || null,
-          name: rawInfo.name as string,
-          country: (rawInfo.country as string) || null,
-          region: (rawInfo.region as string) || null,
-          latitude: rawInfo.latitude as number,
-          longitude: rawInfo.longitude as number,
-          bounds: (rawInfo.bounds as SkiAreaDetails['bounds']) || null,
-          geometry: (rawInfo.geometry as SkiAreaDetails['geometry']) || null,
-          properties: (rawInfo.properties as SkiAreaDetails['properties']) || null,
-          localities: (rawInfo.localities as string[]) || [],
-          runs: [],
-          lifts: [],
-        };
-
-        setSkiAreaDetails(basicInfo);
-
-        if (!selectedArea.name && basicInfo.name) {
-          setSelectedArea(prev => prev ? { ...prev, name: basicInfo!.name } : prev);
-        }
-
-        setLoading(false);
-
-        if (runCount) {
-          setRunsLoadProgress({ loaded: 0, total: runCount });
-        }
-      } catch (err) {
-        if (signal.aborted) return;
-        setError(err instanceof Error ? err.message : 'Failed to load ski area');
-        setLoading(false);
-        setRunsLoading(false);
-        return;
-      }
-
-      // Phase 2: Fetch runs and lifts in parallel
-      try {
-        const [runsData, liftsData] = await Promise.all([
+        const [rawInfo, runsData, liftsData] = await Promise.all([
+          fetchBasicInfo().catch((err) => {
+            console.error('Failed to load basic info:', err);
+            return null;
+          }),
           fetchRuns().catch((err) => {
             if (!signal.aborted) console.error('Failed to load runs:', err);
             return { runs: [] };
@@ -1125,25 +1154,96 @@ export default function Home() {
 
         if (signal.aborted) return;
 
-        const allRuns = runsData.runs || [];
-        const allLifts = liftsData.lifts || [];
+        // Handle complete failure (all APIs failed)
+        if (!rawInfo && (!runsData || runsData.runs.length === 0)) {
+          setError('Failed to load ski area data');
+          setLoading(false);
+          setRunsLoading(false);
+          return;
+        }
+
+        // Use info if available, otherwise infer from first run
+        let basicInfo: SkiAreaDetails;
+
+        if (rawInfo) {
+          console.log(`[Network] Fetched ski area info for ${rawInfo.id}`, {
+            hasOsmId: !!rawInfo.osmId,
+            osmId: rawInfo.osmId,
+            name: rawInfo.name,
+          });
+
+          basicInfo = {
+            id: rawInfo.id as string,
+            osmId: (rawInfo.osmId as string) || null,
+            name: rawInfo.name as string,
+            country: (rawInfo.country as string) || null,
+            region: (rawInfo.region as string) || null,
+            latitude: rawInfo.latitude as number,
+            longitude: rawInfo.longitude as number,
+            bounds: (rawInfo.bounds as SkiAreaDetails['bounds']) || null,
+            geometry: (rawInfo.geometry as SkiAreaDetails['geometry']) || null,
+            properties: (rawInfo.properties as SkiAreaDetails['properties']) || null,
+            localities: (rawInfo.localities as string[]) || [],
+            runs: [],
+            lifts: [],
+          };
+        } else {
+          // Fallback: infer basic info from runs/lifts (if info API failed)
+          const allRuns = runsData?.runs || [];
+          const firstRun = allRuns[0];
+
+          basicInfo = {
+            id: selectedArea.id,
+            osmId: null,
+            name: selectedArea.name || 'Unknown Resort',
+            country: null,
+            region: null,
+            latitude: selectedArea.latitude,
+            longitude: selectedArea.longitude,
+            bounds: null,
+            geometry: null,
+            properties: null,
+            localities: [],
+            runs: [],
+            lifts: [],
+          };
+          console.log(`[Network] Using fallback basic info (info API failed)`);
+        }
+
+        // Set basic info immediately
+        setSkiAreaDetails(basicInfo);
+
+        if (!selectedArea.name && basicInfo.name) {
+          setSelectedArea(prev => prev ? { ...prev, name: basicInfo.name } : prev);
+        }
+
+        setLoading(false);
+
+        const allRuns = runsData?.runs || [];
+        const allLifts = liftsData?.lifts || [];
+
+        // Show progress indicator while progressive rendering
+        if (allRuns.length > 0) {
+          setRunsLoadProgress({ loaded: 0, total: allRuns.length });
+        }
 
         // Cache the data for next time (24hr TTL)
-        if (basicInfo && allRuns.length > 0) {
+        if (allRuns.length > 0) {
           cacheSkiArea(selectedArea.id, allRuns, allLifts, basicInfo).catch(console.error);
           console.log(`[Cache] Cached data for ${selectedArea.id}`);
         }
 
-        // Progressively add to UI
+        // Progressively add to UI (only for network fetches)
         progressivelyAddData(allRuns, allLifts, basicInfo);
-      } catch {
-        if (!signal.aborted) {
-          setRunsLoading(false);
-        }
-      }
 
-      // Phase 3: Weather loads independently
-      fetchWeatherData();
+        // Weather loads in parallel (already started)
+        fetchWeatherData();
+      } catch (err) {
+        if (signal.aborted) return;
+        setError(err instanceof Error ? err.message : 'Failed to load ski area');
+        setLoading(false);
+        setRunsLoading(false);
+      }
     };
 
     // Start loading data (cache first, then network)
@@ -2388,16 +2488,6 @@ export default function Home() {
         {loading && (
           <div className="loading-overlay">
             <LoadingSpinner size={48} />
-          </div>
-        )}
-
-        {/* Progressive loading indicator - shows when map is visible but trails are still loading */}
-        {!loading && runsLoading && (
-          <div className="runs-loading-indicator">
-            <div className="runs-loading-content">
-              <LoadingSpinner size={16} />
-              <span>Loading trails{runsLoadProgress ? ` (${runsLoadProgress.total})` : ''}...</span>
-            </div>
           </div>
         )}
 
