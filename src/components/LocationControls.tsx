@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useCallback, useEffect, memo } from 'react';
+import { useState, useCallback, useEffect, memo, useRef } from 'react';
 import { Tooltip, Modal, Input, App, Button } from 'antd';
 import {
   AimOutlined,
   HomeOutlined,
   ShareAltOutlined,
   CheckOutlined,
-  EditOutlined,
   CloseOutlined,
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
@@ -75,6 +74,9 @@ function LocationControlsInner({
   const [homeName, setHomeName] = useState('');
   const [pendingHomeCoords, setPendingHomeCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+
+  // Track last home button tap for double-tap detection
+  const lastHomeTapRef = useRef<number>(0);
 
   // Load mountain home from storage on mount
   useEffect(() => {
@@ -285,9 +287,21 @@ function LocationControlsInner({
     message.info('Mountain Home cleared');
   }, [onMountainHomeChange, message]);
 
-  // Go to Mountain Home
-  const handleGoToHome = useCallback(() => {
+  // Go to Mountain Home (with double-tap detection for edit mode)
+  const handleHomeClick = useCallback(() => {
     if (mountainHome) {
+      const now = Date.now();
+      const timeSinceLastTap = now - lastHomeTapRef.current;
+
+      // Double-tap within 5 seconds enters edit mode
+      if (timeSinceLastTap < 5000 && timeSinceLastTap > 0) {
+        lastHomeTapRef.current = 0; // Reset to prevent triple-tap
+        handleEnterEditMode();
+        return;
+      }
+
+      // First tap - go to home location
+      lastHomeTapRef.current = now;
       trackEvent('fly_to_location', {
         location_type: 'mountain_home',
         latitude: mountainHome.latitude,
@@ -295,7 +309,7 @@ function LocationControlsInner({
       });
       onGoToLocation?.(mountainHome.latitude, mountainHome.longitude, 16);
     }
-  }, [mountainHome, onGoToLocation]);
+  }, [mountainHome, onGoToLocation, handleEnterEditMode]);
 
   return (
     <>
@@ -336,15 +350,15 @@ function LocationControlsInner({
           </MobileAwareTooltip>
         )}
 
-        {/* Mountain Home Button */}
-        <MobileAwareTooltip 
+        {/* Mountain Home Button - double-tap to edit when home exists */}
+        <MobileAwareTooltip
           title={
-            isEditingHome 
-              ? 'Cancel editing' 
-              : mountainHome 
-                ? `Go to ${mountainHome.name}` 
+            isEditingHome
+              ? 'Cancel editing'
+              : mountainHome
+                ? `Go to ${mountainHome.name} • Tap again to edit`
                 : 'Set Mountain Home'
-          } 
+          }
           placement="left"
         >
           <button
@@ -353,7 +367,7 @@ function LocationControlsInner({
               if (isEditingHome) {
                 handleCancelEditMode();
               } else if (mountainHome) {
-                handleGoToHome();
+                handleHomeClick();
               } else {
                 handleEnterEditMode();
               }
@@ -373,19 +387,6 @@ function LocationControlsInner({
             )}
           </button>
         </MobileAwareTooltip>
-
-        {/* Edit/Move Mountain Home Button (visible when home exists) */}
-        {mountainHome && !isEditingHome && (
-          <MobileAwareTooltip title="Move Mountain Home" placement="left">
-            <button
-              className="location-btn"
-              onClick={handleEnterEditMode}
-              aria-label="Move Mountain Home"
-            >
-              <EditOutlined style={{ fontSize: 14 }} />
-            </button>
-          </MobileAwareTooltip>
-        )}
       </div>
 
       {/* Edit Mode Indicator */}
