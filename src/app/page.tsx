@@ -2541,7 +2541,7 @@ export default function Home() {
 
           {/* Navigation button */}
           {skiAreaDetails && !isNavigationOpen && (
-            <div style={{ marginTop: 4, pointerEvents: 'auto' }}>
+            <div style={{ pointerEvents: 'auto' }}>
               <NavigationButton
                 onClick={handleNavigationOpen}
                 hasRoute={navigationRoute !== null}
