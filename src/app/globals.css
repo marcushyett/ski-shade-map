@@ -1016,12 +1016,6 @@ h5.ant-typography {
   pointer-events: auto;
 }
 
-/* Separator between map controls and location controls */
-.map-controls-separator {
-  height: 6px;
-  pointer-events: none;
-}
-
 /* Compass button rotation - smooth transition */
 .compass-btn {
   transition: transform 0.1s ease-out, background 0.2s, color 0.2s, border-color 0.2s !important;
@@ -1046,6 +1040,13 @@ h5.ant-typography {
 
 .map-controls-container .location-btn .anticon {
   font-size: 14px;
+}
+
+/* View toggle button (3D/2D text) */
+.view-toggle-btn {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.5px;
 }
 
 /* Shared location marker (person icon - purple/violet) */

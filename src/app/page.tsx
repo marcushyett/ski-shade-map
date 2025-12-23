@@ -2523,9 +2523,6 @@ export default function Home() {
             onToggle3D={setIs3D}
           />
 
-          {/* Separator between map controls and location controls */}
-          <div className="map-controls-separator" />
-
           {/* Location controls */}
           <LocationControls
             onUserLocationChange={handleUserLocationChange}

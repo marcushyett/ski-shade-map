@@ -6,8 +6,6 @@ import {
   PlusOutlined,
   MinusOutlined,
   CompassOutlined,
-  EnvironmentOutlined,
-  BoxPlotOutlined,
 } from '@ant-design/icons';
 import { trackEvent } from '@/lib/posthog';
 
@@ -109,15 +107,11 @@ function MapControlsInner({
       {/* 3D / 2D Toggle */}
       <MobileAwareTooltip title={is3D ? 'Switch to 2D view' : 'Switch to 3D view'} placement="left">
         <button
-          className={`location-btn ${is3D ? 'active' : ''}`}
+          className={`location-btn view-toggle-btn ${is3D ? 'active' : ''}`}
           onClick={handleToggle3D}
           aria-label={is3D ? 'Switch to 2D view' : 'Switch to 3D view'}
         >
-          {is3D ? (
-            <EnvironmentOutlined style={{ fontSize: 14 }} />
-          ) : (
-            <BoxPlotOutlined style={{ fontSize: 14 }} />
-          )}
+          {is3D ? '2D' : '3D'}
         </button>
       </MobileAwareTooltip>
     </div>
