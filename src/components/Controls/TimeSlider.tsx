@@ -304,12 +304,15 @@ export default function TimeSlider({
   // Get current hourly weather for collapsed view
   const currentHourlyWeather = useMemo(() => {
     if (!hourlyWeather || hourlyWeather.length === 0) return null;
+    const targetDateStr = format(selectedTime, 'yyyy-MM-dd');
     const targetHour = selectedTime.getHours();
-    const targetDate = selectedTime.toDateString();
-    
+
+    // Use string comparison to avoid timezone parsing issues
+    // h.time format is "2024-12-23T10:00" from Open-Meteo API
     return hourlyWeather.find(h => {
-      const d = new Date(h.time);
-      return d.toDateString() === targetDate && d.getHours() === targetHour;
+      const dateStr = h.time.slice(0, 10); // "2024-12-23"
+      const hourStr = h.time.slice(11, 13); // "10"
+      return dateStr === targetDateStr && parseInt(hourStr, 10) === targetHour;
     }) || null;
   }, [hourlyWeather, selectedTime]);
 
@@ -498,7 +501,7 @@ export default function TimeSlider({
             {mounted ? format(selectedTime, 'HH:mm') : '--:--'}
           </Text>
           <Text type="secondary" style={{ fontSize: 10 }}>
-            {mounted ? `${sunPosition.altitudeDegrees.toFixed(0)}°` : ''}
+            {mounted && currentHourlyWeather ? formatTemp(currentHourlyWeather.temperature) : ''}
           </Text>
         </div>
         

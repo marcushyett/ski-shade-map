@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getSunPosition } from '@/lib/suncalc';
-import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded } from '@/lib/shade-calculator';
+import { getDifficultyColor, getDifficultyColorSunny, getDifficultyColorShaded, getDifficultyColorClosed } from '@/lib/shade-calculator';
 import { 
   startGeometryPrecomputation, 
   getGeometryCache, 
@@ -665,7 +665,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       },
     });
 
-    // Closed runs layer - dashed lines with reduced opacity
+    // Closed runs layer - dashed lines with faded difficulty colors
     map.current.addLayer({
       id: 'ski-segments-closed',
       type: 'line',
@@ -676,9 +676,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'line-join': 'round',
       },
       paint: {
-        'line-color': '#666666',
+        'line-color': [
+          'match',
+          ['get', 'difficulty'],
+          'novice', getDifficultyColorClosed('novice'),
+          'easy', getDifficultyColorClosed('easy'),
+          'intermediate', getDifficultyColorClosed('intermediate'),
+          'advanced', getDifficultyColorClosed('advanced'),
+          'expert', getDifficultyColorClosed('expert'),
+          getDifficultyColorClosed(null) // default
+        ],
         'line-width': 3,
-        'line-opacity': 0.4,
+        'line-opacity': 0.6,
         'line-dasharray': [2, 2],
       },
     });
@@ -911,7 +920,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       paint: {
         'line-color': [
           'case',
-          ['==', ['get', 'status'], 'closed'], '#888888',
+          ['==', ['get', 'status'], 'closed'], '#ef4444',
           ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
           '#888888'
@@ -939,7 +948,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         'circle-radius': 3,
         'circle-color': [
           'case',
-          ['==', ['get', 'status'], 'closed'], '#888888',
+          ['==', ['get', 'status'], 'closed'], '#ef4444',
           ['==', ['get', 'closingSoon'], true], '#f97316',
           ['==', ['get', 'status'], 'open'], '#52c41a',
           '#888888'
@@ -1303,10 +1312,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         unknown: 'Unknown',
       };
 
-      const runStatusColor = run?.status ? statusColors[run.status] : statusColors.unknown;
-      const runStatusLabel = run?.status ? statusLabels[run.status] : '';
-      const liftStatusColor = lift?.status ? statusColors[lift.status] : statusColors.unknown;
-      const liftStatusLabel = lift?.status ? statusLabels[lift.status] : '';
+      const runStatusColor = run?.status && statusColors[run.status] ? statusColors[run.status] : statusColors.unknown;
+      const runStatusLabel = run?.status && statusLabels[run.status] ? statusLabels[run.status] : '';
+      const liftStatusColor = lift?.status && statusColors[lift.status] ? statusColors[lift.status] : statusColors.unknown;
+      const liftStatusLabel = lift?.status && statusLabels[lift.status] ? statusLabels[lift.status] : '';
 
       // Extract enriched data for runs
       const runLiveStatus = run && 'liveStatus' in run ? (run as EnrichedRunData).liveStatus : null;
@@ -1700,14 +1709,21 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const lastRenderedLiftsRef = useRef<string | null>(null);
   const lastRunsCountRef = useRef<string | null>(null);
 
+  // Compute status counts outside useEffect so they can be dependencies
+  const runsWithStatus = useMemo(() =>
+    skiArea?.runs.filter(r => r.status && r.status !== 'unknown').length ?? 0,
+    [skiArea?.runs]
+  );
+  const liftsWithStatus = useMemo(() =>
+    skiArea?.lifts.filter(l => l.status && l.status !== 'unknown').length ?? 0,
+    [skiArea?.lifts]
+  );
+
   // Update map sources when runs/lifts are progressively loaded or status changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !layersInitialized.current || !skiArea) return;
 
     // Create keys that include count AND status data to detect when status is enriched
-    // Count how many items have non-null status to detect when status data arrives
-    const runsWithStatus = skiArea.runs.filter(r => r.status && r.status !== 'unknown').length;
-    const liftsWithStatus = skiArea.lifts.filter(l => l.status && l.status !== 'unknown').length;
     const runsKey = `${skiArea.id}-${skiArea.runs.length}-${runsWithStatus}`;
     const liftsKey = `${skiArea.id}-${skiArea.lifts.length}-${liftsWithStatus}`;
     const runsCountKey = `${skiArea.id}-${skiArea.runs.length}`;
@@ -1829,7 +1845,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         liftsSource.setData(liftsGeoJSON);
       }
     }
-  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, mapLoaded, selectedTime]);
+  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, runsWithStatus, liftsWithStatus, mapLoaded, selectedTime]);
 
   // Update POI source when pois change
   useEffect(() => {

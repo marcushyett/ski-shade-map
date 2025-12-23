@@ -172,3 +172,23 @@ export function getDifficultyColorShaded(difficulty: string | null | undefined):
   }
 }
 
+/**
+ * Get difficulty color for closed runs - faded/desaturated versions
+ * that still hint at the original difficulty color
+ */
+export function getDifficultyColorClosed(difficulty: string | null | undefined): string {
+  switch (difficulty?.toLowerCase()) {
+    case 'novice':
+      return '#6B8E6B'; // Faded greyish-green
+    case 'easy':
+      return '#6B7D8E'; // Faded greyish-blue
+    case 'intermediate':
+      return '#8E6B6B'; // Faded greyish-red
+    case 'advanced':
+    case 'expert':
+      return '#4A4A4A'; // Dark grey (for black runs)
+    default:
+      return '#6B6B6B'; // Medium gray for unknown
+  }
+}
+

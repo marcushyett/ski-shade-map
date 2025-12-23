@@ -956,6 +956,16 @@ h5.ant-typography {
   position: relative;
 }
 
+/* Make mobile search bar height match map overlay buttons (44px on mobile) */
+.mobile-header-search .ant-input-affix-wrapper {
+  height: 44px;
+  padding: 8px 12px;
+}
+
+.mobile-header-search .ant-input {
+  font-size: 14px !important;
+}
+
 .mobile-header-search .search-dropdown {
   position: absolute;
   top: 100%;

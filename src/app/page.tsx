@@ -46,6 +46,7 @@ const NavigationPanel = dynamic(() => import('@/components/NavigationPanel').the
 import type { NavigationRoute } from '@/lib/navigation';
 import { formatDuration, formatDistance } from '@/lib/navigation';
 import { analyzeRuns, calculateRunStats } from '@/lib/sunny-time-calculator';
+import { format } from 'date-fns';
 import { useOffline, useAppUpdate, registerServiceWorker } from '@/hooks/useOffline';
 import { parseUrlState, minutesToDate, SharedLocation } from '@/hooks/useUrlState';
 import type { SkiAreaSummary, SkiAreaDetails, RunData, LiftData, POIData } from '@/lib/types';
@@ -2131,12 +2132,15 @@ export default function Home() {
     // Calculate temperature data based on selected time
     let temperatureData: { temperature: number; stationAltitude: number } | undefined;
     if (weather?.hourly && weather.elevation) {
+      const targetDateStr = format(selectedTime, 'yyyy-MM-dd');
       const targetHour = selectedTime.getHours();
-      const targetDate = selectedTime.toDateString();
 
+      // Use string comparison to avoid timezone parsing issues
+      // h.time format is "2024-12-23T10:00" from Open-Meteo API
       const hourlyMatch = weather.hourly.find(h => {
-        const d = new Date(h.time);
-        return d.toDateString() === targetDate && d.getHours() === targetHour;
+        const dateStr = h.time.slice(0, 10);
+        const hourStr = h.time.slice(11, 13);
+        return dateStr === targetDateStr && parseInt(hourStr, 10) === targetHour;
       });
 
       if (hourlyMatch) {
