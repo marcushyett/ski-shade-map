@@ -95,3 +95,20 @@ model DataSync {
   error       String?
   createdAt   DateTime @default(now())
 }
+
+// Analytics table for tracking resort status over time
+// Denormalized to have one row per asset (lift or run) per collection timestamp
+model ResortStatusAnalytics {
+  id          String   @id @default(cuid())
+  resortId    String   // Resort ID from ski-resort-status
+  resortName  String   // Resort name for easier querying
+  assetType   String   // "lift" or "run"
+  assetId     String   // Asset name (used as identifier since openskimapIds can be empty)
+  statusInfo  Json     // Full status blob (LiftStatus or RunStatus)
+  collectedAt DateTime @default(now()) // When this data was collected
+
+  @@index([resortId])
+  @@index([assetType])
+  @@index([collectedAt])
+  @@index([resortId, assetType, collectedAt])
+}
