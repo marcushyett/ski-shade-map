@@ -47,6 +47,7 @@ export type AnalyticsEvent =
   | 'run_clicked'
   | 'run_detail_viewed'
   | 'lift_selected'
+  | 'lift_detail_viewed'
   | 'poi_clicked'
   
   // Favourites

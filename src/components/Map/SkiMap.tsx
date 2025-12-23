@@ -2396,15 +2396,11 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Lift click handler (shared for both visible and touch layers)
     const handleLiftClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
       if (!e.features?.length || !map.current) return;
-      if (isEditingHomeRef.current) return; // Don't show popup in edit mode
+      if (isEditingHomeRef.current) return; // Don't trigger in edit mode
 
       const feature = e.features[0];
       const props = feature.properties;
       const liftId = props.id;
-
-      // Look up the full enriched lift data to get opening times, etc.
-      const enrichedLift = skiArea?.lifts.find(l => l.id === liftId);
-      const liveStatus = enrichedLift && 'liveStatus' in enrichedLift ? (enrichedLift as EnrichedLiftData).liveStatus : null;
 
       // Track lift click
       trackEvent('lift_selected', {
@@ -2414,54 +2410,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         ski_area_id: currentSkiAreaId.current || undefined,
       });
 
-      // Call the onLiftClick callback with map coordinates (for navigation)
+      // Call the onLiftClick callback with map coordinates - this will show the overlay
       onLiftClickRef.current?.(liftId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
-
-      // Only show popup if not in navigation click mode
-      if (!navMapClickModeRef.current) {
-        // Get status from enriched data or fall back to GeoJSON props
-        const status = enrichedLift?.status || props.status as string | undefined;
-        const statusColor = status === 'open' ? '#22c55e' : status === 'closed' ? '#ef4444' : status === 'scheduled' ? '#eab308' : '#888';
-        const statusBg = status === 'open' ? 'rgba(34, 197, 94, 0.15)' : status === 'closed' ? 'rgba(239, 68, 68, 0.15)' : status === 'scheduled' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(136, 136, 136, 0.15)';
-        const statusLabel = status === 'open' ? 'Open' : status === 'closed' ? 'Closed' : status === 'scheduled' ? 'Scheduled' : null;
-
-        // Build opening times string
-        const openingTimes = liveStatus?.openingTimes?.[0];
-        const timesStr = openingTimes ? `${openingTimes.beginTime} - ${openingTimes.endTime}` : null;
-
-        // Get closing info
-        const closingTime = enrichedLift && 'closingTime' in enrichedLift ? (enrichedLift as EnrichedLiftData).closingTime : null;
-        const minutesUntilClose = enrichedLift && 'minutesUntilClose' in enrichedLift ? (enrichedLift as EnrichedLiftData).minutesUntilClose : null;
-        const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
-
-        // Build additional info
-        const speed = liveStatus?.speed;
-        const capacity = liveStatus?.uphillCapacity;
-        const message = liveStatus?.message;
-
-        new maplibregl.Popup({
-          closeButton: true,
-          closeOnClick: false,
-          className: 'search-highlight-popup',
-        })
-          .setLngLat(e.lngLat)
-          .setHTML(`
-            <div class="lift-popup" style="min-width: 160px; max-width: 220px;">
-              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-                <strong style="font-size: 13px;">${props.name || 'Unnamed Lift'}</strong>
-                ${statusLabel ? `<span style="font-size: 9px; padding: 1px 4px; border-radius: 3px; background: ${statusBg}; color: ${statusColor}; font-weight: 500; margin-left: auto;">${statusLabel}</span>` : ''}
-              </div>
-              ${props.liftType ? `<div style="font-size: 10px; color: #888; margin-bottom: 4px;">${props.liftType}</div>` : ''}
-              ${timesStr || speed || capacity ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px; margin-bottom: 4px;">
-                ${timesStr ? `<span style="color: #aaa;">${timesStr}${closingSoon ? ` <span style="color: #eab308;">(${minutesUntilClose}min)</span>` : ''}</span>` : ''}
-                ${speed ? `<span style="color: #888;">${speed} m/s</span>` : ''}
-                ${capacity ? `<span style="color: #888;">${capacity} pers/h</span>` : ''}
-              </div>` : ''}
-              ${message ? `<div style="font-size: 10px; color: #f97316; padding: 4px 6px; background: rgba(249, 115, 22, 0.1); border-radius: 4px;">${message}</div>` : ''}
-            </div>
-          `)
-          .addTo(map.current);
-      }
     };
 
     map.current.on('click', 'ski-lifts', handleLiftClick);
