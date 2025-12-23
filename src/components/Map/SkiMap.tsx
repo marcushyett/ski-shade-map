@@ -2390,46 +2390,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       onRunClickRef.current?.(runId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
     });
     
-    // Handle polygon run clicks (sunny and shaded fill layers)
-    // When clicking on a polygon fill, show the popup for the associated run
-    // Only trigger for named runs - ignore clicks on unnamed polygons as they show unhelpful data
-    const handlePolygonClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
-      if (!e.features?.length || !map.current) return;
-      if (isEditingHomeRef.current) return;
-      
-      const feature = e.features[0];
-      const props = feature.properties;
-      const runId = props.id;
-      const runName = props.name;
-      
-      // Ignore clicks on unnamed polygon runs - they show unhelpful/redundant data
-      if (!runName) {
-        return;
-      }
-      
-      // Track run click
-      trackEvent('run_clicked', {
-        run_id: runId,
-        run_name: runName || undefined,
-        run_difficulty: props.difficulty || undefined,
-        ski_area_id: currentSkiAreaId.current || undefined,
-        latitude: e.lngLat.lat,
-        longitude: e.lngLat.lng,
-      });
-      
-      // Call the onRunClick callback with map coordinates
-      onRunClickRef.current?.(runId, { lng: e.lngLat.lng, lat: e.lngLat.lat });
-    };
-    
-    // Polygon click handlers - only handle clicks for named runs (unnamed are ignored)
-    // No pointer cursor shown since these are secondary visual elements
-    if (map.current.getLayer('ski-runs-polygon-fill-sunny')) {
-      map.current.on('click', 'ski-runs-polygon-fill-sunny', handlePolygonClick);
-    }
-    
-    if (map.current.getLayer('ski-runs-polygon-fill-shaded')) {
-      map.current.on('click', 'ski-runs-polygon-fill-shaded', handlePolygonClick);
-    }
+    // Polygon layers are purely visual (low opacity fill for sun/shade) - no click interaction
+    // Users should click on the run lines themselves which have a 20px buffer for easier selection
 
     // Lift click handler (shared for both visible and touch layers)
     const handleLiftClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
