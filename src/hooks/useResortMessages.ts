@@ -6,19 +6,24 @@ import type { ResortStatus, LiftStatus, RunStatus } from '@/lib/lift-status-type
 
 const MESSAGES_STORAGE_KEY = 'ski-shade-acknowledged-messages';
 
-export interface ResortMessage {
-  id: string;  // Unique identifier: `${type}-${assetName}-${messageHash}`
+export interface AffectedAsset {
+  name: string;
   type: 'lift' | 'run';
-  assetName: string;
-  message: string;
   status: 'open' | 'closed' | 'scheduled' | 'unknown';
   liftType?: string;
-  level?: string;  // Run difficulty level
+  level?: string;
+}
+
+export interface ResortMessage {
+  id: string;  // Unique identifier based on message content hash
+  message: string;
+  affectedAssets: AffectedAsset[];
+  liftCount: number;
+  runCount: number;
 }
 
 interface AcknowledgedMessage {
   id: string;
-  assetName: string;
   message: string;
   acknowledgedAt: number;
 }
@@ -52,40 +57,74 @@ function loadAcknowledgedMessages(): AcknowledgedMessagesState {
   return {};
 }
 
-// Extract messages from resort status
+// Extract and deduplicate messages from resort status
 function extractMessages(resortStatus: ResortStatus | null): ResortMessage[] {
   if (!resortStatus) return [];
 
-  const messages: ResortMessage[] = [];
+  // Group by message content to deduplicate
+  const messageMap = new Map<string, { message: string; assets: AffectedAsset[] }>();
 
-  // Extract lift messages (only from closed or scheduled lifts with messages)
+  // Extract lift messages
   resortStatus.lifts.forEach((lift: LiftStatus) => {
-    if (lift.message && (lift.status === 'closed' || lift.status === 'scheduled')) {
-      const id = `lift-${lift.name}-${hashMessage(lift.message)}`;
-      messages.push({
-        id,
+    if (lift.message && lift.message.trim()) {
+      const normalizedMessage = lift.message.trim();
+      const existing = messageMap.get(normalizedMessage);
+
+      const asset: AffectedAsset = {
+        name: lift.name,
         type: 'lift',
-        assetName: lift.name,
-        message: lift.message,
-        status: lift.status as ResortMessage['status'],
+        status: (lift.status as AffectedAsset['status']) || 'unknown',
         liftType: lift.liftType,
-      });
+      };
+
+      if (existing) {
+        existing.assets.push(asset);
+      } else {
+        messageMap.set(normalizedMessage, {
+          message: normalizedMessage,
+          assets: [asset],
+        });
+      }
     }
   });
 
-  // Extract run messages (only from closed or scheduled runs with messages)
+  // Extract run messages
   resortStatus.runs.forEach((run: RunStatus) => {
-    if (run.message && (run.status === 'closed' || run.status === 'scheduled')) {
-      const id = `run-${run.name}-${hashMessage(run.message)}`;
-      messages.push({
-        id,
+    if (run.message && run.message.trim()) {
+      const normalizedMessage = run.message.trim();
+      const existing = messageMap.get(normalizedMessage);
+
+      const asset: AffectedAsset = {
+        name: run.name,
         type: 'run',
-        assetName: run.name,
-        message: run.message,
-        status: run.status as ResortMessage['status'],
+        status: (run.status as AffectedAsset['status']) || 'unknown',
         level: run.level,
-      });
+      };
+
+      if (existing) {
+        existing.assets.push(asset);
+      } else {
+        messageMap.set(normalizedMessage, {
+          message: normalizedMessage,
+          assets: [asset],
+        });
+      }
     }
+  });
+
+  // Convert to array format
+  const messages: ResortMessage[] = [];
+  messageMap.forEach(({ message, assets }) => {
+    const liftCount = assets.filter(a => a.type === 'lift').length;
+    const runCount = assets.filter(a => a.type === 'run').length;
+
+    messages.push({
+      id: `msg-${hashMessage(message)}`,
+      message,
+      affectedAssets: assets,
+      liftCount,
+      runCount,
+    });
   });
 
   return messages;
@@ -140,14 +179,12 @@ export function useResortMessages(skiAreaId: string | null, resortStatus: Resort
 
     trackEvent('message_acknowledged', {
       message_id: message.id,
-      message_type: message.type,
-      asset_name: message.assetName,
+      message_type: message.liftCount > 0 ? 'lift' : 'run',
       ski_area_id: skiAreaId,
     });
 
     const newAck: AcknowledgedMessage = {
       id: message.id,
-      assetName: message.assetName,
       message: message.message,
       acknowledgedAt: Date.now(),
     };
@@ -172,7 +209,6 @@ export function useResortMessages(skiAreaId: string | null, resortStatus: Resort
     const currentAck = acknowledgedMessages[skiAreaId] || [];
     const newAckMessages: AcknowledgedMessage[] = unreadMessages.map((m: ResortMessage) => ({
       id: m.id,
-      assetName: m.assetName,
       message: m.message,
       acknowledgedAt: Date.now(),
     }));

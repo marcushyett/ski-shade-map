@@ -5,11 +5,11 @@ import { Badge, Drawer, Tooltip, Empty } from 'antd';
 import {
   MailOutlined,
   CheckOutlined,
-  CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
-import type { ResortMessage } from '@/hooks/useResortMessages';
+import type { ResortMessage, AffectedAsset } from '@/hooks/useResortMessages';
 
 // Detect touch device to disable tooltips (they require double-tap on mobile)
 const isTouchDevice = () => {
@@ -29,11 +29,11 @@ const MobileAwareTooltip = ({ title, children, ...props }: React.ComponentProps<
 const StatusIcon = memo(function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'closed':
-      return <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 12 }} />;
+      return <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 10 }} />;
     case 'scheduled':
-      return <ClockCircleOutlined style={{ color: '#faad14', fontSize: 12 }} />;
+      return <ClockCircleOutlined style={{ color: '#faad14', fontSize: 10 }} />;
     case 'open':
-      return <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} />;
+      return <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 10 }} />;
     default:
       return null;
   }
@@ -55,6 +55,40 @@ function getDifficultyColor(level: string | undefined): string {
   }
 }
 
+// Affected asset pill
+const AssetPill = memo(function AssetPill({ asset }: { asset: AffectedAsset }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        fontSize: 9,
+        background: 'rgba(255,255,255,0.1)',
+        padding: '2px 6px',
+        borderRadius: 4,
+        marginRight: 4,
+        marginBottom: 4,
+      }}
+    >
+      <StatusIcon status={asset.status} />
+      {asset.type === 'run' && asset.level && (
+        <span style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: getDifficultyColor(asset.level),
+          flexShrink: 0,
+        }} />
+      )}
+      <span style={{ color: '#ccc' }}>{asset.name}</span>
+      {asset.type === 'lift' && asset.liftType && (
+        <span style={{ color: '#666', fontSize: 8 }}>({asset.liftType})</span>
+      )}
+    </span>
+  );
+});
+
 interface MessageItemProps {
   message: ResortMessage;
   isRead: boolean;
@@ -62,6 +96,11 @@ interface MessageItemProps {
 }
 
 const MessageItem = memo(function MessageItem({ message, isRead, onAcknowledge }: MessageItemProps) {
+  const totalAffected = message.liftCount + message.runCount;
+  const showAllAssets = message.affectedAssets.length <= 5;
+  const displayAssets = showAllAssets ? message.affectedAssets : message.affectedAssets.slice(0, 3);
+  const hiddenCount = message.affectedAssets.length - displayAssets.length;
+
   return (
     <div
       className={`message-item ${isRead ? 'read' : 'unread'}`}
@@ -69,74 +108,88 @@ const MessageItem = memo(function MessageItem({ message, isRead, onAcknowledge }
         padding: '10px 12px',
         borderBottom: '1px solid rgba(255,255,255,0.1)',
         background: isRead ? 'transparent' : 'rgba(59, 130, 246, 0.1)',
-        display: 'flex',
-        gap: 10,
-        alignItems: 'flex-start',
       }}
     >
-      <div style={{ flexShrink: 0, paddingTop: 2 }}>
-        <StatusIcon status={message.status} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <span style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: '#fff',
-            textTransform: 'capitalize',
-          }}>
-            {message.assetName}
-          </span>
-          <span style={{
-            fontSize: 9,
-            color: '#888',
-            background: 'rgba(255,255,255,0.1)',
-            padding: '1px 4px',
-            borderRadius: 3,
-          }}>
-            {message.type === 'lift' ? message.liftType || 'Lift' : 'Run'}
-          </span>
-          {message.type === 'run' && message.level && (
+      {/* Header with counts */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {message.liftCount > 0 && (
             <span style={{
-              fontSize: 8,
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: getDifficultyColor(message.level),
-              display: 'inline-block',
-            }} />
+              fontSize: 9,
+              color: '#888',
+              background: 'rgba(255,255,255,0.1)',
+              padding: '1px 6px',
+              borderRadius: 3,
+            }}>
+              {message.liftCount} lift{message.liftCount > 1 ? 's' : ''}
+            </span>
+          )}
+          {message.runCount > 0 && (
+            <span style={{
+              fontSize: 9,
+              color: '#888',
+              background: 'rgba(255,255,255,0.1)',
+              padding: '1px 6px',
+              borderRadius: 3,
+            }}>
+              {message.runCount} run{message.runCount > 1 ? 's' : ''}
+            </span>
           )}
         </div>
-        <p style={{
-          fontSize: 10,
-          color: '#aaa',
-          margin: 0,
-          lineHeight: 1.4,
-        }}>
-          {message.message}
-        </p>
+        {!isRead && (
+          <button
+            onClick={onAcknowledge}
+            style={{
+              background: 'rgba(59, 130, 246, 0.2)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: 4,
+              padding: '4px 8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              color: '#3b82f6',
+              fontSize: 10,
+              flexShrink: 0,
+            }}
+            aria-label="Mark as read"
+          >
+            <CheckOutlined style={{ fontSize: 10 }} />
+          </button>
+        )}
       </div>
-      {!isRead && (
-        <button
-          onClick={onAcknowledge}
-          style={{
-            background: 'rgba(59, 130, 246, 0.2)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: 4,
-            padding: '4px 8px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            color: '#3b82f6',
-            fontSize: 10,
-            flexShrink: 0,
-          }}
-          aria-label="Mark as read"
-        >
-          <CheckOutlined style={{ fontSize: 10 }} />
-        </button>
-      )}
+
+      {/* Message content */}
+      <p style={{
+        fontSize: 11,
+        color: '#ddd',
+        margin: '0 0 8px 0',
+        lineHeight: 1.4,
+      }}>
+        {message.message}
+      </p>
+
+      {/* Affected assets */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
+        {displayAssets.map((asset, index) => (
+          <AssetPill key={`${asset.type}-${asset.name}-${index}`} asset={asset} />
+        ))}
+        {hiddenCount > 0 && (
+          <MobileAwareTooltip
+            title={message.affectedAssets.slice(3).map(a => a.name).join(', ')}
+            placement="top"
+          >
+            <span style={{
+              fontSize: 9,
+              color: '#666',
+              padding: '2px 6px',
+              cursor: 'help',
+            }}>
+              +{hiddenCount} more
+            </span>
+          </MobileAwareTooltip>
+        )}
+      </div>
     </div>
   );
 });
@@ -233,7 +286,7 @@ export const MessageInboxDrawer = memo(function MessageInboxDrawer({
       placement="right"
       onClose={onClose}
       open={open}
-      width={320}
+      width={340}
       styles={{
         body: { padding: 0 },
         header: { padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' },
