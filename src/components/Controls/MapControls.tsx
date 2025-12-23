@@ -69,7 +69,7 @@ function MapControlsInner({
       {/* Zoom In - hidden on mobile (use pinch-to-zoom) */}
       <MobileAwareTooltip title="Zoom in" placement="left">
         <button
-          className="location-btn hidden md:flex"
+          className="location-btn zoom-btn"
           onClick={handleZoomIn}
           aria-label="Zoom in"
         >
@@ -80,7 +80,7 @@ function MapControlsInner({
       {/* Zoom Out - hidden on mobile (use pinch-to-zoom) */}
       <MobileAwareTooltip title="Zoom out" placement="left">
         <button
-          className="location-btn hidden md:flex"
+          className="location-btn zoom-btn"
           onClick={handleZoomOut}
           aria-label="Zoom out"
         >
