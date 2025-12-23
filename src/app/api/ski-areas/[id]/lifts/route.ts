@@ -103,9 +103,11 @@ export async function GET(
       total: filteredLifts.length,
     };
 
+    // Long cache - lift geometry rarely changes (only on OSM data updates)
     return NextResponse.json(response, {
       headers: {
-        'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600',
+        'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+        'CDN-Cache-Control': 'max-age=86400', // Vercel-specific: 24hr CDN cache
       },
     });
   } catch (error) {

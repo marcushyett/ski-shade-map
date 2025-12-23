@@ -129,10 +129,11 @@ export async function GET(
       lifts: [],
     };
 
-    // Long cache - basic info rarely changes
+    // Very long cache - basic geometry/info rarely changes (only on OSM data updates)
     return NextResponse.json(response, {
       headers: {
-        'Cache-Control': 'public, s-maxage=7200, stale-while-revalidate=86400',
+        'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+        'CDN-Cache-Control': 'max-age=86400', // Vercel-specific: 24hr CDN cache
       },
     });
   } catch (error) {
