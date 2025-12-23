@@ -148,7 +148,7 @@ const MAX_EXTENDED_WALK_ELEVATION = 100; // Allow more elevation for extended wa
 const LIFT_QUEUE_TIME_SECONDS = 180; // 3 minutes default queue time
 
 // Distance threshold for snapping to a run (meters)
-const RUN_SNAP_DISTANCE = 50;
+const RUN_SNAP_DISTANCE = 100;
 
 // ============================================================================
 // Graph Building
@@ -347,8 +347,9 @@ export function buildNavigationGraph(
 
   // Create walk/connection edges between nearby endpoints
   // Walking connections link run/lift endpoints to enable transfers
+  // High penalty ensures routes prefer skiing on runs over walking shortcuts
   const nodeList = Array.from(nodes.values());
-  const WALKING_TIME_PENALTY = 3.0; // Walking takes 3x longer than calculated
+  const WALKING_TIME_PENALTY = 5.0; // Walking takes 5x longer than calculated
 
   for (let i = 0; i < nodeList.length; i++) {
     for (let j = i + 1; j < nodeList.length; j++) {
@@ -423,7 +424,8 @@ export function buildNavigationGraph(
 
   // Second pass: Create EXTENDED walking connections (up to 500m)
   // These have a much higher time penalty but allow cross-region connections
-  const EXTENDED_WALKING_TIME_PENALTY = 5.0;
+  // Very high penalty - these should only be used when no ski route exists
+  const EXTENDED_WALKING_TIME_PENALTY = 10.0;
 
   for (let i = 0; i < nodeList.length; i++) {
     for (let j = i + 1; j < nodeList.length; j++) {
@@ -1303,28 +1305,45 @@ export function addArbitraryPointToGraph(
   }
 
   // First, check if this point is close to any run - if so, snap to it
+  // We interpolate along line segments to find the true closest point, not just vertices
   let bestRunSnap: {
     run: (typeof skiArea.runs)[0];
     pointOnRun: [number, number, number];
     distanceToRun: number;
-    indexOnRun: number;
+    segmentIndex: number; // The segment index (point is between segmentIndex and segmentIndex+1)
+    segmentRatio: number; // How far along the segment (0-1)
   } | null = null;
 
   for (const run of skiArea.runs) {
     if (run.geometry.type !== 'LineString') continue;
     const coords = run.geometry.coordinates;
 
-    // Find the closest point on this run to our target
-    for (let i = 0; i < coords.length; i++) {
-      const [rLng, rLat, rElev] = coords[i];
-      const dist = haversineDistance(lat, lng, rLat, rLng);
+    // Check each line segment for the closest point
+    for (let i = 0; i < coords.length - 1; i++) {
+      const [lng1, lat1, elev1] = coords[i];
+      const [lng2, lat2, elev2] = coords[i + 1];
+
+      // Find the closest point on this line segment to our target
+      const closestPoint = closestPointOnSegment(
+        lng,
+        lat,
+        lng1,
+        lat1,
+        (elev1 as number) || 0,
+        lng2,
+        lat2,
+        (elev2 as number) || 0
+      );
+
+      const dist = haversineDistance(lat, lng, closestPoint.lat, closestPoint.lng);
 
       if (dist < RUN_SNAP_DISTANCE && (!bestRunSnap || dist < bestRunSnap.distanceToRun)) {
         bestRunSnap = {
           run,
-          pointOnRun: [rLng, rLat, (rElev as number) || 0],
+          pointOnRun: [closestPoint.lng, closestPoint.lat, closestPoint.elev],
           distanceToRun: dist,
-          indexOnRun: i,
+          segmentIndex: i,
+          segmentRatio: closestPoint.ratio,
         };
       }
     }
@@ -1332,7 +1351,7 @@ export function addArbitraryPointToGraph(
 
   // If we found a nearby run, create a split point on that run
   if (bestRunSnap) {
-    const { run, pointOnRun, indexOnRun } = bestRunSnap;
+    const { run, pointOnRun, segmentIndex } = bestRunSnap;
     const runCoords = run.geometry.coordinates;
 
     // Get the run direction (downhill)
@@ -1340,7 +1359,10 @@ export function addArbitraryPointToGraph(
     const lastElev = (runCoords[runCoords.length - 1][2] as number) || 0;
     const isCorrectDirection = firstElev >= lastElev;
     const orderedCoords = isCorrectDirection ? runCoords : [...runCoords].reverse();
-    const orderedIndex = isCorrectDirection ? indexOnRun : runCoords.length - 1 - indexOnRun;
+    // Convert segment index to ordered coordinates index
+    const orderedSegmentIndex = isCorrectDirection
+      ? segmentIndex
+      : runCoords.length - 2 - segmentIndex;
 
     // Create the split node at the snap point
     const splitNode: NavigationNode = {
@@ -1369,7 +1391,11 @@ export function addArbitraryPointToGraph(
       const speed = getSkiingSpeed(run.difficulty);
 
       // Segment 1: From run start to split point (first part of run)
-      const coordsToSplit = orderedCoords.slice(0, orderedIndex + 1) as [number, number, number?][];
+      // Include all coords up to and including the segment start, plus the interpolated point
+      const coordsToSplit = [
+        ...orderedCoords.slice(0, orderedSegmentIndex + 1),
+        pointOnRun,
+      ] as [number, number, number?][];
       if (coordsToSplit.length >= 2) {
         const dist1 = calculatePathDistance(coordsToSplit as number[][]);
         const elev1 = splitNode.elevation - (graph.nodes.get(originalEdge.fromNodeId)?.elevation || 0);
@@ -1396,7 +1422,11 @@ export function addArbitraryPointToGraph(
       }
 
       // Segment 2: From split point to run end (rest of run)
-      const coordsFromSplit = orderedCoords.slice(orderedIndex) as [number, number, number?][];
+      // Start with the interpolated point, then include all coords from segment end onwards
+      const coordsFromSplit = [
+        pointOnRun,
+        ...orderedCoords.slice(orderedSegmentIndex + 1),
+      ] as [number, number, number?][];
       if (coordsFromSplit.length >= 2) {
         const dist2 = calculatePathDistance(coordsFromSplit as number[][]);
         const elev2 = (graph.nodes.get(originalEdge.toNodeId)?.elevation || 0) - splitNode.elevation;
@@ -1680,6 +1710,49 @@ function getLiftSpeed(liftType: string | null): number {
   if (!liftType) return SPEEDS.lifts.unknown;
   const key = liftType.toLowerCase().replace(/[_\s]/g, '_') as keyof typeof SPEEDS.lifts;
   return SPEEDS.lifts[key] || SPEEDS.lifts.unknown;
+}
+
+/**
+ * Find the closest point on a line segment to a given point
+ * Returns the interpolated point and how far along the segment it is (0-1)
+ */
+function closestPointOnSegment(
+  targetLng: number,
+  targetLat: number,
+  lng1: number,
+  lat1: number,
+  elev1: number,
+  lng2: number,
+  lat2: number,
+  elev2: number
+): { lng: number; lat: number; elev: number; ratio: number } {
+  // Vector from point 1 to point 2
+  const dx = lng2 - lng1;
+  const dy = lat2 - lat1;
+
+  // If the segment has zero length, return the start point
+  const segmentLengthSq = dx * dx + dy * dy;
+  if (segmentLengthSq === 0) {
+    return { lng: lng1, lat: lat1, elev: elev1, ratio: 0 };
+  }
+
+  // Calculate the projection of the target point onto the line segment
+  // This gives us a value t where:
+  // - t <= 0 means closest point is at start of segment
+  // - t >= 1 means closest point is at end of segment
+  // - 0 < t < 1 means closest point is somewhere along the segment
+  const t = Math.max(
+    0,
+    Math.min(1, ((targetLng - lng1) * dx + (targetLat - lat1) * dy) / segmentLengthSq)
+  );
+
+  // Interpolate to find the actual closest point
+  return {
+    lng: lng1 + t * dx,
+    lat: lat1 + t * dy,
+    elev: elev1 + t * (elev2 - elev1),
+    ratio: t,
+  };
 }
 
 /**
