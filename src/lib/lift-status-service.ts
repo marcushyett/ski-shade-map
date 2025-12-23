@@ -14,7 +14,20 @@ import type {
   EnrichedRunData
 } from './lift-status-types';
 import { getMinutesUntilClose } from './lift-status-types';
-import type { LiftData, RunData } from './types';
+import type { LiftData, RunData, OperationStatus } from './types';
+
+/**
+ * Normalize status from API (which may be uppercase like 'OPEN')
+ * to our lowercase format ('open', 'closed', 'unknown', 'scheduled')
+ */
+function normalizeStatus(status: string | null | undefined): OperationStatus | null {
+  if (!status) return null;
+  const lower = status.toLowerCase();
+  if (lower === 'open' || lower === 'closed' || lower === 'unknown' || lower === 'scheduled') {
+    return lower as OperationStatus;
+  }
+  return 'unknown';
+}
 
 // IndexedDB configuration
 const DB_NAME = 'ski-lift-status-cache';
@@ -315,7 +328,7 @@ export function enrichLiftsWithStatus(
       if (liveStatus) {
         matchedCount++;
         enriched.liveStatus = liveStatus;
-        enriched.status = liveStatus.status;
+        enriched.status = normalizeStatus(liveStatus.status);
 
         // Extract closing time
         if (liveStatus.openingTimes && liveStatus.openingTimes.length > 0) {
@@ -364,7 +377,7 @@ export function enrichRunsWithStatus(
       if (liveStatus) {
         matchedCount++;
         enriched.liveStatus = liveStatus;
-        enriched.status = liveStatus.status;
+        enriched.status = normalizeStatus(liveStatus.status);
 
         // Extract closing time
         if (liveStatus.openingTimes && liveStatus.openingTimes.length > 0) {
