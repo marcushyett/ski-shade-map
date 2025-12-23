@@ -48,6 +48,8 @@ export const LiftDetailPanel = memo(function LiftDetailPanel({
   const length = liveStatus?.length;
   const minutesUntilClose = enriched?.minutesUntilClose;
   const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+  const waitingTime = enriched?.waitingTime ?? liveStatus?.waitingTime;
+  const hasLongWait = typeof waitingTime === 'number' && waitingTime > 10;
 
   return (
     <div
@@ -112,6 +114,26 @@ export const LiftDetailPanel = memo(function LiftDetailPanel({
           {closingSoon && (
             <span style={{ color: '#eab308', fontWeight: 600 }}>({minutesUntilClose}min left)</span>
           )}
+        </div>
+      )}
+
+      {/* Waiting time */}
+      {typeof waitingTime === 'number' && (
+        <div
+          className="flex items-center gap-2 mb-3"
+          style={{
+            fontSize: 11,
+            color: hasLongWait ? '#f97316' : '#22c55e',
+            padding: '4px 8px',
+            background: hasLongWait ? 'rgba(249, 115, 22, 0.15)' : 'rgba(34, 197, 94, 0.1)',
+            borderRadius: 4,
+            fontWeight: 600
+          }}
+        >
+          <ClockCircleOutlined style={{ fontSize: 11 }} />
+          <span>
+            {waitingTime === 0 ? 'No wait' : `${waitingTime} min wait`}
+          </span>
         </div>
       )}
 
