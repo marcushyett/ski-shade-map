@@ -76,6 +76,7 @@ export async function GET(
         openingTimes: lift.openingTimesTheoretic,
         operating: lift.operating,
         openingStatus: lift.openingStatus,
+        message: lift.message,
       })),
       runs: rawData.runs.map((run: Record<string, unknown>) => ({
         name: run.name,
@@ -92,6 +93,7 @@ export async function GET(
         openingStatus: run.openingStatus,
         groomingStatus: run.groomingStatus,
         snowQuality: run.snowQuality,
+        message: run.message,
       })),
       fetchedAt: Date.now(),
     };
