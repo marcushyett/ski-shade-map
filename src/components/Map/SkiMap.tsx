@@ -125,6 +125,9 @@ interface SegmentProperties {
   runId: string;
   runName: string | null;
   difficulty: string | null;
+  status: string | null;
+  isClosed: boolean;
+  closingSoon: boolean;
   segmentIndex: number;
   isShaded: boolean;
   bearing: number;
@@ -2688,12 +2691,21 @@ function createRunSegments(
       
       const isShaded = isNight ? true : calculateSegmentShade(slopeAspect, sunAzimuth, sunAltitude);
 
+      // Get status info from the run
+      const status = run.status;
+      const isClosed = status === 'closed';
+      const minutesUntilClose = 'minutesUntilClose' in run ? (run as EnrichedRunData).minutesUntilClose : null;
+      const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
+
       features.push({
         type: 'Feature',
         properties: {
           runId: run.id,
           runName: run.name,
           difficulty: run.difficulty,
+          status,
+          isClosed,
+          closingSoon,
           segmentIndex: i,
           isShaded,
           bearing,
