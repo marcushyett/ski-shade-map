@@ -501,7 +501,7 @@ export default function TimeSlider({
             {mounted ? format(selectedTime, 'HH:mm') : '--:--'}
           </Text>
           <Text type="secondary" style={{ fontSize: 10 }}>
-            {mounted ? `${sunPosition.altitudeDegrees.toFixed(0)}°` : ''}
+            {mounted && currentHourlyWeather ? formatTemp(currentHourlyWeather.temperature) : ''}
           </Text>
         </div>
         
