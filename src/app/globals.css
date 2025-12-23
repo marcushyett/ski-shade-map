@@ -373,19 +373,6 @@ h5.ant-typography {
   z-index: 10;
 }
 
-.view-toggle-container {
-  position: absolute;
-  top: 10px;
-  right: 56px; /* Position to the left of MapLibre controls (29px buttons + margin) */
-  z-index: 10;
-}
-
-/* Ensure view toggle text is vertically centered */
-.view-toggle-container .ant-segmented-item-label {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
 
 .cache-button-container {
   position: absolute;
@@ -463,11 +450,6 @@ h5.ant-typography {
   .legend-container {
     top: 10px;
     left: 10px;
-  }
-
-  .view-toggle-container {
-    top: 10px;
-    right: 45px; /* Position to the left of MapLibre controls */
   }
 
   .cache-button-container {
@@ -1014,23 +996,39 @@ h5.ant-typography {
   filter: invert(0.6);
 }
 
-/* Location controls - positioned below zoom controls on right */
-.location-controls-container {
+/* Map controls container - all controls on right side */
+.map-controls-container {
   position: absolute;
-  top: 100px; /* Below MapLibre controls */
+  top: 10px;
   right: 10px;
   z-index: 10;
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.location-controls-container .location-controls {
+/* Map controls (zoom, compass, 3D toggle) */
+.map-controls {
   display: flex;
   flex-direction: column;
   gap: 4px;
   pointer-events: auto;
 }
 
-.location-controls-container .location-btn {
+/* Compass button rotation - smooth transition */
+.compass-btn {
+  transition: transform 0.1s ease-out, background 0.2s, color 0.2s, border-color 0.2s !important;
+}
+
+.map-controls-container .location-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.map-controls-container .location-btn {
   width: 29px !important;
   height: 29px !important;
   min-width: 29px !important;
@@ -1040,8 +1038,15 @@ h5.ant-typography {
   justify-content: center !important;
 }
 
-.location-controls-container .location-btn .anticon {
+.map-controls-container .location-btn .anticon {
   font-size: 14px;
+}
+
+/* View toggle button (3D/2D text) */
+.view-toggle-btn {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.5px;
 }
 
 /* Shared location marker (person icon - purple/violet) */
@@ -2725,21 +2730,6 @@ h5.ant-typography {
     height: 44px !important;
   }
 
-  /* Location controls - position below MapLibre controls */
-  .location-controls-container {
-    top: 150px !important; /* MapLibre (3 * 44px + gaps) */
-    right: 10px !important;
-  }
-
-  .location-controls-container .location-btn {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-  }
-
-  .location-controls-container .location-btn .anticon {
-    font-size: 18px !important;
-  }
 
   /* Mobile map control buttons - larger touch targets */
   .map-control-btn {
@@ -2755,27 +2745,15 @@ h5.ant-typography {
     height: 18px !important;
   }
 
-  /* View toggle - position to the left of MapLibre controls */
-  .view-toggle-container {
-    top: 10px !important;
-    right: 60px !important; /* Leave room for MapLibre controls (44px + margin) */
+  /* Map controls container - mobile touch targets */
+  .map-controls-container .location-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
   }
 
-  .view-toggle-container .ant-segmented {
-    min-height: 44px !important;
-  }
-
-  .view-toggle-container .ant-segmented-item {
-    min-height: 44px !important;
-  }
-
-  .view-toggle-container .ant-segmented-item-label {
-    min-height: 44px !important;
-    line-height: 44px !important;
-    padding: 0 12px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+  .map-controls-container .location-btn .anticon {
+    font-size: 18px !important;
   }
 
   /* Ant Design buttons - general touch target size */
