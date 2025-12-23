@@ -510,7 +510,7 @@ export const RunDetailPanel = memo(function RunDetailPanel({
   const statusMessage = liveStatus?.message;
   const closingTime = enriched?.closingTime;
   const minutesUntilClose = enriched?.minutesUntilClose;
-  const closingSoon = minutesUntilClose !== null && minutesUntilClose !== undefined && minutesUntilClose <= 60;
+  const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
 
   // Get the dominant condition (most common)
   const conditionCounts = snowQuality && snowQuality.length > 0

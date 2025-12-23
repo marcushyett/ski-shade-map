@@ -289,9 +289,9 @@ export function generateShadedGeoJSON(
       const status = runStatusMap?.get(segment.runId) ?? segment.status;
       const isClosed = status === 'closed';
 
-      // Check if closing soon (within 60 minutes)
+      // Check if closing soon (within 60 minutes, but still open)
       const minutesUntilClose = runMinutesUntilCloseMap?.get(segment.runId);
-      const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose <= 60;
+      const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
 
       features.push({
         type: 'Feature',

@@ -14,7 +14,7 @@ import {
 } from '@/lib/geometry-cache';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { trackEvent } from '@/lib/posthog';
-import type { SkiAreaDetails, RunData, LiftData, POIData } from '@/lib/types';
+import type { SkiAreaDetails, RunData, LiftData, POIData, OperationStatus } from '@/lib/types';
 import type { EnrichedRunData, EnrichedLiftData, LiftStatus, RunStatus } from '@/lib/lift-status-types';
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 import type { NavigationRoute } from '@/lib/navigation';
@@ -868,7 +868,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       type: 'FeatureCollection' as const,
       features: area.lifts.map(lift => {
         const minutesUntilClose = 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
-        const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose <= 60;
+        const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
         return {
           type: 'Feature' as const,
           properties: {
@@ -1312,7 +1312,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const runSnowQuality = runLiveStatus?.snowQuality;
       const runMessage = runLiveStatus?.message;
       const runMinutesUntilClose = run && 'minutesUntilClose' in run ? (run as EnrichedRunData).minutesUntilClose : null;
-      const runClosingSoon = typeof runMinutesUntilClose === 'number' && runMinutesUntilClose <= 60;
+      const runClosingSoon = typeof runMinutesUntilClose === 'number' && runMinutesUntilClose > 0 && runMinutesUntilClose <= 60;
 
       // Extract enriched data for lifts
       const liftLiveStatus = lift && 'liveStatus' in lift ? (lift as EnrichedLiftData).liveStatus : null;
@@ -1321,7 +1321,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const liftCapacity = liftLiveStatus?.uphillCapacity;
       const liftMessage = liftLiveStatus?.message;
       const liftMinutesUntilClose = lift && 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
-      const liftClosingSoon = typeof liftMinutesUntilClose === 'number' && liftMinutesUntilClose <= 60;
+      const liftClosingSoon = typeof liftMinutesUntilClose === 'number' && liftMinutesUntilClose > 0 && liftMinutesUntilClose <= 60;
 
       // Grooming status labels (text only for HTML popups)
       const groomingLabels: Record<string, { label: string; color: string }> = {
@@ -1809,7 +1809,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
           type: 'FeatureCollection' as const,
           features: skiArea.lifts.map(lift => {
             const minutesUntilClose = 'minutesUntilClose' in lift ? (lift as EnrichedLiftData).minutesUntilClose : null;
-            const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose <= 60;
+            const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
             return {
               type: 'Feature' as const,
               properties: {
@@ -2179,9 +2179,13 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       currentSunAzimuth.current = sunPos.azimuthDegrees;
       currentSkiAreaRef.current = area;
 
-      // Build minutes until close map for runs (for closing soon styling)
+      // Build status and minutes until close maps for runs
+      const runStatusMap = new Map<string, OperationStatus>();
       const runMinutesUntilCloseMap = new Map<string, number | undefined>();
       area.runs.forEach(run => {
+        if (run.status) {
+          runStatusMap.set(run.id, run.status);
+        }
         if ('minutesUntilClose' in run) {
           runMinutesUntilCloseMap.set(run.id, (run as EnrichedRunData).minutesUntilClose);
         }
@@ -2193,7 +2197,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
       if (cache && cache.isComplete && cache.segments.size > 0) {
         // Use precomputed geometry - much faster, only calculates isShaded
-        segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees, undefined, runMinutesUntilCloseMap);
+        segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees, runStatusMap, runMinutesUntilCloseMap);
       } else {
         // Fallback to on-demand calculation (initial load or cache still processing)
         segments = createRunSegments(area, time, area.latitude, area.longitude);
@@ -2428,7 +2432,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         // Get closing info
         const closingTime = enrichedLift && 'closingTime' in enrichedLift ? (enrichedLift as EnrichedLiftData).closingTime : null;
         const minutesUntilClose = enrichedLift && 'minutesUntilClose' in enrichedLift ? (enrichedLift as EnrichedLiftData).minutesUntilClose : null;
-        const closingSoon = minutesUntilClose !== null && minutesUntilClose !== undefined && minutesUntilClose <= 60;
+        const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
 
         // Build additional info
         const speed = liveStatus?.speed;
