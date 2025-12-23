@@ -2711,6 +2711,11 @@ h5.ant-typography {
    ============================================================================ */
 
 @media (max-width: 767px) {
+  /* Hide zoom buttons on mobile - use pinch-to-zoom instead */
+  .zoom-btn {
+    display: none !important;
+  }
+
   /* Location control buttons - larger touch target */
   .location-btn {
     width: 44px !important;
