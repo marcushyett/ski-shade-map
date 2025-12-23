@@ -2712,7 +2712,8 @@ h5.ant-typography {
 
 @media (max-width: 767px) {
   /* Hide zoom buttons on mobile - use pinch-to-zoom instead */
-  .zoom-btn {
+  .map-controls-container .zoom-btn,
+  .zoom-btn.location-btn {
     display: none !important;
   }
 
