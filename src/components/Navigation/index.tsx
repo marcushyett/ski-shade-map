@@ -9,6 +9,7 @@ import type { SkiAreaDetails, POIData, LiftData, RunData } from '@/lib/types';
 import type { EnrichedLiftData, EnrichedRunData } from '@/lib/lift-status-types';
 import {
   buildNavigationGraph,
+  enhanceGraphForRouting,
   findStatusAwareRoute,
   findAlternativeRoutes,
   optimizeRoute,
@@ -310,7 +311,10 @@ function NavigationPanelInner({
 
     setTimeout(() => {
       try {
-        const graph = getGraph();
+        // Get the basic graph and enhance it with intersection points
+        // This enables mid-piste routing and transfers between runs
+        const basicGraph = getGraph();
+        const graph = enhanceGraphForRouting(basicGraph, skiArea);
 
         // Resolve closestToilet using the shared findNearestToilet callback
         let resolvedDestination = destination;

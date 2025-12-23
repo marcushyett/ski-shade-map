@@ -520,6 +520,404 @@ export function buildNavigationGraph(
   return { nodes, edges, adjacency };
 }
 
+// ============================================================================
+// Graph Enhancement for Routing (called at route calculation time)
+// ============================================================================
+
+// Distance threshold for detecting run intersections (meters)
+const RUN_INTERSECTION_DISTANCE = 30;
+
+// Minimum distance between intersection points on the same run (meters)
+const MIN_INTERSECTION_SPACING = 100;
+
+// Distance from lift endpoints to create run split points (meters)
+const LIFT_ENDPOINT_SNAP_DISTANCE = 75;
+
+interface RunIntersection {
+  runId: string;
+  runName: string | null;
+  runDifficulty: string | null;
+  segmentIndex: number;
+  pointOnRun: [number, number, number];
+  intersectingFeatureId: string;
+}
+
+/**
+ * Enhance a navigation graph with intersection points for better routing.
+ * This is called at ROUTE CALCULATION TIME, not at graph building time,
+ * to keep app loading fast while still allowing flexible mid-piste routing.
+ *
+ * The function:
+ * 1. Clones the graph (so we don't modify the cached original)
+ * 2. Finds where runs intersect or come close to each other
+ * 3. Finds where runs pass near lift endpoints
+ * 4. Creates connection nodes at these points
+ * 5. Splits run edges to allow mid-run entry/exit
+ */
+export function enhanceGraphForRouting(
+  graph: NavigationGraph,
+  skiArea: SkiAreaDetails
+): NavigationGraph {
+  // Clone the graph so we don't modify the original
+  const nodes = new Map(graph.nodes);
+  const edges = new Map(graph.edges);
+  const adjacency = new Map<string, string[]>();
+  for (const [nodeId, edgeIds] of graph.adjacency) {
+    adjacency.set(nodeId, [...edgeIds]);
+  }
+
+  // Collect all run data with their ordered coordinates
+  const runDataList: {
+    run: (typeof skiArea.runs)[0];
+    orderedCoords: number[][];
+  }[] = [];
+
+  for (const run of skiArea.runs) {
+    let coords: number[][];
+    if (run.geometry.type === 'LineString') {
+      coords = run.geometry.coordinates;
+    } else if (run.geometry.type === 'Polygon') {
+      const ring = run.geometry.coordinates[0];
+      coords = extractPolygonCenterline(ring as number[][]);
+    } else {
+      continue;
+    }
+    if (coords.length < 2) continue;
+
+    const firstElev = (coords[0][2] as number) || 0;
+    const lastElev = (coords[coords.length - 1][2] as number) || 0;
+    const isCorrectDirection = firstElev >= lastElev;
+    const orderedCoords = isCorrectDirection ? coords : [...coords].reverse();
+
+    runDataList.push({ run, orderedCoords });
+  }
+
+  // Track intersection points per run
+  const runIntersections = new Map<string, RunIntersection[]>();
+
+  // Find intersections between runs
+  for (let i = 0; i < runDataList.length; i++) {
+    const runA = runDataList[i];
+
+    for (let j = i + 1; j < runDataList.length; j++) {
+      const runB = runDataList[j];
+
+      // Check each segment of run A against each segment of run B
+      for (let segA = 0; segA < runA.orderedCoords.length - 1; segA++) {
+        const [lngA1, latA1, elevA1] = runA.orderedCoords[segA];
+        const [lngA2, latA2, elevA2] = runA.orderedCoords[segA + 1];
+
+        for (let segB = 0; segB < runB.orderedCoords.length - 1; segB++) {
+          const [lngB1, latB1, elevB1] = runB.orderedCoords[segB];
+          const [lngB2, latB2, elevB2] = runB.orderedCoords[segB + 1];
+
+          // Find closest approach between the two segments
+          const closestA = closestPointOnSegment(
+            lngB1 + (lngB2 - lngB1) / 2,
+            latB1 + (latB2 - latB1) / 2,
+            lngA1, latA1, (elevA1 as number) || 0,
+            lngA2, latA2, (elevA2 as number) || 0
+          );
+
+          const closestB = closestPointOnSegment(
+            closestA.lng,
+            closestA.lat,
+            lngB1, latB1, (elevB1 as number) || 0,
+            lngB2, latB2, (elevB2 as number) || 0
+          );
+
+          const dist = haversineDistance(closestA.lat, closestA.lng, closestB.lat, closestB.lng);
+
+          if (dist < RUN_INTERSECTION_DISTANCE) {
+            // Found an intersection! Record it for both runs
+            addIntersectionIfNotTooClose(runIntersections, {
+              runId: runA.run.id,
+              runName: runA.run.name,
+              runDifficulty: runA.run.difficulty,
+              segmentIndex: segA,
+              pointOnRun: [closestA.lng, closestA.lat, closestA.elev],
+              intersectingFeatureId: runB.run.id,
+            });
+
+            addIntersectionIfNotTooClose(runIntersections, {
+              runId: runB.run.id,
+              runName: runB.run.name,
+              runDifficulty: runB.run.difficulty,
+              segmentIndex: segB,
+              pointOnRun: [closestB.lng, closestB.lat, closestB.elev],
+              intersectingFeatureId: runA.run.id,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Find points on runs near lift endpoints
+  for (const lift of skiArea.lifts) {
+    if (!lift.geometry || lift.geometry.type !== 'LineString') continue;
+    const liftCoords = lift.geometry.coordinates;
+    if (liftCoords.length < 2) continue;
+
+    const liftEndpoints = [
+      { lng: liftCoords[0][0], lat: liftCoords[0][1], elev: (liftCoords[0][2] as number) || 0 },
+      { lng: liftCoords[liftCoords.length - 1][0], lat: liftCoords[liftCoords.length - 1][1], elev: (liftCoords[liftCoords.length - 1][2] as number) || 0 },
+    ];
+
+    for (const endpoint of liftEndpoints) {
+      for (const runData of runDataList) {
+        for (let seg = 0; seg < runData.orderedCoords.length - 1; seg++) {
+          const [lng1, lat1, elev1] = runData.orderedCoords[seg];
+          const [lng2, lat2, elev2] = runData.orderedCoords[seg + 1];
+
+          const closest = closestPointOnSegment(
+            endpoint.lng, endpoint.lat,
+            lng1, lat1, (elev1 as number) || 0,
+            lng2, lat2, (elev2 as number) || 0
+          );
+
+          const dist = haversineDistance(endpoint.lat, endpoint.lng, closest.lat, closest.lng);
+
+          if (dist < LIFT_ENDPOINT_SNAP_DISTANCE) {
+            addIntersectionIfNotTooClose(runIntersections, {
+              runId: runData.run.id,
+              runName: runData.run.name,
+              runDifficulty: runData.run.difficulty,
+              segmentIndex: seg,
+              pointOnRun: [closest.lng, closest.lat, closest.elev],
+              intersectingFeatureId: lift.id,
+            }, MIN_INTERSECTION_SPACING / 2);
+          }
+        }
+      }
+    }
+  }
+
+  // Now create split nodes and edges for all intersections
+  for (const [runId, intersections] of runIntersections) {
+    if (intersections.length === 0) continue;
+
+    // Sort by segment index (ascending) to process from start to end
+    intersections.sort((a, b) => a.segmentIndex - b.segmentIndex);
+
+    // Find the run data
+    const runData = runDataList.find(r => r.run.id === runId);
+    if (!runData) continue;
+
+    // Find the current edge for this run (might be original or already split)
+    const runEdgeId = `edge-run-${runId}`;
+    const originalEdge = edges.get(runEdgeId);
+    if (!originalEdge) continue;
+
+    const speed = getSkiingSpeed(runData.run.difficulty);
+
+    // Remove original edge
+    const startAdj = adjacency.get(originalEdge.fromNodeId) || [];
+    adjacency.set(originalEdge.fromNodeId, startAdj.filter(id => id !== runEdgeId));
+    edges.delete(runEdgeId);
+
+    // Create split nodes and edges
+    let currentFromNode = originalEdge.fromNodeId;
+    let currentCoordStart = 0;
+    let previousIntersectionPoint: [number, number, number] | null = null;
+
+    for (let i = 0; i < intersections.length; i++) {
+      const intersection = intersections[i];
+
+      // Create the split node
+      const splitNodeId = `run-${runId}-split-${intersection.segmentIndex}-${i}`;
+      const splitNode: NavigationNode = {
+        id: splitNodeId,
+        lng: intersection.pointOnRun[0],
+        lat: intersection.pointOnRun[1],
+        elevation: intersection.pointOnRun[2],
+        type: 'connection',
+        featureId: runId,
+        featureName: intersection.runName,
+      };
+      nodes.set(splitNodeId, splitNode);
+      adjacency.set(splitNodeId, []);
+
+      // Create edge from current position to split point
+      const coordsToSplit: [number, number, number?][] = [];
+      if (previousIntersectionPoint) {
+        coordsToSplit.push(previousIntersectionPoint);
+      }
+      coordsToSplit.push(
+        ...(runData.orderedCoords.slice(currentCoordStart, intersection.segmentIndex + 1) as [number, number, number?][])
+      );
+      coordsToSplit.push(intersection.pointOnRun);
+
+      if (coordsToSplit.length >= 2) {
+        const distToSplit = calculatePathDistance(coordsToSplit as number[][]);
+        const fromNode = nodes.get(currentFromNode);
+        const elevChange = splitNode.elevation - (fromNode?.elevation || 0);
+
+        const edgeToSplit: NavigationEdge = {
+          id: `edge-run-${runId}-seg-${i}`,
+          fromNodeId: currentFromNode,
+          toNodeId: splitNodeId,
+          type: 'run',
+          featureId: runId,
+          featureName: intersection.runName,
+          difficulty: intersection.runDifficulty,
+          distance: distToSplit,
+          elevationChange: elevChange,
+          travelTime: distToSplit / speed,
+          speed,
+          coordinates: coordsToSplit,
+        };
+        edges.set(edgeToSplit.id, edgeToSplit);
+
+        const fromAdj = adjacency.get(currentFromNode) || [];
+        fromAdj.push(edgeToSplit.id);
+        adjacency.set(currentFromNode, fromAdj);
+      }
+
+      // Update for next iteration
+      currentFromNode = splitNodeId;
+      currentCoordStart = intersection.segmentIndex + 1;
+      previousIntersectionPoint = intersection.pointOnRun;
+    }
+
+    // Create final edge from last split to end
+    const lastIntersection = intersections[intersections.length - 1];
+    const coordsToEnd = [
+      lastIntersection.pointOnRun,
+      ...runData.orderedCoords.slice(currentCoordStart),
+    ] as [number, number, number?][];
+
+    if (coordsToEnd.length >= 2) {
+      const distToEnd = calculatePathDistance(coordsToEnd as number[][]);
+      const fromNode = nodes.get(currentFromNode);
+      const toNode = nodes.get(originalEdge.toNodeId);
+      const elevChange = (toNode?.elevation || 0) - (fromNode?.elevation || 0);
+
+      const edgeToEnd: NavigationEdge = {
+        id: `edge-run-${runId}-seg-final`,
+        fromNodeId: currentFromNode,
+        toNodeId: originalEdge.toNodeId,
+        type: 'run',
+        featureId: runId,
+        featureName: runData.run.name,
+        difficulty: runData.run.difficulty,
+        distance: distToEnd,
+        elevationChange: elevChange,
+        travelTime: distToEnd / speed,
+        speed,
+        coordinates: coordsToEnd,
+      };
+      edges.set(edgeToEnd.id, edgeToEnd);
+
+      const fromAdj = adjacency.get(currentFromNode) || [];
+      fromAdj.push(edgeToEnd.id);
+      adjacency.set(currentFromNode, fromAdj);
+    }
+  }
+
+  // Add walk connections between new split nodes and nearby nodes
+  const WALK_PENALTY = 5.0;
+  const newNodes = Array.from(nodes.values()).filter(n => n.id.includes('-split-'));
+
+  for (const splitNode of newNodes) {
+    for (const otherNode of nodes.values()) {
+      if (splitNode.id === otherNode.id) continue;
+      if (splitNode.featureId === otherNode.featureId) continue; // Don't connect same run's nodes
+
+      const horizontalDist = haversineDistance(splitNode.lat, splitNode.lng, otherNode.lat, otherNode.lng);
+      if (horizontalDist > MAX_CONNECTION_DISTANCE) continue;
+
+      const elevDiff = otherNode.elevation - splitNode.elevation;
+      const absElevDiff = Math.abs(elevDiff);
+      if (absElevDiff > MAX_WALK_ELEVATION_DIFF) continue;
+
+      const dist3D = Math.sqrt(horizontalDist * horizontalDist + absElevDiff * absElevDiff);
+
+      let speedTo: number, speedFrom: number;
+      if (absElevDiff < 5) {
+        speedTo = SPEEDS.walk.flat;
+        speedFrom = SPEEDS.walk.flat;
+      } else if (elevDiff > 0) {
+        speedTo = SPEEDS.walk.uphill;
+        speedFrom = SPEEDS.walk.downhill_gentle;
+      } else {
+        speedTo = SPEEDS.walk.downhill_gentle;
+        speedFrom = SPEEDS.walk.uphill;
+      }
+
+      // Check if edges already exist
+      const edgeToId = `walk-${splitNode.id}-${otherNode.id}`;
+      const edgeFromId = `walk-${otherNode.id}-${splitNode.id}`;
+
+      if (!edges.has(edgeToId)) {
+        const edgeTo: NavigationEdge = {
+          id: edgeToId,
+          fromNodeId: splitNode.id,
+          toNodeId: otherNode.id,
+          type: 'walk',
+          featureId: 'connection',
+          featureName: 'Connection',
+          distance: dist3D,
+          elevationChange: elevDiff,
+          travelTime: (dist3D / speedTo) * WALK_PENALTY,
+          speed: speedTo,
+          coordinates: [[splitNode.lng, splitNode.lat, splitNode.elevation], [otherNode.lng, otherNode.lat, otherNode.elevation]],
+        };
+        edges.set(edgeTo.id, edgeTo);
+        const splitAdj = adjacency.get(splitNode.id) || [];
+        splitAdj.push(edgeTo.id);
+        adjacency.set(splitNode.id, splitAdj);
+      }
+
+      if (!edges.has(edgeFromId)) {
+        const edgeFrom: NavigationEdge = {
+          id: edgeFromId,
+          fromNodeId: otherNode.id,
+          toNodeId: splitNode.id,
+          type: 'walk',
+          featureId: 'connection',
+          featureName: 'Connection',
+          distance: dist3D,
+          elevationChange: -elevDiff,
+          travelTime: (dist3D / speedFrom) * WALK_PENALTY,
+          speed: speedFrom,
+          coordinates: [[otherNode.lng, otherNode.lat, otherNode.elevation], [splitNode.lng, splitNode.lat, splitNode.elevation]],
+        };
+        edges.set(edgeFrom.id, edgeFrom);
+        const otherAdj = adjacency.get(otherNode.id) || [];
+        otherAdj.push(edgeFrom.id);
+        adjacency.set(otherNode.id, otherAdj);
+      }
+    }
+  }
+
+  return { nodes, edges, adjacency };
+}
+
+/**
+ * Helper to add an intersection if it's not too close to existing ones
+ */
+function addIntersectionIfNotTooClose(
+  runIntersections: Map<string, RunIntersection[]>,
+  intersection: RunIntersection,
+  minSpacing: number = MIN_INTERSECTION_SPACING
+): void {
+  const existingIntersections = runIntersections.get(intersection.runId) || [];
+
+  for (const existing of existingIntersections) {
+    const distBetween = haversineDistance(
+      existing.pointOnRun[1], existing.pointOnRun[0],
+      intersection.pointOnRun[1], intersection.pointOnRun[0]
+    );
+    if (distBetween < minSpacing) {
+      return; // Too close to existing intersection
+    }
+  }
+
+  existingIntersections.push(intersection);
+  runIntersections.set(intersection.runId, existingIntersections);
+}
+
 /**
  * Post-route optimization: Find shortcuts and intersections along the route
  * This runs AFTER the initial route is found to:
