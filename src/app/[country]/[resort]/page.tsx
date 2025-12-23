@@ -11,9 +11,9 @@ import {
 import { notFound } from 'next/navigation';
 
 // Use ISR (Incremental Static Regeneration) - pages are cached after first request
-// Revalidates every hour for fresh data while keeping pages fast and SEO-friendly
+// Revalidates every 24 hours for fresh data while keeping pages fast and SEO-friendly
 // No database required at build time, but pages are cached like static pages
-export const revalidate = 3600; // 1 hour
+export const revalidate = 86400; // 24 hours
 
 interface PageProps {
   params: Promise<{ country: string; resort: string }>;
