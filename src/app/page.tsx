@@ -947,6 +947,26 @@ export default function Home() {
       addNextBatch();
     };
 
+    // Helper to fetch and apply status data
+    const fetchAndApplyStatus = async (osmId: string) => {
+      if (!osmId) return;
+
+      try {
+        const hasStatus = await hasLiveStatus(osmId);
+        setHasStatusData(hasStatus);
+
+        if (hasStatus) {
+          const status = await fetchResortStatus(osmId);
+          if (!signal.aborted) {
+            setResortStatus(status);
+            console.log(`[Status] Fetched live status for osmId: ${osmId}`);
+          }
+        }
+      } catch (error) {
+        console.error('[Status] Failed to fetch status:', error);
+      }
+    };
+
     // Optimized loading with bundle-first strategy
     const loadData = async () => {
       // TIER 1: Try static bundle first (fastest - 20-50ms if bundled)
@@ -975,7 +995,15 @@ export default function Home() {
             lifts: [],
           };
 
-          // Set basic info immediately
+          // Fetch status in parallel BEFORE setting skiAreaDetails
+          // This ensures enrichment happens on first render
+          if (bundle.osmId) {
+            await fetchAndApplyStatus(bundle.osmId);
+          }
+
+          if (signal.aborted) return;
+
+          // Set data - enrichment will now include fresh status
           setSkiAreaDetails({ ...basicInfo, runs: bundle.runs, lifts: bundle.lifts });
           setDataSource('bundle');
 
@@ -1035,7 +1063,14 @@ export default function Home() {
               lifts: [],
             };
 
-            // Set data immediately - no progressive rendering for cached data
+            // Fetch status BEFORE setting skiAreaDetails
+            if (basicInfo.osmId) {
+              await fetchAndApplyStatus(basicInfo.osmId);
+            }
+
+            if (signal.aborted) return;
+
+            // Set data - enrichment will now include fresh status
             setSkiAreaDetails({ ...basicInfo, runs: allRuns, lifts: allLifts });
             setDataSource('cache');
 
