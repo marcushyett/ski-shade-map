@@ -59,6 +59,10 @@ export interface MapRef {
   project: (lngLat: [number, number]) => { x: number; y: number } | null;
   on: (event: string, handler: () => void) => void;
   off: (event: string, handler: () => void) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetBearing: () => void;
+  getBearing: () => number;
 }
 
 export interface SearchPlaceMarker {
@@ -216,6 +220,22 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         off: (event: string, handler: () => void) => {
           map.current?.off(event, handler);
         },
+        zoomIn: () => {
+          map.current?.zoomIn({ duration: 200 });
+        },
+        zoomOut: () => {
+          map.current?.zoomOut({ duration: 200 });
+        },
+        resetBearing: () => {
+          map.current?.easeTo({
+            bearing: 0,
+            pitch: map.current.getPitch(),
+            duration: 300,
+          });
+        },
+        getBearing: () => {
+          return map.current?.getBearing() ?? 0;
+        },
       };
     }
   }, [mapRef, mapLoaded]);
@@ -246,7 +266,6 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       maxPitch: 85,
     });
 
-    map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
     map.current.addControl(new maplibregl.ScaleControl(), 'bottom-left');
 
     map.current.on('load', () => {

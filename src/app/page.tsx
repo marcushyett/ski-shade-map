@@ -16,7 +16,7 @@ import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
 import LocationSearch, { type LocationSelection } from '@/components/LocationSearch';
 import TimeSlider from '@/components/Controls/TimeSlider';
-import ViewToggle from '@/components/Controls/ViewToggle';
+import MapControls from '@/components/Controls/MapControls';
 import Legend from '@/components/Controls/Legend';
 import Logo from '@/components/Logo';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -436,6 +436,7 @@ export default function Home() {
   const isTimeStale = deferredTime !== selectedTime;
   
   const [is3D, setIs3D] = useState(false);
+  const [mapBearing, setMapBearing] = useState(0);
   const [loading, setLoading] = useState(false);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsLoadProgress, setRunsLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
@@ -1421,6 +1422,35 @@ export default function Home() {
   const handleUserLocationChange = useCallback((location: UserLocation | null) => {
     setUserLocation(location);
   }, []);
+
+  // Map control handlers
+  const handleZoomIn = useCallback(() => {
+    mapRef.current?.zoomIn();
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    mapRef.current?.zoomOut();
+  }, []);
+
+  const handleResetBearing = useCallback(() => {
+    mapRef.current?.resetBearing();
+  }, []);
+
+  // Track map bearing changes
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const updateBearing = () => {
+      const bearing = mapRef.current?.getBearing() ?? 0;
+      setMapBearing(bearing);
+    };
+
+    mapRef.current.on('rotate', updateBearing);
+
+    return () => {
+      mapRef.current?.off('rotate', updateBearing);
+    };
+  }, [skiAreaDetails]); // Re-subscribe when ski area changes (map recreated)
 
   // Helper to calculate distance in km between two points using Haversine formula
   const calculateDistanceKm = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -2481,8 +2511,22 @@ export default function Home() {
         )}
 
 
-        {/* Location controls */}
-        <div className="location-controls-container">
+        {/* Map controls - zoom, compass, 3D/2D, location, navigation */}
+        <div className="map-controls-container">
+          {/* Zoom and view controls */}
+          <MapControls
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onResetBearing={handleResetBearing}
+            bearing={mapBearing}
+            is3D={is3D}
+            onToggle3D={setIs3D}
+          />
+
+          {/* Separator between map controls and location controls */}
+          <div className="map-controls-separator" />
+
+          {/* Location controls */}
           <LocationControls
             onUserLocationChange={handleUserLocationChange}
             onMountainHomeChange={handleMountainHomeChange}
@@ -2497,14 +2541,14 @@ export default function Home() {
             onEditingHomeChange={setIsEditingHome}
             pendingHomeLocation={pendingHomeLocation}
           />
-          
+
           {/* Navigation button */}
           {skiAreaDetails && !isNavigationOpen && (
             <div style={{ marginTop: 4, pointerEvents: 'auto' }}>
               <NavigationButton
                 onClick={handleNavigationOpen}
                 hasRoute={navigationRoute !== null}
-                routeSummary={navigationRoute 
+                routeSummary={navigationRoute
                   ? `${formatDuration(navigationRoute.totalTime)} · ${formatDistance(navigationRoute.totalDistance)}`
                   : undefined
                 }
@@ -2567,10 +2611,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* View toggle */}
-        <div className="view-toggle-container">
-          <ViewToggle is3D={is3D} onChange={setIs3D} />
-        </div>
 
         {/* Time slider with optional navigation panel and instruction bar above it */}
         <div className="time-slider-container">
