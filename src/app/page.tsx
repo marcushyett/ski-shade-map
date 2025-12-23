@@ -11,6 +11,7 @@ import {
   DownOutlined,
   RightOutlined,
   EnvironmentOutlined,
+  HomeOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
@@ -181,6 +182,8 @@ const ControlsContent = memo(function ControlsContent({
   onFakeLocationChange,
   onFakeLocationDropModeChange,
   statusDebug,
+  mountainHome,
+  onMountainHomeChange,
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
@@ -209,6 +212,8 @@ const ControlsContent = memo(function ControlsContent({
   onFakeLocationChange: (location: { lat: number; lng: number } | null) => void;
   onFakeLocationDropModeChange: (enabled: boolean) => void;
   statusDebug: StatusDebugInfo;
+  mountainHome: MountainHome | null;
+  onMountainHomeChange: (home: MountainHome | null) => void;
 }) {
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
@@ -343,7 +348,32 @@ const ControlsContent = memo(function ControlsContent({
                 </span>
               )}
             </div>
-            
+
+            {/* Clear Mountain Home */}
+            {mountainHome && (
+              <button
+                onClick={() => {
+                  try {
+                    localStorage.removeItem('ski-shade-mountain-home');
+                  } catch {
+                    // Ignore storage errors
+                  }
+                  onMountainHomeChange(null);
+                }}
+                className="flex items-center gap-1.5 py-1 px-2 rounded hover:bg-white/10 transition-colors text-left"
+                style={{
+                  fontSize: 10,
+                  color: '#faad14',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <HomeOutlined style={{ fontSize: 10 }} />
+                Clear Mountain Home
+              </button>
+            )}
+
             <button
               onClick={handleReset}
               className="flex items-center gap-1.5 py-1 px-2 rounded hover:bg-white/10 transition-colors text-left"
@@ -2477,6 +2507,8 @@ export default function Home() {
           onFakeLocationChange={setFakeLocation}
           onFakeLocationDropModeChange={setIsFakeLocationDropMode}
           statusDebug={statusDebug}
+          mountainHome={mountainHome}
+          onMountainHomeChange={setMountainHome}
         />
       </Drawer>
 
@@ -2510,6 +2542,8 @@ export default function Home() {
           onFakeLocationChange={setFakeLocation}
           onFakeLocationDropModeChange={setIsFakeLocationDropMode}
           statusDebug={statusDebug}
+          mountainHome={mountainHome}
+          onMountainHomeChange={setMountainHome}
         />
       </div>
 
