@@ -29,9 +29,12 @@ export const initPostHog = () => {
 };
 
 // Analytics event types for type safety
-export type AnalyticsEvent = 
+export type AnalyticsEvent =
   // Map interactions
   | 'map_zoom'
+  | 'map_zoom_in'
+  | 'map_zoom_out'
+  | 'map_reset_bearing'
   | 'map_pan'
   | 'map_3d_toggle'
   | 'map_click'

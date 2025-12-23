@@ -43,12 +43,12 @@ function MapControlsInner({
   onToggle3D,
 }: MapControlsProps) {
   const handleZoomIn = useCallback(() => {
-    trackEvent('map_zoom_in_button');
+    trackEvent('map_zoom_in');
     onZoomIn();
   }, [onZoomIn]);
 
   const handleZoomOut = useCallback(() => {
-    trackEvent('map_zoom_out_button');
+    trackEvent('map_zoom_out');
     onZoomOut();
   }, [onZoomOut]);
 
