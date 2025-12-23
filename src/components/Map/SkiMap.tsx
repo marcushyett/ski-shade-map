@@ -1729,6 +1729,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const lastRunsCountRef = useRef<string | null>(null);
 
   // Compute status counts outside useEffect so they can be dependencies
+  // Include liveStatus enrichment detection to handle race condition when status data loads
   const runsWithStatus = useMemo(() =>
     skiArea?.runs.filter(r => r.status && r.status !== 'unknown').length ?? 0,
     [skiArea?.runs]
@@ -1737,14 +1738,24 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     skiArea?.lifts.filter(l => l.status && l.status !== 'unknown').length ?? 0,
     [skiArea?.lifts]
   );
+  // Count items with live status enrichment (minutesUntilClose) to detect when status data is added
+  const runsWithLiveStatus = useMemo(() =>
+    skiArea?.runs.filter(r => 'liveStatus' in r || 'minutesUntilClose' in r).length ?? 0,
+    [skiArea?.runs]
+  );
+  const liftsWithLiveStatus = useMemo(() =>
+    skiArea?.lifts.filter(l => 'liveStatus' in l || 'minutesUntilClose' in l).length ?? 0,
+    [skiArea?.lifts]
+  );
 
   // Update map sources when runs/lifts are progressively loaded or status changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !layersInitialized.current || !skiArea) return;
 
     // Create keys that include count AND status data to detect when status is enriched
-    const runsKey = `${skiArea.id}-${skiArea.runs.length}-${runsWithStatus}`;
-    const liftsKey = `${skiArea.id}-${skiArea.lifts.length}-${liftsWithStatus}`;
+    // Include live status counts to detect when closing time data is added
+    const runsKey = `${skiArea.id}-${skiArea.runs.length}-${runsWithStatus}-${runsWithLiveStatus}`;
+    const liftsKey = `${skiArea.id}-${skiArea.lifts.length}-${liftsWithStatus}-${liftsWithLiveStatus}`;
     const runsCountKey = `${skiArea.id}-${skiArea.runs.length}`;
 
     const runsChanged = runsKey !== lastRenderedRunsRef.current;
@@ -1864,7 +1875,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         liftsSource.setData(liftsGeoJSON);
       }
     }
-  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, runsWithStatus, liftsWithStatus, mapLoaded, selectedTime]);
+  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, runsWithStatus, liftsWithStatus, runsWithLiveStatus, liftsWithLiveStatus, mapLoaded, selectedTime]);
 
   // Update POI source when pois change
   useEffect(() => {
