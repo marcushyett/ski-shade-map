@@ -65,6 +65,7 @@ export interface CollectionResult {
   success: boolean;
   resortsProcessed: number;
   recordsCreated: number;
+  recordsSkipped: number;
   errors: string[];
   duration: number;
 }
@@ -117,13 +118,47 @@ function transformRun(run: RawRun): RunStatus {
 }
 
 /**
- * Collect status data from all supported resorts and store in analytics table
+ * Fetch the latest status for each asset of a resort in a single efficient query.
+ * Uses PostgreSQL DISTINCT ON to get the most recent record per (assetType, assetId).
+ * Returns a Map keyed by "assetType:assetId" for O(1) lookup.
+ */
+async function getLatestStatusMap(resortId: string): Promise<Map<string, string>> {
+  const results = await prisma.$queryRaw<Array<{ assetType: string; assetId: string; statusInfo: unknown }>>`
+    SELECT DISTINCT ON ("assetType", "assetId")
+      "assetType", "assetId", "statusInfo"
+    FROM "ResortStatusAnalytics"
+    WHERE "resortId" = ${resortId}
+    ORDER BY "assetType", "assetId", "collectedAt" DESC
+  `;
+
+  const statusMap = new Map<string, string>();
+  for (const row of results) {
+    const key = `${row.assetType}:${row.assetId}`;
+    // Store JSON string for efficient comparison
+    statusMap.set(key, JSON.stringify(row.statusInfo));
+  }
+  return statusMap;
+}
+
+/**
+ * Check if status has changed by comparing JSON string representations.
+ * Returns true if the new status is different from the previous one.
+ */
+function hasStatusChanged(newStatusJson: string, previousStatusJson: string | undefined): boolean {
+  if (!previousStatusJson) return true; // No previous record, this is a new asset
+  return newStatusJson !== previousStatusJson;
+}
+
+/**
+ * Collect status data from all supported resorts and store in analytics table.
+ * Only creates new records when the status has actually changed (event-based storage).
  */
 export async function collectAllResortStatus(): Promise<CollectionResult> {
   const startTime = Date.now();
   const errors: string[] = [];
   let resortsProcessed = 0;
   let recordsCreated = 0;
+  let recordsSkipped = 0;
 
   try {
     // Get all supported resorts
@@ -135,9 +170,13 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
     // Process each resort
     for (const resort of resorts) {
       try {
-        const rawData = (await fetchResortStatus(resort.id)) as RawResortStatus;
+        // Fetch latest status map and new data in parallel
+        const [latestStatusMap, rawData] = await Promise.all([
+          getLatestStatusMap(resort.id),
+          fetchResortStatus(resort.id) as Promise<RawResortStatus>,
+        ]);
 
-        // Prepare records for batch insert
+        // Prepare records for batch insert (only changed records)
         const records: Array<{
           resortId: string;
           resortName: string;
@@ -147,33 +186,49 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
           collectedAt: Date;
         }> = [];
 
-        // Add lift records
+        let skippedForResort = 0;
+
+        // Check lift records for changes
         for (const lift of rawData.lifts) {
           const statusInfo = transformLift(lift);
-          records.push({
-            resortId: resort.id,
-            resortName: rawData.resort.name,
-            assetType: 'lift',
-            assetId: lift.name,
-            statusInfo: statusInfo as object,
-            collectedAt,
-          });
+          const statusJson = JSON.stringify(statusInfo);
+          const key = `lift:${lift.name}`;
+
+          if (hasStatusChanged(statusJson, latestStatusMap.get(key))) {
+            records.push({
+              resortId: resort.id,
+              resortName: rawData.resort.name,
+              assetType: 'lift',
+              assetId: lift.name,
+              statusInfo: statusInfo as object,
+              collectedAt,
+            });
+          } else {
+            skippedForResort++;
+          }
         }
 
-        // Add run records
+        // Check run records for changes
         for (const run of rawData.runs) {
           const statusInfo = transformRun(run);
-          records.push({
-            resortId: resort.id,
-            resortName: rawData.resort.name,
-            assetType: 'run',
-            assetId: run.name,
-            statusInfo: statusInfo as object,
-            collectedAt,
-          });
+          const statusJson = JSON.stringify(statusInfo);
+          const key = `run:${run.name}`;
+
+          if (hasStatusChanged(statusJson, latestStatusMap.get(key))) {
+            records.push({
+              resortId: resort.id,
+              resortName: rawData.resort.name,
+              assetType: 'run',
+              assetId: run.name,
+              statusInfo: statusInfo as object,
+              collectedAt,
+            });
+          } else {
+            skippedForResort++;
+          }
         }
 
-        // Batch insert records
+        // Batch insert only changed records
         if (records.length > 0) {
           await prisma.resortStatusAnalytics.createMany({
             data: records,
@@ -181,9 +236,12 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
           recordsCreated += records.length;
         }
 
+        recordsSkipped += skippedForResort;
         resortsProcessed++;
+
+        const totalAssets = rawData.lifts.length + rawData.runs.length;
         console.log(
-          `[Analytics] Processed ${resort.name}: ${rawData.lifts.length} lifts, ${rawData.runs.length} runs`
+          `[Analytics] ${resort.name}: ${records.length} changes, ${skippedForResort} unchanged (${totalAssets} total assets)`
         );
       } catch (error) {
         const errorMessage = `Failed to process ${resort.name} (${resort.id}): ${error instanceof Error ? error.message : String(error)}`;
@@ -193,14 +251,18 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
     }
 
     const duration = Date.now() - startTime;
+    const efficiency = recordsSkipped + recordsCreated > 0
+      ? Math.round((recordsSkipped / (recordsSkipped + recordsCreated)) * 100)
+      : 0;
     console.log(
-      `[Analytics] Collection complete: ${resortsProcessed}/${resorts.length} resorts, ${recordsCreated} records in ${duration}ms`
+      `[Analytics] Collection complete: ${resortsProcessed}/${resorts.length} resorts, ${recordsCreated} new records, ${recordsSkipped} skipped (${efficiency}% dedup) in ${duration}ms`
     );
 
     return {
       success: errors.length === 0,
       resortsProcessed,
       recordsCreated,
+      recordsSkipped,
       errors,
       duration,
     };
@@ -213,6 +275,7 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
       success: false,
       resortsProcessed,
       recordsCreated,
+      recordsSkipped,
       errors,
       duration: Date.now() - startTime,
     };
