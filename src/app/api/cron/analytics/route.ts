@@ -7,14 +7,17 @@ export const maxDuration = 300; // 5 minutes
 // This endpoint is called by Vercel Cron every 5 minutes
 // It collects status data from all supported resorts
 
-const CRON_SECRET = process.env.CRON_SECRET || process.env.SYNC_SECRET;
-
 export async function GET(request: NextRequest) {
-  // Verify the request is from Vercel Cron or has valid auth
+  // Verify the request is authorized
   const authHeader = request.headers.get('authorization');
-  const cronHeader = request.headers.get('x-vercel-cron');
+  const cronSecret = process.env.CRON_SECRET;
+  const syncSecret = process.env.SYNC_SECRET || 'dev-sync-key';
 
-  if (!cronHeader && authHeader !== `Bearer ${CRON_SECRET}`) {
+  // Check for valid cron secret (if set) or sync secret
+  const isValidCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
+  const isValidSync = authHeader === `Bearer ${syncSecret}`;
+
+  if (!isValidCron && !isValidSync) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
