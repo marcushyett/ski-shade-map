@@ -3,6 +3,7 @@
  * Fetches status data from all supported resorts and stores it in the ResortStatusAnalytics table
  */
 
+import { createHash } from 'crypto';
 import { getSupportedResorts, fetchResortStatus } from 'ski-resort-status';
 import { prisma } from './prisma';
 import type { LiftStatus, RunStatus } from './lift-status-types';
@@ -65,6 +66,7 @@ export interface CollectionResult {
   success: boolean;
   resortsProcessed: number;
   recordsCreated: number;
+  recordsSkipped: number;
   errors: string[];
   duration: number;
 }
@@ -117,13 +119,54 @@ function transformRun(run: RawRun): RunStatus {
 }
 
 /**
- * Collect status data from all supported resorts and store in analytics table
+ * Compute MD5 hash of a JSON object for efficient comparison.
+ * Returns 32-byte hex string instead of storing full ~10KB JSON blobs.
+ */
+function hashStatus(statusInfo: object): string {
+  return createHash('md5').update(JSON.stringify(statusInfo)).digest('hex');
+}
+
+/**
+ * Fetch the latest status hash for each asset of a resort in a single efficient query.
+ * Uses PostgreSQL DISTINCT ON + MD5 to get the most recent record per (assetType, assetId).
+ * Returns a Map keyed by "assetType:assetId" with MD5 hash values (~32 bytes each vs ~10KB).
+ */
+async function getLatestStatusHashMap(resortId: string): Promise<Map<string, string>> {
+  const results = await prisma.$queryRaw<Array<{ assetType: string; assetId: string; statusHash: string }>>`
+    SELECT DISTINCT ON ("assetType", "assetId")
+      "assetType", "assetId", MD5("statusInfo"::text) as "statusHash"
+    FROM "ResortStatusAnalytics"
+    WHERE "resortId" = ${resortId}
+    ORDER BY "assetType", "assetId", "collectedAt" DESC
+  `;
+
+  const statusMap = new Map<string, string>();
+  for (const row of results) {
+    const key = `${row.assetType}:${row.assetId}`;
+    statusMap.set(key, row.statusHash);
+  }
+  return statusMap;
+}
+
+/**
+ * Check if status has changed by comparing MD5 hashes.
+ * Returns true if the new status is different from the previous one.
+ */
+function hasStatusChanged(newHash: string, previousHash: string | undefined): boolean {
+  if (!previousHash) return true; // No previous record, this is a new asset
+  return newHash !== previousHash;
+}
+
+/**
+ * Collect status data from all supported resorts and store in analytics table.
+ * Only creates new records when the status has actually changed (event-based storage).
  */
 export async function collectAllResortStatus(): Promise<CollectionResult> {
   const startTime = Date.now();
   const errors: string[] = [];
   let resortsProcessed = 0;
   let recordsCreated = 0;
+  let recordsSkipped = 0;
 
   try {
     // Get all supported resorts
@@ -135,9 +178,13 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
     // Process each resort
     for (const resort of resorts) {
       try {
-        const rawData = (await fetchResortStatus(resort.id)) as RawResortStatus;
+        // Fetch latest status hash map and new data in parallel
+        const [latestHashMap, rawData] = await Promise.all([
+          getLatestStatusHashMap(resort.id),
+          fetchResortStatus(resort.id) as Promise<RawResortStatus>,
+        ]);
 
-        // Prepare records for batch insert
+        // Prepare records for batch insert (only changed records)
         const records: Array<{
           resortId: string;
           resortName: string;
@@ -147,33 +194,49 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
           collectedAt: Date;
         }> = [];
 
-        // Add lift records
+        let skippedForResort = 0;
+
+        // Check lift records for changes using hash comparison
         for (const lift of rawData.lifts) {
           const statusInfo = transformLift(lift);
-          records.push({
-            resortId: resort.id,
-            resortName: rawData.resort.name,
-            assetType: 'lift',
-            assetId: lift.name,
-            statusInfo: statusInfo as object,
-            collectedAt,
-          });
+          const statusHash = hashStatus(statusInfo);
+          const key = `lift:${lift.name}`;
+
+          if (hasStatusChanged(statusHash, latestHashMap.get(key))) {
+            records.push({
+              resortId: resort.id,
+              resortName: rawData.resort.name,
+              assetType: 'lift',
+              assetId: lift.name,
+              statusInfo: statusInfo as object,
+              collectedAt,
+            });
+          } else {
+            skippedForResort++;
+          }
         }
 
-        // Add run records
+        // Check run records for changes using hash comparison
         for (const run of rawData.runs) {
           const statusInfo = transformRun(run);
-          records.push({
-            resortId: resort.id,
-            resortName: rawData.resort.name,
-            assetType: 'run',
-            assetId: run.name,
-            statusInfo: statusInfo as object,
-            collectedAt,
-          });
+          const statusHash = hashStatus(statusInfo);
+          const key = `run:${run.name}`;
+
+          if (hasStatusChanged(statusHash, latestHashMap.get(key))) {
+            records.push({
+              resortId: resort.id,
+              resortName: rawData.resort.name,
+              assetType: 'run',
+              assetId: run.name,
+              statusInfo: statusInfo as object,
+              collectedAt,
+            });
+          } else {
+            skippedForResort++;
+          }
         }
 
-        // Batch insert records
+        // Batch insert only changed records
         if (records.length > 0) {
           await prisma.resortStatusAnalytics.createMany({
             data: records,
@@ -181,9 +244,12 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
           recordsCreated += records.length;
         }
 
+        recordsSkipped += skippedForResort;
         resortsProcessed++;
+
+        const totalAssets = rawData.lifts.length + rawData.runs.length;
         console.log(
-          `[Analytics] Processed ${resort.name}: ${rawData.lifts.length} lifts, ${rawData.runs.length} runs`
+          `[Analytics] ${resort.name}: ${records.length} changes, ${skippedForResort} unchanged (${totalAssets} total assets)`
         );
       } catch (error) {
         const errorMessage = `Failed to process ${resort.name} (${resort.id}): ${error instanceof Error ? error.message : String(error)}`;
@@ -193,14 +259,18 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
     }
 
     const duration = Date.now() - startTime;
+    const efficiency = recordsSkipped + recordsCreated > 0
+      ? Math.round((recordsSkipped / (recordsSkipped + recordsCreated)) * 100)
+      : 0;
     console.log(
-      `[Analytics] Collection complete: ${resortsProcessed}/${resorts.length} resorts, ${recordsCreated} records in ${duration}ms`
+      `[Analytics] Collection complete: ${resortsProcessed}/${resorts.length} resorts, ${recordsCreated} new records, ${recordsSkipped} skipped (${efficiency}% dedup) in ${duration}ms`
     );
 
     return {
       success: errors.length === 0,
       resortsProcessed,
       recordsCreated,
+      recordsSkipped,
       errors,
       duration,
     };
@@ -213,6 +283,7 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
       success: false,
       resortsProcessed,
       recordsCreated,
+      recordsSkipped,
       errors,
       duration: Date.now() - startTime,
     };

@@ -111,4 +111,5 @@ model ResortStatusAnalytics {
   @@index([assetType])
   @@index([collectedAt])
   @@index([resortId, assetType, collectedAt])
+  @@index([resortId, assetType, assetId]) // For efficient latest-record lookup during deduplication
 }
