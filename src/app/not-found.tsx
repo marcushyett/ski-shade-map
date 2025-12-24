@@ -97,6 +97,16 @@ export default async function NotFound() {
     getCountryStats(),
   ]);
 
+  // Format update timestamp
+  const updatedAt = new Date().toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <header className="border-b border-white/10 px-4 py-4 md:px-8">
@@ -244,6 +254,7 @@ export default async function NotFound() {
 
       <footer className="border-t border-white/10 px-4 py-6 text-center text-sm text-gray-400 md:px-8">
         <p>&copy; {new Date().getFullYear()} SKISHADE &middot; Real-time ski maps for every mountain</p>
+        <p className="mt-2 text-xs text-gray-500">Last updated: {updatedAt}</p>
       </footer>
     </div>
   );

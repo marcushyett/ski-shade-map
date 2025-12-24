@@ -1,13 +1,14 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
-import { 
-  slugToCountry, 
-  toSlug, 
-  getCountryDisplayName, 
+import {
+  slugToCountry,
+  toSlug,
+  getCountryDisplayName,
   getResortKeywords,
-  BASE_URL 
+  BASE_URL
 } from '@/lib/seo-utils';
+import { getDaylightHours, formatDaylightHours } from '@/lib/daylight';
 import { notFound } from 'next/navigation';
 
 // Use ISR (Incremental Static Regeneration) - pages are cached after first request
@@ -112,6 +113,21 @@ export default async function ResortPage({ params }: PageProps) {
   const countryCode = skiArea.country || '';
   const countryName = getCountryDisplayName(countryCode);
 
+  // Calculate today's daylight hours based on latitude
+  const now = new Date();
+  const daylightHours = getDaylightHours(skiArea.latitude, now);
+  const formattedDaylight = formatDaylightHours(daylightHours);
+
+  // Format update timestamp
+  const updatedAt = now.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+
   // JSON-LD structured data for the ski resort
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -213,19 +229,19 @@ export default async function ResortPage({ params }: PageProps) {
           <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded border border-white/10 bg-white/5 p-4">
               <div className="text-2xl font-bold">{skiArea._count.runs}</div>
-              <div className="text-sm text-gray-400">Pistes & Trails</div>
+              <div className="text-sm text-gray-400">Pistes &amp; Trails</div>
             </div>
             <div className="rounded border border-white/10 bg-white/5 p-4">
               <div className="text-2xl font-bold">{skiArea._count.lifts}</div>
               <div className="text-sm text-gray-400">Ski Lifts</div>
             </div>
             <div className="rounded border border-white/10 bg-white/5 p-4">
-              <div className="text-2xl font-bold text-green-400">Live</div>
-              <div className="text-sm text-gray-400">Real-time Updates</div>
+              <div className="text-2xl font-bold text-yellow-400">{formattedDaylight}</div>
+              <div className="text-sm text-gray-400">Daylight Today</div>
             </div>
             <div className="rounded border border-white/10 bg-white/5 p-4">
-              <div className="text-2xl font-bold">3D</div>
-              <div className="text-sm text-gray-400">Interactive Map</div>
+              <div className="text-2xl font-bold text-green-400">Live</div>
+              <div className="text-sm text-gray-400">3D Map &amp; Conditions</div>
             </div>
           </div>
 
@@ -330,6 +346,7 @@ export default async function ResortPage({ params }: PageProps) {
 
         <footer className="border-t border-white/10 px-4 py-6 text-center text-sm text-gray-400 md:px-8">
           <p>&copy; {new Date().getFullYear()} SKISHADE &middot; Real-time ski maps powered by OpenSkiMap &middot; Weather by <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Open-Meteo</a></p>
+          <p className="mt-2 text-xs text-gray-500">Last updated: {updatedAt}</p>
         </footer>
       </div>
     </>
