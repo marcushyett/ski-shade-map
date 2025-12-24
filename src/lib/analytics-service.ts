@@ -7,6 +7,12 @@ import { createHash } from 'crypto';
 import { getSupportedResorts, fetchResortStatus } from 'ski-resort-status';
 import { prisma } from './prisma';
 import type { LiftStatus, RunStatus } from './lift-status-types';
+import {
+  trackLiftStatus,
+  trackRunStatus,
+  trackCollectionCompleted,
+  flushPostHogEvents,
+} from './posthog-server';
 
 interface SupportedResort {
   id: string;
@@ -219,6 +225,22 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
               statusHash,
               collectedAt,
             });
+
+            // Track PostHog event for this lift (only when status changed)
+            trackLiftStatus({
+              resort_id: resort.id,
+              resort_name: rawData.resort.name,
+              lift_name: lift.name,
+              lift_status: lift.status,
+              lift_type: lift.liftType,
+              is_operating: lift.operating,
+              opening_status: lift.openingStatus,
+              waiting_time: lift.waitingTime,
+              capacity: lift.capacity,
+              length: lift.length,
+              arrival_altitude: lift.arrivalAltitude,
+              departure_altitude: lift.departureAltitude,
+            });
           } else {
             skippedForResort++;
           }
@@ -239,6 +261,24 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
               statusInfo: statusInfo as object,
               statusHash,
               collectedAt,
+            });
+
+            // Track PostHog event for this run (only when status changed)
+            trackRunStatus({
+              resort_id: resort.id,
+              resort_name: rawData.resort.name,
+              run_name: run.name,
+              run_status: run.status,
+              run_level: run.level,
+              trail_type: run.trailType,
+              is_operating: run.operating,
+              opening_status: run.openingStatus,
+              grooming_status: run.groomingStatus,
+              snow_quality: run.snowQuality,
+              length: run.length,
+              arrival_altitude: run.arrivalAltitude,
+              departure_altitude: run.departureAltitude,
+              guaranteed_snow: run.guaranteedSnow,
             });
           } else {
             skippedForResort++;
@@ -275,6 +315,18 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
       `[Analytics] Collection complete: ${resortsProcessed}/${resorts.length} resorts, ${recordsCreated} new records, ${recordsSkipped} skipped (${efficiency}% dedup) in ${duration}ms`
     );
 
+    // Track collection completion in PostHog
+    trackCollectionCompleted({
+      resorts_processed: resortsProcessed,
+      records_created: recordsCreated,
+      duration_ms: duration,
+      error_count: errors.length,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+
+    // Flush all PostHog events before returning
+    await flushPostHogEvents();
+
     return {
       success: errors.length === 0,
       resortsProcessed,
@@ -287,6 +339,9 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
     const errorMessage = `Collection failed: ${error instanceof Error ? error.message : String(error)}`;
     console.error(`[Analytics] ${errorMessage}`);
     errors.push(errorMessage);
+
+    // Flush any PostHog events that were captured before the error
+    await flushPostHogEvents();
 
     return {
       success: false,
