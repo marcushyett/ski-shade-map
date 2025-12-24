@@ -17,14 +17,22 @@ export const maxDuration = 300;
 export async function POST(request: NextRequest) {
   // Check authorization
   const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-  const syncKey = process.env.SYNC_KEY || 'dev-sync-key';
+
+  // Support both uppercase and lowercase env var names for flexibility
+  const cronSecret = process.env.CRON_SECRET || process.env.cron_secret;
+  const syncKey = process.env.SYNC_KEY || process.env.sync_key || process.env.SYNC_SECRET || process.env.sync_secret || 'dev-sync-key';
 
   // Verify the request is authorized (either from cron or manual trigger)
   const isValidCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
   const isValidManual = authHeader === `Bearer ${syncKey}`;
 
   if (!isValidCron && !isValidManual) {
+    console.error('[Analytics API] Auth failed:', {
+      hasAuthHeader: !!authHeader,
+      authHeaderPrefix: authHeader?.substring(0, 10),
+      hasCronSecret: !!cronSecret,
+      hasSyncKey: !!syncKey,
+    });
     return NextResponse.json(
       { error: 'Unauthorized' },
       { status: 401 }
