@@ -1,14 +1,16 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
-import { 
-  slugToCountry, 
-  toSlug, 
-  getCountryDisplayName, 
+import {
+  slugToCountry,
+  toSlug,
+  getCountryDisplayName,
   getResortKeywords,
-  BASE_URL 
+  getCanonicalCountrySlug,
+  BASE_URL
 } from '@/lib/seo-utils';
-import { notFound } from 'next/navigation';
+import { getDaylightHours, formatDaylightHours } from '@/lib/daylight';
+import { notFound, redirect } from 'next/navigation';
 
 // Use ISR (Incremental Static Regeneration) - pages are cached after first request
 // Revalidates every 24 hours for fresh data while keeping pages fast and SEO-friendly
@@ -32,10 +34,20 @@ interface SkiAreaWithCount {
   };
 }
 
-// Helper to find ski area by slug
-async function findSkiAreaBySlug(countrySlug: string, resortSlug: string): Promise<SkiAreaWithCount | undefined> {
+interface LookupResult {
+  countryCode: string | null;
+  skiArea: SkiAreaWithCount | null;
+}
+
+// Helper to find ski area by slug - returns both country code and ski area
+async function findSkiAreaBySlug(countrySlug: string, resortSlug: string): Promise<LookupResult> {
   const countryCode = slugToCountry(countrySlug);
-  
+
+  // Country not recognized at all
+  if (!countryCode) {
+    return { countryCode: null, skiArea: null };
+  }
+
   // Get all ski areas for this country
   const skiAreas: SkiAreaWithCount[] = await prisma.skiArea.findMany({
     where: {
@@ -61,16 +73,25 @@ async function findSkiAreaBySlug(countrySlug: string, resortSlug: string): Promi
   });
 
   // Find the one matching the slug
-  return skiAreas.find((area: SkiAreaWithCount) => toSlug(area.name) === resortSlug);
+  const skiArea = skiAreas.find((area: SkiAreaWithCount) => toSlug(area.name) === resortSlug) || null;
+
+  return { countryCode, skiArea };
 }
 
 // Generate metadata for SEO
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { country: countrySlug, resort: resortSlug } = await params;
-  const skiArea = await findSkiAreaBySlug(countrySlug, resortSlug);
-  
+  const { countryCode, skiArea } = await findSkiAreaBySlug(countrySlug, resortSlug);
+
+  // Country not found - will 404
+  if (!countryCode) {
+    return { title: 'Page Not Found | SKISHADE' };
+  }
+
+  // Country found but resort not found - will redirect to country page
   if (!skiArea) {
-    return { title: 'Resort Not Found | SKISHADE' };
+    const countryName = getCountryDisplayName(countryCode);
+    return { title: `Ski Resorts in ${countryName} | SKISHADE` };
   }
 
   const countryName = getCountryDisplayName(skiArea.country || '');
@@ -103,14 +124,35 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function ResortPage({ params }: PageProps) {
   const { country: countrySlug, resort: resortSlug } = await params;
-  const skiArea = await findSkiAreaBySlug(countrySlug, resortSlug);
+  const { countryCode, skiArea } = await findSkiAreaBySlug(countrySlug, resortSlug);
 
-  if (!skiArea) {
+  // Country not recognized at all - show 404
+  if (!countryCode) {
     notFound();
   }
 
-  const countryCode = skiArea.country || '';
-  const countryName = getCountryDisplayName(countryCode);
+  // Country valid but resort not found - redirect to country page
+  if (!skiArea) {
+    const canonicalSlug = getCanonicalCountrySlug(countryCode);
+    redirect(`/${canonicalSlug}`);
+  }
+
+  const countryName = getCountryDisplayName(skiArea.country || '');
+
+  // Calculate today's daylight hours based on latitude
+  const now = new Date();
+  const daylightHours = getDaylightHours(skiArea.latitude, now);
+  const formattedDaylight = formatDaylightHours(daylightHours);
+
+  // Format update timestamp
+  const updatedAt = now.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
 
   // JSON-LD structured data for the ski resort
   const jsonLd = {
@@ -213,19 +255,19 @@ export default async function ResortPage({ params }: PageProps) {
           <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded border border-white/10 bg-white/5 p-4">
               <div className="text-2xl font-bold">{skiArea._count.runs}</div>
-              <div className="text-sm text-gray-400">Pistes & Trails</div>
+              <div className="text-sm text-gray-400">Pistes &amp; Trails</div>
             </div>
             <div className="rounded border border-white/10 bg-white/5 p-4">
               <div className="text-2xl font-bold">{skiArea._count.lifts}</div>
               <div className="text-sm text-gray-400">Ski Lifts</div>
             </div>
             <div className="rounded border border-white/10 bg-white/5 p-4">
-              <div className="text-2xl font-bold text-green-400">Live</div>
-              <div className="text-sm text-gray-400">Real-time Updates</div>
+              <div className="text-2xl font-bold text-yellow-400">{formattedDaylight}</div>
+              <div className="text-sm text-gray-400">Daylight Today</div>
             </div>
             <div className="rounded border border-white/10 bg-white/5 p-4">
-              <div className="text-2xl font-bold">3D</div>
-              <div className="text-sm text-gray-400">Interactive Map</div>
+              <div className="text-2xl font-bold text-green-400">Live</div>
+              <div className="text-sm text-gray-400">3D Map &amp; Conditions</div>
             </div>
           </div>
 
@@ -330,6 +372,7 @@ export default async function ResortPage({ params }: PageProps) {
 
         <footer className="border-t border-white/10 px-4 py-6 text-center text-sm text-gray-400 md:px-8">
           <p>&copy; {new Date().getFullYear()} SKISHADE &middot; Real-time ski maps powered by OpenSkiMap &middot; Weather by <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Open-Meteo</a></p>
+          <p className="mt-2 text-xs text-gray-500">Last updated: {updatedAt}</p>
         </footer>
       </div>
     </>
