@@ -81,6 +81,7 @@ function buildLiveStatusData(skiArea: SkiAreaDetails): LiveStatusData {
   const liftClosingTimes = new Map<string, number>();
   const runClosingTimes = new Map<string, number>();
   const liftWaitingTimes = new Map<string, number>();
+  let hasLiveWaitTimes = false;
 
   for (const lift of skiArea.lifts) {
     if (lift.status === 'closed') {
@@ -93,6 +94,7 @@ function buildLiveStatusData(skiArea: SkiAreaDetails): LiveStatusData {
     // Check for enriched data with waiting times
     if (isEnrichedLift(lift) && lift.waitingTime !== undefined) {
       liftWaitingTimes.set(lift.id, lift.waitingTime);
+      hasLiveWaitTimes = true;
     }
   }
 
@@ -112,6 +114,7 @@ function buildLiveStatusData(skiArea: SkiAreaDetails): LiveStatusData {
     liftClosingTimes,
     runClosingTimes,
     liftWaitingTimes,
+    hasLiveWaitTimes,
   };
 }
 

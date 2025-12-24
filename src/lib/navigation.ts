@@ -140,6 +140,10 @@ const MAX_CONNECTION_DISTANCE = 150;
 // Maximum elevation difference for walking connections (meters) - default
 const MAX_WALK_ELEVATION_DIFF = 50;
 
+// Default wait time for lifts when no live data is available (in minutes)
+// This accounts for typical queue time at ski lifts
+const DEFAULT_LIFT_WAIT_TIME_MINUTES = 3;
+
 // Extended walking limits for cross-region connections
 const MAX_EXTENDED_WALK_DISTANCE = 500; // Up to 500m walking as user requested
 const MAX_EXTENDED_WALK_ELEVATION = 100; // Allow more elevation for extended walks
@@ -1587,6 +1591,7 @@ export interface LiveStatusData {
   liftClosingTimes: Map<string, number>; // lift ID -> minutes until close
   runClosingTimes: Map<string, number>;  // run ID -> minutes until close
   liftWaitingTimes: Map<string, number>; // lift ID -> waiting time in minutes
+  hasLiveWaitTimes?: boolean; // true if resort provides live wait time data
 }
 
 export interface StatusAwareRouteOptions {
@@ -1746,11 +1751,20 @@ export function findRouteWithArrivalTimes(
 
       // Calculate total time including waiting time for lifts
       let edgeTotalTime = edge.travelTime;
-      if (liveStatus && edge.type === 'lift') {
-        const waitingTime = liveStatus.liftWaitingTimes.get(edge.featureId);
-        if (waitingTime !== undefined && waitingTime > 0) {
+      if (edge.type === 'lift') {
+        let waitingTimeMinutes: number;
+
+        if (liveStatus?.hasLiveWaitTimes) {
+          // Resort provides live wait times - use them if available, otherwise assume 0
+          waitingTimeMinutes = liveStatus.liftWaitingTimes.get(edge.featureId) ?? 0;
+        } else {
+          // No live wait time data available - use default wait time
+          waitingTimeMinutes = DEFAULT_LIFT_WAIT_TIME_MINUTES;
+        }
+
+        if (waitingTimeMinutes > 0) {
           // Add waiting time (convert from minutes to seconds)
-          edgeTotalTime += waitingTime * 60;
+          edgeTotalTime += waitingTimeMinutes * 60;
         }
       }
 
