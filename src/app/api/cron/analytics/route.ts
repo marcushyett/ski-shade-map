@@ -16,19 +16,25 @@ export async function GET(request: NextRequest) {
   const cronSecret = (process.env.CRON_SECRET || process.env.cron_secret || '').trim();
   const syncSecret = (process.env.SYNC_SECRET || process.env.sync_secret || 'dev-sync-key').trim();
 
+  // Debug: List all env vars that might be related to cron/sync secrets
+  const envDebug = Object.keys(process.env)
+    .filter(key => /cron|sync|secret/i.test(key))
+    .map(key => `${key}=${process.env[key]?.substring(0, 3)}...`);
+
   // Debug logging to understand what's happening
   console.log('[Analytics Cron] Request received:', {
+    url: request.url,
+    method: request.method,
     hasAuthHeader: !!authHeader,
     authHeaderLength: authHeader?.length,
     authHeaderStart: authHeader?.substring(0, 15),
-    authHeaderEnd: authHeader?.slice(-5),
     hasVercelCronHeader: !!vercelCronHeader,
     vercelCronValue: vercelCronHeader,
     cronSecretLength: cronSecret.length,
-    cronSecretStart: cronSecret.substring(0, 3),
-    cronSecretEnd: cronSecret.slice(-3),
     syncSecretLength: syncSecret.length,
-    expectedAuthHeader: `Bearer ${cronSecret.substring(0, 3)}...${cronSecret.slice(-3)}`,
+    relevantEnvVars: envDebug,
+    nodeEnv: process.env.NODE_ENV,
+    vercelEnv: process.env.VERCEL_ENV,
   });
 
   // Check for valid cron secret (if set) or sync secret
@@ -37,21 +43,6 @@ export async function GET(request: NextRequest) {
 
   const isValidCron = cronSecret && authHeader === expectedCronAuth;
   const isValidSync = authHeader === expectedSyncAuth;
-
-  // Additional debug: character-by-character comparison if lengths match but strings don't
-  if (cronSecret && authHeader && !isValidCron) {
-    const expectedLen = expectedCronAuth.length;
-    const actualLen = authHeader.length;
-    console.log('[Analytics Cron] Auth comparison debug:', {
-      expectedLength: expectedLen,
-      actualLength: actualLen,
-      lengthsMatch: expectedLen === actualLen,
-      startsWithBearer: authHeader.startsWith('Bearer '),
-      // Check for invisible characters
-      authHeaderCharCodes: authHeader.slice(0, 20).split('').map(c => c.charCodeAt(0)),
-      expectedCharCodes: expectedCronAuth.slice(0, 20).split('').map(c => c.charCodeAt(0)),
-    });
-  }
 
   if (!isValidCron && !isValidSync) {
     console.error('[Analytics Cron] Auth failed - no valid credentials');
