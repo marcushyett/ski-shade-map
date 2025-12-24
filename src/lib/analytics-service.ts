@@ -128,13 +128,16 @@ function hashStatus(statusInfo: object): string {
 
 /**
  * Fetch the latest status hash for each asset of a resort in a single efficient query.
- * Uses PostgreSQL DISTINCT ON + MD5 to get the most recent record per (assetType, assetId).
+ * Uses PostgreSQL DISTINCT ON to get the most recent record per (assetType, assetId).
  * Returns a Map keyed by "assetType:assetId" with MD5 hash values (~32 bytes each vs ~10KB).
+ *
+ * Note: We query the stored statusHash column (computed in Node.js at insert time)
+ * rather than computing MD5 in PostgreSQL to ensure consistent hash comparison.
  */
 async function getLatestStatusHashMap(resortId: string): Promise<Map<string, string>> {
-  const results = await prisma.$queryRaw<Array<{ assetType: string; assetId: string; statusHash: string }>>`
+  const results = await prisma.$queryRaw<Array<{ assetType: string; assetId: string; statusHash: string | null }>>`
     SELECT DISTINCT ON ("assetType", "assetId")
-      "assetType", "assetId", MD5("statusInfo"::text) as "statusHash"
+      "assetType", "assetId", "statusHash"
     FROM "ResortStatusAnalytics"
     WHERE "resortId" = ${resortId}
     ORDER BY "assetType", "assetId", "collectedAt" DESC
@@ -142,8 +145,11 @@ async function getLatestStatusHashMap(resortId: string): Promise<Map<string, str
 
   const statusMap = new Map<string, string>();
   for (const row of results) {
-    const key = `${row.assetType}:${row.assetId}`;
-    statusMap.set(key, row.statusHash);
+    // Only add to map if statusHash exists (records before migration won't have it)
+    if (row.statusHash) {
+      const key = `${row.assetType}:${row.assetId}`;
+      statusMap.set(key, row.statusHash);
+    }
   }
   return statusMap;
 }
@@ -191,6 +197,7 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
           assetType: string;
           assetId: string;
           statusInfo: object;
+          statusHash: string;
           collectedAt: Date;
         }> = [];
 
@@ -209,6 +216,7 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
               assetType: 'lift',
               assetId: lift.name,
               statusInfo: statusInfo as object,
+              statusHash,
               collectedAt,
             });
           } else {
@@ -229,6 +237,7 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
               assetType: 'run',
               assetId: run.name,
               statusInfo: statusInfo as object,
+              statusHash,
               collectedAt,
             });
           } else {
