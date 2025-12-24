@@ -3,6 +3,7 @@
  * Fetches status data from all supported resorts and stores it in the ResortStatusAnalytics table
  */
 
+import { createHash } from 'crypto';
 import { getSupportedResorts, fetchResortStatus } from 'ski-resort-status';
 import { prisma } from './prisma';
 import type { LiftStatus, RunStatus } from './lift-status-types';
@@ -118,14 +119,22 @@ function transformRun(run: RawRun): RunStatus {
 }
 
 /**
- * Fetch the latest status for each asset of a resort in a single efficient query.
- * Uses PostgreSQL DISTINCT ON to get the most recent record per (assetType, assetId).
- * Returns a Map keyed by "assetType:assetId" for O(1) lookup.
+ * Compute MD5 hash of a JSON object for efficient comparison.
+ * Returns 32-byte hex string instead of storing full ~10KB JSON blobs.
  */
-async function getLatestStatusMap(resortId: string): Promise<Map<string, string>> {
-  const results = await prisma.$queryRaw<Array<{ assetType: string; assetId: string; statusInfo: unknown }>>`
+function hashStatus(statusInfo: object): string {
+  return createHash('md5').update(JSON.stringify(statusInfo)).digest('hex');
+}
+
+/**
+ * Fetch the latest status hash for each asset of a resort in a single efficient query.
+ * Uses PostgreSQL DISTINCT ON + MD5 to get the most recent record per (assetType, assetId).
+ * Returns a Map keyed by "assetType:assetId" with MD5 hash values (~32 bytes each vs ~10KB).
+ */
+async function getLatestStatusHashMap(resortId: string): Promise<Map<string, string>> {
+  const results = await prisma.$queryRaw<Array<{ assetType: string; assetId: string; statusHash: string }>>`
     SELECT DISTINCT ON ("assetType", "assetId")
-      "assetType", "assetId", "statusInfo"
+      "assetType", "assetId", MD5("statusInfo"::text) as "statusHash"
     FROM "ResortStatusAnalytics"
     WHERE "resortId" = ${resortId}
     ORDER BY "assetType", "assetId", "collectedAt" DESC
@@ -134,19 +143,18 @@ async function getLatestStatusMap(resortId: string): Promise<Map<string, string>
   const statusMap = new Map<string, string>();
   for (const row of results) {
     const key = `${row.assetType}:${row.assetId}`;
-    // Store JSON string for efficient comparison
-    statusMap.set(key, JSON.stringify(row.statusInfo));
+    statusMap.set(key, row.statusHash);
   }
   return statusMap;
 }
 
 /**
- * Check if status has changed by comparing JSON string representations.
+ * Check if status has changed by comparing MD5 hashes.
  * Returns true if the new status is different from the previous one.
  */
-function hasStatusChanged(newStatusJson: string, previousStatusJson: string | undefined): boolean {
-  if (!previousStatusJson) return true; // No previous record, this is a new asset
-  return newStatusJson !== previousStatusJson;
+function hasStatusChanged(newHash: string, previousHash: string | undefined): boolean {
+  if (!previousHash) return true; // No previous record, this is a new asset
+  return newHash !== previousHash;
 }
 
 /**
@@ -170,9 +178,9 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
     // Process each resort
     for (const resort of resorts) {
       try {
-        // Fetch latest status map and new data in parallel
-        const [latestStatusMap, rawData] = await Promise.all([
-          getLatestStatusMap(resort.id),
+        // Fetch latest status hash map and new data in parallel
+        const [latestHashMap, rawData] = await Promise.all([
+          getLatestStatusHashMap(resort.id),
           fetchResortStatus(resort.id) as Promise<RawResortStatus>,
         ]);
 
@@ -188,13 +196,13 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
 
         let skippedForResort = 0;
 
-        // Check lift records for changes
+        // Check lift records for changes using hash comparison
         for (const lift of rawData.lifts) {
           const statusInfo = transformLift(lift);
-          const statusJson = JSON.stringify(statusInfo);
+          const statusHash = hashStatus(statusInfo);
           const key = `lift:${lift.name}`;
 
-          if (hasStatusChanged(statusJson, latestStatusMap.get(key))) {
+          if (hasStatusChanged(statusHash, latestHashMap.get(key))) {
             records.push({
               resortId: resort.id,
               resortName: rawData.resort.name,
@@ -208,13 +216,13 @@ export async function collectAllResortStatus(): Promise<CollectionResult> {
           }
         }
 
-        // Check run records for changes
+        // Check run records for changes using hash comparison
         for (const run of rawData.runs) {
           const statusInfo = transformRun(run);
-          const statusJson = JSON.stringify(statusInfo);
+          const statusHash = hashStatus(statusInfo);
           const key = `run:${run.name}`;
 
-          if (hasStatusChanged(statusJson, latestStatusMap.get(key))) {
+          if (hasStatusChanged(statusHash, latestHashMap.get(key))) {
             records.push({
               resortId: resort.id,
               resortName: rawData.resort.name,
