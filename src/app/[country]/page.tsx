@@ -1,14 +1,15 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
-import { 
-  slugToCountry, 
-  toSlug, 
-  getCountryDisplayName, 
+import {
+  slugToCountry,
+  toSlug,
+  getCountryDisplayName,
   getCountryKeywords,
-  BASE_URL 
+  getCanonicalCountrySlug,
+  BASE_URL
 } from '@/lib/seo-utils';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 // Use ISR (Incremental Static Regeneration) - pages are cached after first request
 // Revalidates every 24 hours for fresh data while keeping pages fast and SEO-friendly
@@ -35,6 +36,12 @@ interface SkiAreaWithCount {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { country: countrySlug } = await params;
   const countryCode = slugToCountry(countrySlug);
+
+  // Country not recognized
+  if (!countryCode) {
+    return { title: 'Page Not Found | SKISHADE' };
+  }
+
   const countryName = getCountryDisplayName(countryCode);
   const keywords = getCountryKeywords(countryCode);
   
@@ -66,7 +73,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function CountryPage({ params }: PageProps) {
   const { country: countrySlug } = await params;
   const countryCode = slugToCountry(countrySlug);
-  
+
+  // Country not recognized at all - show 404
+  if (!countryCode) {
+    notFound();
+  }
+
+  // Redirect to canonical slug if using a variation (e.g., /us -> /usa)
+  const canonicalSlug = getCanonicalCountrySlug(countryCode);
+  if (countrySlug !== canonicalSlug) {
+    redirect(`/${canonicalSlug}`);
+  }
+
   // Fetch all ski areas for this country
   const skiAreas: SkiAreaWithCount[] = await prisma.skiArea.findMany({
     where: {

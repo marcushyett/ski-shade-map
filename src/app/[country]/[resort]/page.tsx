@@ -6,10 +6,11 @@ import {
   toSlug,
   getCountryDisplayName,
   getResortKeywords,
+  getCanonicalCountrySlug,
   BASE_URL
 } from '@/lib/seo-utils';
 import { getDaylightHours, formatDaylightHours } from '@/lib/daylight';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 // Use ISR (Incremental Static Regeneration) - pages are cached after first request
 // Revalidates every 24 hours for fresh data while keeping pages fast and SEO-friendly
@@ -33,10 +34,20 @@ interface SkiAreaWithCount {
   };
 }
 
-// Helper to find ski area by slug
-async function findSkiAreaBySlug(countrySlug: string, resortSlug: string): Promise<SkiAreaWithCount | undefined> {
+interface LookupResult {
+  countryCode: string | null;
+  skiArea: SkiAreaWithCount | null;
+}
+
+// Helper to find ski area by slug - returns both country code and ski area
+async function findSkiAreaBySlug(countrySlug: string, resortSlug: string): Promise<LookupResult> {
   const countryCode = slugToCountry(countrySlug);
-  
+
+  // Country not recognized at all
+  if (!countryCode) {
+    return { countryCode: null, skiArea: null };
+  }
+
   // Get all ski areas for this country
   const skiAreas: SkiAreaWithCount[] = await prisma.skiArea.findMany({
     where: {
@@ -62,16 +73,25 @@ async function findSkiAreaBySlug(countrySlug: string, resortSlug: string): Promi
   });
 
   // Find the one matching the slug
-  return skiAreas.find((area: SkiAreaWithCount) => toSlug(area.name) === resortSlug);
+  const skiArea = skiAreas.find((area: SkiAreaWithCount) => toSlug(area.name) === resortSlug) || null;
+
+  return { countryCode, skiArea };
 }
 
 // Generate metadata for SEO
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { country: countrySlug, resort: resortSlug } = await params;
-  const skiArea = await findSkiAreaBySlug(countrySlug, resortSlug);
-  
+  const { countryCode, skiArea } = await findSkiAreaBySlug(countrySlug, resortSlug);
+
+  // Country not found - will 404
+  if (!countryCode) {
+    return { title: 'Page Not Found | SKISHADE' };
+  }
+
+  // Country found but resort not found - will redirect to country page
   if (!skiArea) {
-    return { title: 'Resort Not Found | SKISHADE' };
+    const countryName = getCountryDisplayName(countryCode);
+    return { title: `Ski Resorts in ${countryName} | SKISHADE` };
   }
 
   const countryName = getCountryDisplayName(skiArea.country || '');
@@ -104,14 +124,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function ResortPage({ params }: PageProps) {
   const { country: countrySlug, resort: resortSlug } = await params;
-  const skiArea = await findSkiAreaBySlug(countrySlug, resortSlug);
+  const { countryCode, skiArea } = await findSkiAreaBySlug(countrySlug, resortSlug);
 
-  if (!skiArea) {
+  // Country not recognized at all - show 404
+  if (!countryCode) {
     notFound();
   }
 
-  const countryCode = skiArea.country || '';
-  const countryName = getCountryDisplayName(countryCode);
+  // Country valid but resort not found - redirect to country page
+  if (!skiArea) {
+    const canonicalSlug = getCanonicalCountrySlug(countryCode);
+    redirect(`/${canonicalSlug}`);
+  }
+
+  const countryName = getCountryDisplayName(skiArea.country || '');
 
   // Calculate today's daylight hours based on latitude
   const now = new Date();
