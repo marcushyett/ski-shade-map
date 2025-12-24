@@ -10,14 +10,22 @@ export const maxDuration = 300; // 5 minutes
 export async function GET(request: NextRequest) {
   // Verify the request is authorized
   const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-  const syncSecret = process.env.SYNC_SECRET || 'dev-sync-key';
+
+  // Support both uppercase and lowercase env var names for flexibility
+  const cronSecret = process.env.CRON_SECRET || process.env.cron_secret;
+  const syncSecret = process.env.SYNC_SECRET || process.env.sync_secret || 'dev-sync-key';
 
   // Check for valid cron secret (if set) or sync secret
   const isValidCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
   const isValidSync = authHeader === `Bearer ${syncSecret}`;
 
   if (!isValidCron && !isValidSync) {
+    console.error('[Analytics Cron] Auth failed:', {
+      hasAuthHeader: !!authHeader,
+      authHeaderPrefix: authHeader?.substring(0, 10),
+      hasCronSecret: !!cronSecret,
+      hasSyncSecret: !!syncSecret,
+    });
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
