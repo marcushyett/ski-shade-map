@@ -105,6 +105,7 @@ model ResortStatusAnalytics {
   assetType   String   // "lift" or "run"
   assetId     String   // Asset name (used as identifier since openskimapIds can be empty)
   statusInfo  Json     // Full status blob (LiftStatus or RunStatus)
+  statusHash  String?  // MD5 hash of statusInfo for efficient deduplication (computed in Node.js)
   collectedAt DateTime @default(now()) // When this data was collected
 
   @@index([resortId])
