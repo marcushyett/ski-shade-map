@@ -47,8 +47,8 @@ const LIFT_SPEEDS: Record<string, number> = {
 };
 
 /**
- * Get all ski areas that are supported (have mapping to ski-resort-status)
- * Returns analytics data where available, but shows all supported areas
+ * Get all ski areas that have recent analytics data available
+ * Only returns areas where runs/lifts have been tracked in the last 24 hours
  */
 export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]> {
   // Get supported resorts from ski-resort-status
@@ -59,6 +59,7 @@ export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]
     platform: string;
   }
   const supportedResorts = getSupportedResorts() as SupportedResort[];
+  console.log('[Max Optimality] Total supported resorts from ski-resort-status:', supportedResorts.length);
 
   // Build mapping from OpenSkiMap ID to resort ID
   const openskimapToResort = new Map<string, string>();
@@ -75,6 +76,8 @@ export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]
       allOpenskimapIds.push(osmId);
     }
   }
+
+  console.log('[Max Optimality] Total OpenSkiMap IDs to search for:', allOpenskimapIds.length);
 
   // Get all ski areas that match any supported resort's OpenSkiMap IDs
   const skiAreas = await prisma.skiArea.findMany({
@@ -93,6 +96,7 @@ export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]
       longitude: true,
     },
   });
+  console.log('[Max Optimality] Ski areas found in database matching OpenSkiMap IDs:', skiAreas.length);
 
   // Get analytics stats for resorts that have data
   const analyticsStats = await prisma.$queryRaw<
@@ -127,18 +131,37 @@ export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]
       lastUpdate: stats.lastUpdate,
     });
   }
+  console.log('[Max Optimality] Resorts with analytics data:', analyticsMap.size);
+  console.log('[Max Optimality] Resort IDs with analytics:', [...analyticsMap.keys()]);
 
-  // Build the result from all matched ski areas
+  // Build the result - only include ski areas that have analytics data
   const result: SkiAreaWithAnalytics[] = [];
+  let skippedNoOsmId = 0;
+  let skippedNoResortId = 0;
+  let skippedNoAnalytics = 0;
 
   for (const skiArea of skiAreas) {
-    if (!skiArea.osmId) continue;
+    if (!skiArea.osmId) {
+      skippedNoOsmId++;
+      continue;
+    }
 
     const resortId = openskimapToResort.get(skiArea.osmId);
-    if (!resortId) continue;
+    if (!resortId) {
+      skippedNoResortId++;
+      continue;
+    }
 
     const analytics = analyticsMap.get(resortId);
 
+    // Only include resorts that have analytics data
+    if (!analytics || (analytics.runCount === 0 && analytics.liftCount === 0)) {
+      skippedNoAnalytics++;
+      console.log(`[Max Optimality] Skipping ${skiArea.name} (${resortId}): no analytics data`);
+      continue;
+    }
+
+    console.log(`[Max Optimality] Including ${skiArea.name} (${resortId}): ${analytics.runCount} runs, ${analytics.liftCount} lifts`);
     result.push({
       id: skiArea.id,
       osmId: skiArea.osmId,
@@ -147,12 +170,18 @@ export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]
       region: skiArea.region,
       latitude: skiArea.latitude,
       longitude: skiArea.longitude,
-      analyticsRunCount: analytics?.runCount ?? 0,
-      analyticsLiftCount: analytics?.liftCount ?? 0,
-      lastAnalyticsUpdate: analytics?.lastUpdate ?? null,
+      analyticsRunCount: analytics.runCount,
+      analyticsLiftCount: analytics.liftCount,
+      lastAnalyticsUpdate: analytics.lastUpdate,
       resortId: resortId,
     });
   }
+
+  console.log('[Max Optimality] Filtering summary:');
+  console.log(`  - Skipped (no osmId): ${skippedNoOsmId}`);
+  console.log(`  - Skipped (no resortId mapping): ${skippedNoResortId}`);
+  console.log(`  - Skipped (no analytics data): ${skippedNoAnalytics}`);
+  console.log(`  - Included: ${result.length}`);
 
   // Sort by name
   result.sort((a, b) => a.name.localeCompare(b.name));
