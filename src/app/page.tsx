@@ -12,6 +12,7 @@ import {
   RightOutlined,
   EnvironmentOutlined,
   HomeOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
@@ -44,7 +45,14 @@ const NavigationPanel = dynamic(() => import('@/components/NavigationPanel').the
   ssr: false,
   loading: () => <div style={{ padding: 20, textAlign: 'center', color: '#666' }}>Loading navigation...</div>,
 });
+
+// Lazy load MaxOptimality - only needed when user opens from advanced menu
+const MaxOptimality = dynamic(() => import('@/components/MaxOptimality').then(mod => mod.MaxOptimality), {
+  ssr: false,
+  loading: () => null,
+});
 import type { NavigationRoute } from '@/lib/navigation';
+import type { MaxOptimalityPlan } from '@/lib/max-optimality/types';
 import { formatDuration, formatDistance } from '@/lib/navigation';
 import { analyzeRuns, calculateRunStats } from '@/lib/sunny-time-calculator';
 import { format } from 'date-fns';
@@ -187,6 +195,7 @@ const ControlsContent = memo(function ControlsContent({
   statusDebug,
   mountainHome,
   onMountainHomeChange,
+  onMaxOptimalityOpen,
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
@@ -217,6 +226,7 @@ const ControlsContent = memo(function ControlsContent({
   statusDebug: StatusDebugInfo;
   mountainHome: MountainHome | null;
   onMountainHomeChange: (home: MountainHome | null) => void;
+  onMaxOptimalityOpen: () => void;
 }) {
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
@@ -376,6 +386,25 @@ const ControlsContent = memo(function ControlsContent({
                 Clear Mountain Home
               </button>
             )}
+
+            {/* Max Optimality - route planner for maximum run coverage */}
+            <button
+              onClick={onMaxOptimalityOpen}
+              className="flex items-center gap-1.5 py-1 px-2 rounded hover:bg-white/10 transition-colors text-left"
+              style={{
+                fontSize: 10,
+                color: '#faad14',
+                background: 'transparent',
+                border: '1px solid rgba(250, 173, 20, 0.3)',
+                cursor: 'pointer',
+              }}
+            >
+              <ThunderboltOutlined style={{ fontSize: 10 }} />
+              Max Optimality
+            </button>
+            <span style={{ fontSize: 9, color: '#555', paddingLeft: 4 }}>
+              Plan a route covering the most runs
+            </span>
 
             <button
               onClick={handleReset}
@@ -547,6 +576,10 @@ export default function Home() {
 
   // Points of Interest (toilets, restaurants, viewpoints)
   const [pois, setPois] = useState<POIData[]>([]);
+
+  // Max Optimality feature state
+  const [isMaxOptimalityOpen, setIsMaxOptimalityOpen] = useState(false);
+  const [maxOptimalityPlan, setMaxOptimalityPlan] = useState<MaxOptimalityPlan | null>(null);
   
   // Effective user location - uses fake location for debugging if set
   const effectiveUserLocation = useMemo<UserLocation | null>(() => {
@@ -2553,6 +2586,7 @@ export default function Home() {
           statusDebug={statusDebug}
           mountainHome={mountainHome}
           onMountainHomeChange={setMountainHome}
+          onMaxOptimalityOpen={() => setIsMaxOptimalityOpen(true)}
         />
       </Drawer>
 
@@ -2588,6 +2622,7 @@ export default function Home() {
           statusDebug={statusDebug}
           mountainHome={mountainHome}
           onMountainHomeChange={setMountainHome}
+          onMaxOptimalityOpen={() => setIsMaxOptimalityOpen(true)}
         />
       </div>
 
@@ -2837,7 +2872,7 @@ export default function Home() {
           )}
           
           {/* Time slider - supports collapsed mode */}
-          <TimeSlider 
+          <TimeSlider
             latitude={mapCenter.lat}
             longitude={mapCenter.lng}
             selectedTime={selectedTime}
@@ -2851,6 +2886,20 @@ export default function Home() {
           />
         </div>
       </div>
+
+      {/* Max Optimality Modal */}
+      <MaxOptimality
+        isOpen={isMaxOptimalityOpen}
+        onClose={() => setIsMaxOptimalityOpen(false)}
+        onPlanComplete={(plan, route) => {
+          setMaxOptimalityPlan(plan);
+          if (route) {
+            setNavigationRoute(route);
+          }
+          setIsMaxOptimalityOpen(false);
+        }}
+        mountainHome={mountainHome}
+      />
 
     </div>
   );
