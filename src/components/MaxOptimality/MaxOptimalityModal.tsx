@@ -194,6 +194,16 @@ export function MaxOptimalityModal({
     return skiAreas.find((a: SkiAreaWithAnalytics) => a.id === selectedAreaId);
   }, [skiAreas, selectedAreaId]);
 
+  // Compute dropdown options
+  const skiAreaOptions = useMemo(() => {
+    const options = skiAreas.map((area: SkiAreaWithAnalytics) => ({
+      value: area.id,
+      label: `${area.name} (${area.analyticsRunCount} runs, ${area.analyticsLiftCount} lifts)`,
+    }));
+    console.log('[MaxOptimalityModal] Dropdown options:', options);
+    return options;
+  }, [skiAreas]);
+
   if (!isOpen) return null;
 
   return (
@@ -276,10 +286,7 @@ export function MaxOptimalityModal({
                   filterOption={(input: string, option: { label: string; value: string } | undefined) =>
                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
-                  options={skiAreas.map((area: SkiAreaWithAnalytics) => ({
-                    value: area.id,
-                    label: `${area.name} (${area.analyticsRunCount} runs, ${area.analyticsLiftCount} lifts)`,
-                  }))}
+                  options={skiAreaOptions}
                 />
                 {selectedArea && (
                   <Text type="secondary" style={{ fontSize: 11, marginTop: 4, display: 'block' }}>
