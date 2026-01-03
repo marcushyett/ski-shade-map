@@ -286,8 +286,13 @@ export function MaxOptimalityModal({
                   filterOption={(input: string, option: { label: string; value: string } | undefined) =>
                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
+                  getPopupContainer={(trigger) => trigger.parentElement || document.body}
                   options={skiAreaOptions}
                 />
+                {/* Debug: show options count */}
+                <Text type="secondary" style={{ fontSize: 10 }}>
+                  Debug: {skiAreaOptions.length} options available
+                </Text>
                 {selectedArea && (
                   <Text type="secondary" style={{ fontSize: 11, marginTop: 4, display: 'block' }}>
                     Last updated:{' '}
