@@ -78,6 +78,9 @@ function LocationControlsInner({
   // Track last home button tap for double-tap detection
   const lastHomeTapRef = useRef<number>(0);
 
+  // Track the watchPosition ID for continuous location updates
+  const watchIdRef = useRef<number | null>(null);
+
   // Load mountain home from storage on mount
   useEffect(() => {
     try {
@@ -100,6 +103,52 @@ function LocationControlsInner({
       onEditingHomeChange(false);
     }
   }, [pendingHomeLocation, isEditingHome, mountainHome?.name, onEditingHomeChange]);
+
+  // Continuous location tracking with watchPosition
+  useEffect(() => {
+    if (!isTrackingLocation || !navigator.geolocation) {
+      // Clear any existing watch when tracking is disabled
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      return;
+    }
+
+    // Start watching position for continuous updates
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const location: UserLocation = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          timestamp: position.timestamp,
+        };
+        onUserLocationChange?.(location);
+      },
+      (error) => {
+        // On error, stop tracking
+        console.warn('Location watch error:', error.message);
+        if (error.code === error.PERMISSION_DENIED) {
+          onToggleTracking(false);
+          onUserLocationChange?.(null);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000, // Allow cached position up to 5 seconds old for smoother updates
+      }
+    );
+
+    // Cleanup on unmount or when tracking is disabled
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [isTrackingLocation, onUserLocationChange, onToggleTracking]);
 
   // Handle current location button click
   const handleCurrentLocation = useCallback(() => {
