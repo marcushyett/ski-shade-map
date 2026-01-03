@@ -98,6 +98,11 @@ export function MaxOptimalityModal({
     }
   }, [isOpen]);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('[MaxOptimalityModal] State changed - state:', state, 'skiAreas:', skiAreas.length);
+  }, [state, skiAreas]);
+
   const loadSkiAreas = useCallback(async () => {
     console.log('[MaxOptimalityModal] loadSkiAreas called');
     setState('loading-areas');
@@ -229,7 +234,6 @@ export function MaxOptimalityModal({
           )}
 
           {/* Selection form */}
-          {console.log('[MaxOptimalityModal] Render check - state:', state, 'skiAreas:', skiAreas.length)}
           {(state === 'selecting' || state === 'idle') && (
             <>
               <div className="max-optimality-description">
