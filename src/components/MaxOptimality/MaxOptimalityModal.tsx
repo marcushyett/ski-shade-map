@@ -98,21 +98,30 @@ export function MaxOptimalityModal({
     }
   }, [isOpen]);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('[MaxOptimalityModal] State changed - state:', state, 'skiAreas:', skiAreas.length);
+  }, [state, skiAreas]);
+
   const loadSkiAreas = useCallback(async () => {
+    console.log('[MaxOptimalityModal] loadSkiAreas called');
     setState('loading-areas');
     setError(null);
 
     try {
       const response = await fetch('/api/max-optimality/areas');
       const data = await response.json();
+      console.log('[MaxOptimalityModal] API response:', data);
 
       if (!data.success) {
         throw new Error(data.error || 'Failed to load ski areas');
       }
 
+      console.log('[MaxOptimalityModal] Setting skiAreas:', data.skiAreas?.length, 'areas');
       setSkiAreas(data.skiAreas);
       setState('selecting');
     } catch (err) {
+      console.error('[MaxOptimalityModal] Error loading ski areas:', err);
       setError(err instanceof Error ? err.message : 'Failed to load ski areas');
       setState('error');
     }
