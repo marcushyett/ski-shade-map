@@ -47,7 +47,8 @@ const LIFT_SPEEDS: Record<string, number> = {
 };
 
 /**
- * Get all ski areas that have analytics coverage
+ * Get all ski areas that are supported (have mapping to ski-resort-status)
+ * Returns analytics data where available, but shows all supported areas
  */
 export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]> {
   // Get supported resorts from ski-resort-status
@@ -59,7 +60,39 @@ export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]
   }
   const supportedResorts = getSupportedResorts() as SupportedResort[];
 
-  // Get unique resort IDs from analytics with their latest update
+  // Build mapping from OpenSkiMap ID to resort ID
+  const openskimapToResort = new Map<string, string>();
+  const allOpenskimapIds: string[] = [];
+
+  for (const resort of supportedResorts) {
+    const ids = Array.isArray(resort.openskimap_id)
+      ? resort.openskimap_id
+      : [resort.openskimap_id];
+    for (const osmId of ids) {
+      openskimapToResort.set(osmId, resort.id);
+      allOpenskimapIds.push(osmId);
+    }
+  }
+
+  // Get all ski areas that match any supported resort's OpenSkiMap IDs
+  const skiAreas = await prisma.skiArea.findMany({
+    where: {
+      osmId: {
+        in: allOpenskimapIds,
+      },
+    },
+    select: {
+      id: true,
+      osmId: true,
+      name: true,
+      country: true,
+      region: true,
+      latitude: true,
+      longitude: true,
+    },
+  });
+
+  // Get analytics stats for resorts that have data
   const analyticsStats = await prisma.$queryRaw<
     Array<{
       resortId: string;
@@ -80,61 +113,43 @@ export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]
     HAVING COUNT(DISTINCT "assetId") > 0
   `;
 
-  // Map resort IDs to OpenSkiMap IDs
-  const resortToOpenskimap = new Map<string, string[]>();
-  for (const resort of supportedResorts) {
-    const ids = Array.isArray(resort.openskimap_id)
-      ? resort.openskimap_id
-      : [resort.openskimap_id];
-    resortToOpenskimap.set(resort.id, ids);
+  // Create a map of resort ID to analytics data
+  const analyticsMap = new Map<
+    string,
+    { runCount: number; liftCount: number; lastUpdate: Date }
+  >();
+  for (const stats of analyticsStats) {
+    analyticsMap.set(stats.resortId, {
+      runCount: Number(stats.runCount),
+      liftCount: Number(stats.liftCount),
+      lastUpdate: stats.lastUpdate,
+    });
   }
 
-  // Get ski areas that match the OpenSkiMap IDs
-  const openskimapIds = [...resortToOpenskimap.values()].flat();
-
-  const skiAreas = await prisma.skiArea.findMany({
-    where: {
-      osmId: {
-        in: openskimapIds,
-      },
-    },
-    select: {
-      id: true,
-      osmId: true,
-      name: true,
-      country: true,
-      region: true,
-      latitude: true,
-      longitude: true,
-    },
-  });
-
-  // Build the result, matching ski areas to analytics data
+  // Build the result from all matched ski areas
   const result: SkiAreaWithAnalytics[] = [];
 
-  for (const stats of analyticsStats) {
-    const openskimapIdsForResort = resortToOpenskimap.get(stats.resortId) || [];
+  for (const skiArea of skiAreas) {
+    if (!skiArea.osmId) continue;
 
-    // Find matching ski area
-    const matchingSkiArea = skiAreas.find(
-      (sa) => sa.osmId && openskimapIdsForResort.includes(sa.osmId)
-    );
+    const resortId = openskimapToResort.get(skiArea.osmId);
+    if (!resortId) continue;
 
-    if (matchingSkiArea) {
-      result.push({
-        id: matchingSkiArea.id,
-        osmId: matchingSkiArea.osmId,
-        name: matchingSkiArea.name,
-        country: matchingSkiArea.country,
-        region: matchingSkiArea.region,
-        latitude: matchingSkiArea.latitude,
-        longitude: matchingSkiArea.longitude,
-        analyticsRunCount: Number(stats.runCount),
-        analyticsLiftCount: Number(stats.liftCount),
-        lastAnalyticsUpdate: stats.lastUpdate,
-        resortId: stats.resortId,
-      });
-    }
+    const analytics = analyticsMap.get(resortId);
+
+    result.push({
+      id: skiArea.id,
+      osmId: skiArea.osmId,
+      name: skiArea.name,
+      country: skiArea.country,
+      region: skiArea.region,
+      latitude: skiArea.latitude,
+      longitude: skiArea.longitude,
+      analyticsRunCount: analytics?.runCount ?? 0,
+      analyticsLiftCount: analytics?.liftCount ?? 0,
+      lastAnalyticsUpdate: analytics?.lastUpdate ?? null,
+      resortId: resortId,
+    });
   }
 
   // Sort by name
