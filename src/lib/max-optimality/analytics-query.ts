@@ -65,10 +65,12 @@ export async function getSkiAreasWithAnalytics(): Promise<SkiAreaWithAnalytics[]
   const allOpenskimapIds: string[] = [];
 
   for (const resort of supportedResorts) {
-    const ids = Array.isArray(resort.openskimap_id)
+    const rawIds = Array.isArray(resort.openskimap_id)
       ? resort.openskimap_id
       : [resort.openskimap_id];
-    for (const osmId of ids) {
+    // Ensure all IDs are strings (ski-resort-status may return numbers)
+    for (const rawId of rawIds) {
+      const osmId = String(rawId);
       openskimapToResort.set(osmId, resort.id);
       allOpenskimapIds.push(osmId);
     }
@@ -178,9 +180,11 @@ export async function getResortIdForSkiArea(skiAreaId: string): Promise<string |
   const supportedResorts = getSupportedResorts() as SupportedResort[];
 
   for (const resort of supportedResorts) {
-    const ids = Array.isArray(resort.openskimap_id)
+    const rawIds = Array.isArray(resort.openskimap_id)
       ? resort.openskimap_id
       : [resort.openskimap_id];
+    // Convert to strings for comparison (ski-resort-status may return numbers)
+    const ids = rawIds.map((id) => String(id));
     if (ids.includes(skiArea.osmId)) {
       return resort.id;
     }
