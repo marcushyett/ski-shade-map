@@ -533,8 +533,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       return;
     }
 
-    // Get map bounds for shadow computation
+    // Get map bounds and zoom for shadow computation
     const mapBounds = map.current.getBounds();
+    const mapZoom = map.current.getZoom();
     const bounds = {
       west: mapBounds.getWest(),
       south: mapBounds.getSouth(),
@@ -548,7 +549,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Start shadow computation
     onShadowLoadingChangeRef.current?.(true);
 
-    computeWebGLShadows(bounds, sunPos.azimuthDegrees, sunPos.altitudeDegrees)
+    computeWebGLShadows(bounds, sunPos.azimuthDegrees, sunPos.altitudeDegrees, mapZoom)
       .then((result) => {
         // Check if this computation is still the most recent
         if (computationId !== shadowComputationIdRef.current) {

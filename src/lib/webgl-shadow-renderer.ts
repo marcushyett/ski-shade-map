@@ -38,19 +38,6 @@ const FRAGMENT_SHADER = `
     return -10000.0 + (color.r * 256.0 * 256.0 + color.g * 256.0 + color.b) * 255.0 * 0.1;
   }
 
-  // Calculate edge fade factor (0 at edges, 1 in center)
-  float getEdgeFade(vec2 coord) {
-    // Fade over 5% of the texture at each edge
-    float fadeWidth = 0.05;
-
-    float fadeLeft = smoothstep(0.0, fadeWidth, coord.x);
-    float fadeRight = smoothstep(0.0, fadeWidth, 1.0 - coord.x);
-    float fadeTop = smoothstep(0.0, fadeWidth, coord.y);
-    float fadeBottom = smoothstep(0.0, fadeWidth, 1.0 - coord.y);
-
-    return fadeLeft * fadeRight * fadeTop * fadeBottom;
-  }
-
   void main() {
     // Map output texture coords (0-1) to position in full elevation texture
     // This accounts for the buffer tiles around the visible area
@@ -59,9 +46,6 @@ const FRAGMENT_SHADER = `
     // Get base elevation at current pixel
     vec4 baseColor = texture2D(u_elevation, elevTexCoord);
     float baseElevation = decodeElevation(baseColor);
-
-    // Calculate edge fade for smooth blending at borders
-    float edgeFade = getEdgeFade(v_texCoord);
 
     // Skip if no valid elevation data
     if (baseElevation < -9000.0) {
@@ -106,9 +90,9 @@ const FRAGMENT_SHADER = `
       }
     }
 
-    // Output shadow color with alpha, applying edge fade
+    // Output shadow color with alpha
     if (inShadow) {
-      gl_FragColor = vec4(0.0, 0.0, 0.15, 0.6 * edgeFade); // Dark blue shadow with edge fade
+      gl_FragColor = vec4(0.0, 0.0, 0.15, 0.6); // Dark blue shadow
     } else {
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0); // Transparent (no shadow)
     }
@@ -287,6 +271,7 @@ export class WebGLShadowRenderer {
     bounds: { west: number; south: number; east: number; north: number },
     sunAzimuth: number,
     sunAltitude: number,
+    mapZoom: number,
     onProgress?: (progress: number) => void
   ): Promise<ShadowResult | null> {
     const gl = this.gl;
@@ -304,13 +289,15 @@ export class WebGLShadowRenderer {
 
     onProgress?.(0.1);
 
-    // Determine which tiles to fetch (zoom 12 for good balance of detail and performance)
-    const zoom = 12;
+    // Use tile zoom based on map zoom, clamped to reasonable range
+    // Lower zoom = larger tiles = covers more area when zoomed out
+    const zoom = Math.max(8, Math.min(14, Math.floor(mapZoom)));
     const topLeft = lngLatToTile(bounds.west, bounds.north, zoom);
     const bottomRight = lngLatToTile(bounds.east, bounds.south, zoom);
 
     // Add buffer tiles for shadow casting from outside visible area
-    const buffer = 2;
+    // More buffer at lower zooms since shadows can come from further away
+    const buffer = zoom <= 10 ? 3 : 2;
     const startX = topLeft.x - buffer;
     const startY = topLeft.y - buffer;
     const endX = bottomRight.x + buffer;
@@ -361,11 +348,20 @@ export class WebGLShadowRenderer {
     await Promise.all(tilePromises);
     onProgress?.(0.4);
 
-    // Calculate output dimensions (visible tiles only, without buffer)
-    const visibleTilesX = bottomRight.x - topLeft.x + 1;
-    const visibleTilesY = bottomRight.y - topLeft.y + 1;
-    const outputWidth = visibleTilesX * tileSize;
-    const outputHeight = visibleTilesY * tileSize;
+    // Calculate output dimensions based on map bounds aspect ratio
+    // Use a reasonable resolution that scales with zoom level
+    const boundsWidth = bounds.east - bounds.west;
+    const boundsHeight = bounds.north - bounds.south;
+    const aspectRatio = boundsWidth / boundsHeight;
+
+    // Base resolution on zoom level - higher zoom = higher resolution
+    const baseResolution = Math.min(1024, Math.max(256, Math.pow(2, Math.floor(mapZoom) - 4) * 128));
+    const outputWidth = aspectRatio >= 1
+      ? baseResolution
+      : Math.round(baseResolution * aspectRatio);
+    const outputHeight = aspectRatio >= 1
+      ? Math.round(baseResolution / aspectRatio)
+      : baseResolution;
 
     // Set canvas size
     this.canvas.width = outputWidth;
@@ -402,12 +398,12 @@ export class WebGLShadowRenderer {
     const gridDegreesY = gridBoundsTopLeft.north - gridBoundsBottomRight.south;
     const metersPerPixel = ((gridDegreesX / gridWidth) * metersPerDegLng + (gridDegreesY / gridHeight) * metersPerDegLat) / 2;
 
-    // Calculate texture offset and scale to map visible area to full grid
-    // The buffer tiles are at the edges, visible tiles are in the center
-    const textureOffsetX = (buffer * tileSize) / gridWidth;
-    const textureOffsetY = (buffer * tileSize) / gridHeight;
-    const textureScaleX = outputWidth / gridWidth;
-    const textureScaleY = outputHeight / gridHeight;
+    // Calculate texture offset and scale to map exact input bounds to tile grid
+    // This ensures the output aligns perfectly with the map viewport
+    const textureOffsetX = (bounds.west - gridBoundsTopLeft.west) / gridDegreesX;
+    const textureOffsetY = (gridBoundsTopLeft.north - bounds.north) / gridDegreesY;
+    const textureScaleX = (bounds.east - bounds.west) / gridDegreesX;
+    const textureScaleY = (bounds.north - bounds.south) / gridDegreesY;
 
     // Set up shader uniforms
     gl.useProgram(program);
@@ -431,10 +427,6 @@ export class WebGLShadowRenderer {
 
     onProgress?.(0.9);
 
-    // Calculate output bounds (visible area only)
-    const outputTopLeft = tileToBounds(topLeft.x, topLeft.y, zoom);
-    const outputBottomRight = tileToBounds(bottomRight.x + 1, bottomRight.y + 1, zoom);
-
     // Create output canvas with the rendered shadows
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = outputWidth;
@@ -449,9 +441,10 @@ export class WebGLShadowRenderer {
 
     onProgress?.(1.0);
 
+    // Return exact input bounds so overlay aligns perfectly with map view
     return {
       canvas: outputCanvas,
-      bounds: [outputTopLeft.west, outputBottomRight.south, outputBottomRight.east, outputTopLeft.north],
+      bounds: [bounds.west, bounds.south, bounds.east, bounds.north],
     };
   }
 
@@ -487,10 +480,11 @@ export async function computeWebGLShadows(
   bounds: { west: number; south: number; east: number; north: number },
   sunAzimuth: number,
   sunAltitude: number,
+  mapZoom: number,
   onProgress?: (progress: number) => void
 ): Promise<{ imageDataUrl: string; bounds: [number, number, number, number] } | null> {
   const renderer = getWebGLShadowRenderer();
-  const result = await renderer.render(bounds, sunAzimuth, sunAltitude, onProgress);
+  const result = await renderer.render(bounds, sunAzimuth, sunAltitude, mapZoom, onProgress);
 
   if (!result) return null;
 
