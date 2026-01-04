@@ -38,6 +38,19 @@ const FRAGMENT_SHADER = `
     return -10000.0 + (color.r * 256.0 * 256.0 + color.g * 256.0 + color.b) * 255.0 * 0.1;
   }
 
+  // Calculate edge fade factor (0 at edges, 1 in center)
+  float getEdgeFade(vec2 coord) {
+    // Fade over 5% of the texture at each edge
+    float fadeWidth = 0.05;
+
+    float fadeLeft = smoothstep(0.0, fadeWidth, coord.x);
+    float fadeRight = smoothstep(0.0, fadeWidth, 1.0 - coord.x);
+    float fadeTop = smoothstep(0.0, fadeWidth, coord.y);
+    float fadeBottom = smoothstep(0.0, fadeWidth, 1.0 - coord.y);
+
+    return fadeLeft * fadeRight * fadeTop * fadeBottom;
+  }
+
   void main() {
     // Map output texture coords (0-1) to position in full elevation texture
     // This accounts for the buffer tiles around the visible area
@@ -46,6 +59,9 @@ const FRAGMENT_SHADER = `
     // Get base elevation at current pixel
     vec4 baseColor = texture2D(u_elevation, elevTexCoord);
     float baseElevation = decodeElevation(baseColor);
+
+    // Calculate edge fade for smooth blending at borders
+    float edgeFade = getEdgeFade(v_texCoord);
 
     // Skip if no valid elevation data
     if (baseElevation < -9000.0) {
@@ -90,9 +106,9 @@ const FRAGMENT_SHADER = `
       }
     }
 
-    // Output shadow color with alpha
+    // Output shadow color with alpha, applying edge fade
     if (inShadow) {
-      gl_FragColor = vec4(0.0, 0.0, 0.15, 0.6); // Dark blue shadow
+      gl_FragColor = vec4(0.0, 0.0, 0.15, 0.6 * edgeFade); // Dark blue shadow with edge fade
     } else {
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0); // Transparent (no shadow)
     }
