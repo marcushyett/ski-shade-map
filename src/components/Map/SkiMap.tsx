@@ -19,7 +19,7 @@ import type { EnrichedRunData, EnrichedLiftData, LiftStatus, RunStatus } from '@
 import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 import type { NavigationRoute } from '@/lib/navigation';
 import type { PlanningModeState } from '@/lib/planning-mode-types';
-import { computeTerrainShadowsCached, clearShadowCache, type LngLatBounds } from '@/lib/dem-shadow-calculator';
+import { computeWebGLShadows } from '@/lib/webgl-shadow-renderer';
 
 interface CloudCover {
   total: number;
@@ -175,12 +175,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   const onLiftClickRef = useRef(onLiftClick);
   const geometryCacheRef = useRef<GeometryCache | null>(null);
 
-  // Planning mode shadow overlay state
-  const [shadowProgress, setShadowProgress] = useState<number>(0);
-  const [isShadowComputing, setIsShadowComputing] = useState(false);
-  const shadowImageRef = useRef<string | null>(null);
-  const shadowBoundsRef = useRef<[number, number, number, number] | null>(null);
-  const lastShadowParamsRef = useRef<string | null>(null);
+  // Planning mode shadow overlay state - using WebGL for GPU ray-traced shadows
+  const shadowComputationIdRef = useRef(0);
   const [mapBoundsKey, setMapBoundsKey] = useState<string>('');
   const onShadowLoadingChangeRef = useRef(onShadowLoadingChange);
   
@@ -198,6 +194,10 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
   navMapClickModeRef.current = navMapClickMode;
   isFakeLocationDropModeRef.current = isFakeLocationDropMode;
   snowAnalysesRef.current = snowAnalyses;
+  const planningModeRef = useRef(planningMode);
+  planningModeRef.current = planningMode;
+  const yesterdayOpenRunsRef = useRef(yesterdayOpenRuns);
+  yesterdayOpenRunsRef.current = yesterdayOpenRuns;
   const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const mountainHomeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const sharedLocationMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
@@ -486,21 +486,17 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     let debounceTimeout: NodeJS.Timeout | null = null;
 
     const handleMoveEnd = () => {
-      // Debounce the update to avoid excessive recomputation
       if (debounceTimeout) clearTimeout(debounceTimeout);
       debounceTimeout = setTimeout(() => {
         if (!map.current) return;
         const bounds = map.current.getBounds();
-        // Create a key that changes when bounds change significantly
         const newKey = `${bounds.getWest().toFixed(3)}_${bounds.getSouth().toFixed(3)}_${bounds.getEast().toFixed(3)}_${bounds.getNorth().toFixed(3)}`;
         setMapBoundsKey(newKey);
       }, 300);
     };
 
     map.current.on('moveend', handleMoveEnd);
-
-    // Set initial bounds key
-    handleMoveEnd();
+    handleMoveEnd(); // Set initial bounds
 
     return () => {
       if (debounceTimeout) clearTimeout(debounceTimeout);
@@ -508,22 +504,18 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     };
   }, [mapLoaded, planningMode?.enabled, planningMode?.shadowSettings?.enabled]);
 
-  // Compute terrain shadows for planning mode
+  // GPU-accelerated terrain shadow overlay using WebGL ray tracing
   useEffect(() => {
     if (!map.current || !mapLoaded || !skiArea) return;
 
-    // Only compute shadows when planning mode is enabled and shadows are enabled
+    // Remove shadow overlay when planning mode is disabled or shadows are turned off
     if (!planningMode?.enabled || !planningMode?.shadowSettings?.enabled) {
-      // Remove shadow overlay if it exists
       if (map.current.getLayer('shadow-overlay')) {
         map.current.removeLayer('shadow-overlay');
       }
       if (map.current.getSource('shadow-source')) {
         map.current.removeSource('shadow-source');
       }
-      shadowImageRef.current = null;
-      shadowBoundsRef.current = null;
-      lastShadowParamsRef.current = null;
       onShadowLoadingChangeRef.current?.(false);
       return;
     }
@@ -531,27 +523,8 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Get current sun position
     const sunPos = getSunPosition(selectedTime, skiArea.latitude, skiArea.longitude);
 
-    // Get map bounds for shadow computation
-    const mapBounds = map.current.getBounds();
-    const bounds: LngLatBounds = {
-      west: mapBounds.getWest(),
-      south: mapBounds.getSouth(),
-      east: mapBounds.getEast(),
-      north: mapBounds.getNorth(),
-    };
-
-    // Create params key including bounds (rounded) and sun position (rounded to 2 degrees for responsiveness)
-    const roundedBoundsKey = `${bounds.west.toFixed(2)}_${bounds.south.toFixed(2)}_${bounds.east.toFixed(2)}_${bounds.north.toFixed(2)}`;
-    const paramsKey = `${skiArea.id}_${roundedBoundsKey}_${Math.round(sunPos.azimuthDegrees / 2) * 2}_${Math.round(sunPos.altitudeDegrees / 2) * 2}`;
-
-    // Skip if params haven't changed significantly
-    if (paramsKey === lastShadowParamsRef.current && shadowImageRef.current) {
-      return;
-    }
-
     // Don't compute if sun is below horizon or nearly overhead
     if (sunPos.altitudeDegrees <= 0 || sunPos.altitudeDegrees > 75) {
-      // Hide shadow overlay - minimal shadows
       if (map.current.getLayer('shadow-overlay')) {
         map.current.setLayoutProperty('shadow-overlay', 'visibility', 'none');
       }
@@ -559,27 +532,33 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       return;
     }
 
-    // Start shadow computation - notify parent
-    setIsShadowComputing(true);
-    setShadowProgress(0);
+    // Get map bounds for shadow computation
+    const mapBounds = map.current.getBounds();
+    const bounds = {
+      west: mapBounds.getWest(),
+      south: mapBounds.getSouth(),
+      east: mapBounds.getEast(),
+      north: mapBounds.getNorth(),
+    };
+
+    // Generate unique ID for this computation to prevent race conditions
+    const computationId = ++shadowComputationIdRef.current;
+
+    // Start shadow computation
     onShadowLoadingChangeRef.current?.(true);
 
-    computeTerrainShadowsCached(
-      bounds,
-      sunPos.azimuthDegrees,
-      sunPos.altitudeDegrees,
-      (progress) => setShadowProgress(progress)
-    )
+    computeWebGLShadows(bounds, sunPos.azimuthDegrees, sunPos.altitudeDegrees)
       .then((result) => {
-        if (!result || !map.current) {
-          setIsShadowComputing(false);
-          onShadowLoadingChangeRef.current?.(false);
+        // Check if this computation is still the most recent
+        if (computationId !== shadowComputationIdRef.current) {
+          console.log(`[WebGLShadow] Computation ${computationId} superseded`);
           return;
         }
 
-        lastShadowParamsRef.current = paramsKey;
-        shadowImageRef.current = result.imageDataUrl;
-        shadowBoundsRef.current = result.bounds;
+        if (!result || !map.current) {
+          onShadowLoadingChangeRef.current?.(false);
+          return;
+        }
 
         // Add or update shadow overlay
         const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
@@ -590,55 +569,45 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         ];
 
         if (map.current.getSource('shadow-source')) {
-          // Update existing source
           const source = map.current.getSource('shadow-source') as maplibregl.ImageSource;
-          source.updateImage({
-            url: result.imageDataUrl,
-            coordinates,
-          });
+          source.updateImage({ url: result.imageDataUrl, coordinates });
         } else {
-          // Create new source and layer
           map.current.addSource('shadow-source', {
             type: 'image',
             url: result.imageDataUrl,
             coordinates,
           });
 
-          // Find the right layer to insert before (below runs but above terrain)
           const insertBefore = map.current.getLayer('ski-segments-sunny-glow')
             ? 'ski-segments-sunny-glow'
             : map.current.getLayer('terrain-hillshade')
               ? 'terrain-hillshade'
               : undefined;
 
-          map.current.addLayer(
-            {
-              id: 'shadow-overlay',
-              type: 'raster',
-              source: 'shadow-source',
-              paint: {
-                'raster-opacity': planningMode.shadowSettings.opacity,
-                'raster-fade-duration': 0,
-              },
+          map.current.addLayer({
+            id: 'shadow-overlay',
+            type: 'raster',
+            source: 'shadow-source',
+            paint: {
+              'raster-opacity': planningMode.shadowSettings.opacity,
+              'raster-fade-duration': 0,
             },
-            insertBefore
-          );
+          }, insertBefore);
         }
 
-        // Ensure shadow overlay is visible with correct opacity
         if (map.current.getLayer('shadow-overlay')) {
           map.current.setLayoutProperty('shadow-overlay', 'visibility', 'visible');
           map.current.setPaintProperty('shadow-overlay', 'raster-opacity', planningMode.shadowSettings.opacity);
         }
 
-        setIsShadowComputing(false);
         onShadowLoadingChangeRef.current?.(false);
-        console.log(`[PlanningMode] Shadow computed in ${result.computeTime.toFixed(0)}ms (${result.tileCount} tiles)`);
+        console.log('[WebGLShadow] Shadow overlay updated');
       })
       .catch((err) => {
-        console.error('[PlanningMode] Shadow computation failed:', err);
-        setIsShadowComputing(false);
-        onShadowLoadingChangeRef.current?.(false);
+        if (computationId === shadowComputationIdRef.current) {
+          console.error('[WebGLShadow] Shadow computation failed:', err);
+          onShadowLoadingChangeRef.current?.(false);
+        }
       });
   }, [skiArea, selectedTime, mapLoaded, planningMode?.enabled, planningMode?.shadowSettings?.enabled, planningMode?.shadowSettings?.opacity, mapBoundsKey]);
 
@@ -2092,7 +2061,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         liftsSource.setData(liftsGeoJSON);
       }
     }
-  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, runsWithStatus, liftsWithStatus, runsWithLiveStatus, liftsWithLiveStatus, mapLoaded, selectedTime]);
+  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, runsWithStatus, liftsWithStatus, runsWithLiveStatus, liftsWithLiveStatus, mapLoaded, selectedTime, planningMode?.enabled, planningMode?.filters, yesterdayOpenRuns]);
 
   // Update lifts when planning mode changes
   // In planning mode: filter by lift type, filter by yesterday's open, show all as open
@@ -2527,23 +2496,27 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const cache = getGeometryCache(area.id);
       let segments: GeoJSON.FeatureCollection;
 
+      // Use refs to get current planning mode values (callback has empty deps for performance)
+      const currentPlanningMode = planningModeRef.current;
+      const currentYesterdayOpenRuns = yesterdayOpenRunsRef.current;
+
       if (cache && cache.isComplete && cache.segments.size > 0) {
         // Use precomputed geometry - much faster, only calculates isShaded
         segments = generateShadedGeoJSON(cache, sunPos.azimuthDegrees, sunPos.altitudeDegrees, runStatusMap, runMinutesUntilCloseMap, {
-          planningMode: planningMode?.enabled ? {
+          planningMode: currentPlanningMode?.enabled ? {
             enabled: true,
-            filters: planningMode.filters,
+            filters: currentPlanningMode.filters,
           } : undefined,
-          yesterdayOpenRuns,
+          yesterdayOpenRuns: currentYesterdayOpenRuns,
         });
       } else {
         // Fallback to on-demand calculation (initial load or cache still processing)
         segments = createRunSegments(area, time, area.latitude, area.longitude, {
-          planningMode: planningMode?.enabled ? {
+          planningMode: currentPlanningMode?.enabled ? {
             enabled: true,
-            filters: planningMode.filters,
+            filters: currentPlanningMode.filters,
           } : undefined,
-          yesterdayOpenRuns,
+          yesterdayOpenRuns: currentYesterdayOpenRuns,
         });
       }
 
