@@ -7,17 +7,14 @@
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY || '';
 
-/**
- * Quality levels affect the DEM tile zoom level used
- * Higher zoom = more detail but more tiles to fetch
- */
-export type ShadowQuality = 'low' | 'medium' | 'high';
+// Fixed high quality zoom level - no user option
+const SHADOW_ZOOM = 14;
 
-const QUALITY_ZOOM: Record<ShadowQuality, number> = {
-  low: 10,
-  medium: 12,
-  high: 13,
-};
+// Number of buffer tiles to fetch around the visible area for ray marching
+const BUFFER_TILES = 2;
+
+// Maximum tiles to fetch (including buffer) - prevents excessive API usage
+const MAX_TILES = 64;
 
 /**
  * Result of shadow computation
@@ -77,6 +74,9 @@ function decodeElevation(r: number, g: number, b: number): number {
   return -10000 + (r * 256 * 256 + g * 256 + b) * 0.1;
 }
 
+// Tile cache to avoid re-fetching
+const tileCache = new Map<string, Float32Array>();
+
 /**
  * Fetch a terrain tile and return elevation data
  */
@@ -85,6 +85,14 @@ async function fetchTerrainTile(
   y: number,
   zoom: number
 ): Promise<Float32Array | null> {
+  const cacheKey = `${zoom}/${x}/${y}`;
+
+  // Check cache first
+  const cached = tileCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const url = `https://api.maptiler.com/tiles/terrain-rgb-v2/${zoom}/${x}/${y}.webp?key=${MAPTILER_KEY}`;
 
   try {
@@ -112,6 +120,15 @@ async function fetchTerrainTile(
       elevations[i] = decodeElevation(r, g, b);
     }
 
+    // Cache the result
+    tileCache.set(cacheKey, elevations);
+
+    // Limit cache size
+    if (tileCache.size > 100) {
+      const firstKey = tileCache.keys().next().value;
+      if (firstKey) tileCache.delete(firstKey);
+    }
+
     return elevations;
   } catch (error) {
     console.error(`[DEMShadow] Failed to fetch tile ${zoom}/${x}/${y}:`, error);
@@ -126,11 +143,10 @@ export async function computeTerrainShadows(
   bounds: LngLatBounds,
   sunAzimuth: number,
   sunAltitude: number,
-  quality: ShadowQuality = 'medium',
   onProgress?: (progress: number) => void
 ): Promise<ShadowComputeResult | null> {
   const startTime = performance.now();
-  const zoom = QUALITY_ZOOM[quality];
+  const zoom = SHADOW_ZOOM;
 
   // Don't compute shadows if sun is below horizon or very high
   if (sunAltitude <= 0) {
@@ -140,20 +156,28 @@ export async function computeTerrainShadows(
     return null; // Sun nearly overhead - minimal shadows
   }
 
-  // Calculate which tiles we need
-  const topLeft = lngLatToTile(bounds.west, bounds.north, zoom);
-  const bottomRight = lngLatToTile(bounds.east, bounds.south, zoom);
+  // Calculate which tiles we need for the visible area
+  const visibleTopLeft = lngLatToTile(bounds.west, bounds.north, zoom);
+  const visibleBottomRight = lngLatToTile(bounds.east, bounds.south, zoom);
+
+  // Add buffer tiles for ray marching (shadows can be cast from outside visible area)
+  const topLeft = {
+    x: visibleTopLeft.x - BUFFER_TILES,
+    y: visibleTopLeft.y - BUFFER_TILES,
+  };
+  const bottomRight = {
+    x: visibleBottomRight.x + BUFFER_TILES,
+    y: visibleBottomRight.y + BUFFER_TILES,
+  };
 
   const tilesX = bottomRight.x - topLeft.x + 1;
   const tilesY = bottomRight.y - topLeft.y + 1;
   const totalTiles = tilesX * tilesY;
 
-  // Limit tile count for performance
-  if (totalTiles > 25) {
-    console.warn(`[DEMShadow] Too many tiles (${totalTiles}), reducing quality`);
-    // Try with lower zoom
-    const lowerQuality = quality === 'high' ? 'medium' : 'low';
-    return computeTerrainShadows(bounds, sunAzimuth, sunAltitude, lowerQuality, onProgress);
+  // Limit tile count to prevent excessive API usage
+  if (totalTiles > MAX_TILES) {
+    console.warn(`[DEMShadow] Too many tiles (${totalTiles}), skipping shadow computation`);
+    return null;
   }
 
   // Fetch all tiles
@@ -185,7 +209,7 @@ export async function computeTerrainShadows(
             }
           }
           fetchedTiles++;
-          onProgress?.(fetchedTiles / totalTiles * 0.5); // First 50% is fetching
+          onProgress?.(fetchedTiles / totalTiles * 0.4); // First 40% is fetching
         })
       );
     }
@@ -193,28 +217,42 @@ export async function computeTerrainShadows(
 
   await Promise.all(fetchPromises);
 
-  // Calculate the actual bounds covered by our tiles
+  // Calculate the actual bounds covered by our tiles (including buffer)
   const actualTopLeft = tileToBounds(topLeft.x, topLeft.y, zoom);
   const actualBottomRight = tileToBounds(bottomRight.x + 1, bottomRight.y + 1, zoom);
-  const actualBounds: LngLatBounds = {
-    west: actualTopLeft.west,
-    north: actualTopLeft.north,
-    east: actualBottomRight.east,
-    south: actualBottomRight.south,
+
+  // Calculate the visible bounds (without buffer) for the output image
+  const outputTopLeft = tileToBounds(visibleTopLeft.x, visibleTopLeft.y, zoom);
+  const outputBottomRight = tileToBounds(visibleBottomRight.x + 1, visibleBottomRight.y + 1, zoom);
+  const outputBounds: LngLatBounds = {
+    west: outputTopLeft.west,
+    north: outputTopLeft.north,
+    east: outputBottomRight.east,
+    south: outputBottomRight.south,
   };
 
+  // Calculate output dimensions (just the visible tiles, no buffer)
+  const outputTilesX = visibleBottomRight.x - visibleTopLeft.x + 1;
+  const outputTilesY = visibleBottomRight.y - visibleTopLeft.y + 1;
+  const outputWidth = outputTilesX * tileSize;
+  const outputHeight = outputTilesY * tileSize;
+
+  // Offset of visible area within the full grid (in pixels)
+  const visibleOffsetX = BUFFER_TILES * tileSize;
+  const visibleOffsetY = BUFFER_TILES * tileSize;
+
   // Calculate meters per pixel (approximate at center latitude)
-  const centerLat = (actualBounds.north + actualBounds.south) / 2;
+  const centerLat = (actualTopLeft.north + actualBottomRight.south) / 2;
   const metersPerDegLat = 111320;
   const metersPerDegLng = 111320 * Math.cos((centerLat * Math.PI) / 180);
-  const degreesPerPixelX = (actualBounds.east - actualBounds.west) / totalWidth;
-  const degreesPerPixelY = (actualBounds.north - actualBounds.south) / totalHeight;
+  const degreesPerPixelX = (actualBottomRight.east - actualTopLeft.west) / totalWidth;
+  const degreesPerPixelY = (actualTopLeft.north - actualBottomRight.south) / totalHeight;
   const metersPerPixelX = degreesPerPixelX * metersPerDegLng;
   const metersPerPixelY = degreesPerPixelY * metersPerDegLat;
   const metersPerPixel = (metersPerPixelX + metersPerPixelY) / 2;
 
-  // Compute shadows using ray casting
-  const shadowMask = new Uint8Array(totalWidth * totalHeight);
+  // Compute shadows using ray casting - only for the visible area
+  const shadowMask = new Uint8Array(outputWidth * outputHeight);
 
   // Convert sun position to direction vector
   const sunAzimuthRad = (sunAzimuth * Math.PI) / 180;
@@ -225,18 +263,22 @@ export async function computeTerrainShadows(
   const sunDirY = -Math.cos(sunAzimuthRad); // Negative because Y increases downward in image
   const sunTanAlt = Math.tan(sunAltitudeRad);
 
-  // Ray march settings
-  const maxMarchDistance = 5000; // meters
-  const stepSize = metersPerPixel * 2; // Step 2 pixels at a time for speed
+  // Ray march settings - use finer steps to avoid stripes
+  const maxMarchDistance = 8000; // meters - longer distance for better shadow casting
+  const stepSize = metersPerPixel; // Step 1 pixel at a time for quality
 
-  for (let y = 0; y < totalHeight; y++) {
-    for (let x = 0; x < totalWidth; x++) {
+  for (let oy = 0; oy < outputHeight; oy++) {
+    for (let ox = 0; ox < outputWidth; ox++) {
+      // Convert output coordinates to full grid coordinates
+      const x = ox + visibleOffsetX;
+      const y = oy + visibleOffsetY;
+
       const idx = y * totalWidth + x;
       const baseElevation = elevationGrid[idx];
 
       // Skip if no elevation data
       if (baseElevation < -9000) {
-        shadowMask[idx] = 0;
+        shadowMask[oy * outputWidth + ox] = 0;
         continue;
       }
 
@@ -245,57 +287,87 @@ export async function computeTerrainShadows(
       let distance = stepSize;
 
       while (distance < maxMarchDistance) {
-        // Calculate position along ray
+        // Calculate position along ray (in full grid coordinates)
         const sampleX = x + (sunDirX * distance) / metersPerPixel;
         const sampleY = y + (sunDirY * distance) / metersPerPixel;
 
-        // Check bounds
+        // Check bounds (against full grid including buffer)
         if (sampleX < 0 || sampleX >= totalWidth || sampleY < 0 || sampleY >= totalHeight) {
           break;
         }
 
-        // Get elevation at sample point (bilinear interpolation)
+        // Get elevation at sample point using bilinear interpolation
         const sx = Math.floor(sampleX);
         const sy = Math.floor(sampleY);
-        const sampleIdx = sy * totalWidth + sx;
-        const terrainElevation = elevationGrid[sampleIdx];
+        const fx = sampleX - sx;
+        const fy = sampleY - sy;
+
+        // Bilinear interpolation for smoother results
+        const idx00 = sy * totalWidth + sx;
+        const idx10 = sy * totalWidth + Math.min(sx + 1, totalWidth - 1);
+        const idx01 = Math.min(sy + 1, totalHeight - 1) * totalWidth + sx;
+        const idx11 = Math.min(sy + 1, totalHeight - 1) * totalWidth + Math.min(sx + 1, totalWidth - 1);
+
+        const e00 = elevationGrid[idx00];
+        const e10 = elevationGrid[idx10];
+        const e01 = elevationGrid[idx01];
+        const e11 = elevationGrid[idx11];
+
+        const terrainElevation =
+          e00 * (1 - fx) * (1 - fy) +
+          e10 * fx * (1 - fy) +
+          e01 * (1 - fx) * fy +
+          e11 * fx * fy;
 
         // Calculate expected elevation along sun ray
         const expectedElevation = baseElevation + distance * sunTanAlt;
 
         // If terrain is higher than the ray, we're in shadow
-        if (terrainElevation > expectedElevation + 5) {
-          // +5m tolerance
+        if (terrainElevation > expectedElevation + 3) {
+          // +3m tolerance (reduced for more accuracy)
           inShadow = true;
           break;
         }
 
-        distance += stepSize;
+        // Adaptive step size - larger steps when far from terrain
+        const elevationDiff = expectedElevation - terrainElevation;
+        if (elevationDiff > 100) {
+          distance += stepSize * 3; // Faster steps when well above terrain
+        } else if (elevationDiff > 50) {
+          distance += stepSize * 2;
+        } else {
+          distance += stepSize;
+        }
       }
 
-      shadowMask[idx] = inShadow ? 255 : 0;
+      shadowMask[oy * outputWidth + ox] = inShadow ? 255 : 0;
     }
 
-    // Progress update (50-100% is computation)
-    if (y % 50 === 0) {
-      onProgress?.(0.5 + (y / totalHeight) * 0.5);
+    // Progress update (40-90% is computation)
+    if (oy % 32 === 0) {
+      onProgress?.(0.4 + (oy / outputHeight) * 0.5);
     }
   }
 
+  // Apply a light blur to smooth the shadow edges
+  const blurredMask = applyGaussianBlur(shadowMask, outputWidth, outputHeight);
+
   // Create shadow image
-  const canvas = new OffscreenCanvas(totalWidth, totalHeight);
+  const canvas = new OffscreenCanvas(outputWidth, outputHeight);
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
-  const imageData = ctx.createImageData(totalWidth, totalHeight);
-  for (let i = 0; i < shadowMask.length; i++) {
-    const alpha = shadowMask[i];
+  const imageData = ctx.createImageData(outputWidth, outputHeight);
+  for (let i = 0; i < blurredMask.length; i++) {
+    const alpha = blurredMask[i];
     imageData.data[i * 4] = 0; // R
     imageData.data[i * 4 + 1] = 0; // G
-    imageData.data[i * 4 + 2] = 30; // B (slight blue tint for shadows)
+    imageData.data[i * 4 + 2] = 40; // B (slight blue tint for shadows)
     imageData.data[i * 4 + 3] = alpha; // A
   }
   ctx.putImageData(imageData, 0, 0);
+
+  onProgress?.(0.95);
 
   // Convert to data URL
   const blob = await canvas.convertToBlob({ type: 'image/png' });
@@ -307,12 +379,45 @@ export async function computeTerrainShadows(
 
   const computeTime = performance.now() - startTime;
 
+  onProgress?.(1);
+
   return {
     imageDataUrl,
-    bounds: [actualBounds.west, actualBounds.south, actualBounds.east, actualBounds.north],
+    bounds: [outputBounds.west, outputBounds.south, outputBounds.east, outputBounds.north],
     computeTime,
     tileCount: totalTiles,
   };
+}
+
+/**
+ * Apply a simple box blur to smooth shadow edges
+ */
+function applyGaussianBlur(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const result = new Uint8Array(mask.length);
+  const radius = 2;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let count = 0;
+
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            sum += mask[ny * width + nx];
+            count++;
+          }
+        }
+      }
+
+      result[y * width + x] = Math.round(sum / count);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -326,19 +431,18 @@ const shadowCache = new Map<string, ShadowComputeResult>();
 function getCacheKey(
   bounds: LngLatBounds,
   sunAzimuth: number,
-  sunAltitude: number,
-  quality: ShadowQuality
+  sunAltitude: number
 ): string {
   // Round values to allow for cache hits with slight variations
-  const roundedAzimuth = Math.round(sunAzimuth / 5) * 5; // 5 degree increments
-  const roundedAltitude = Math.round(sunAltitude / 5) * 5;
+  const roundedAzimuth = Math.round(sunAzimuth / 3) * 3; // 3 degree increments
+  const roundedAltitude = Math.round(sunAltitude / 3) * 3;
   const roundedBounds = {
     west: Math.round(bounds.west * 100) / 100,
     south: Math.round(bounds.south * 100) / 100,
     east: Math.round(bounds.east * 100) / 100,
     north: Math.round(bounds.north * 100) / 100,
   };
-  return `${JSON.stringify(roundedBounds)}_${roundedAzimuth}_${roundedAltitude}_${quality}`;
+  return `${JSON.stringify(roundedBounds)}_${roundedAzimuth}_${roundedAltitude}`;
 }
 
 /**
@@ -348,10 +452,9 @@ export async function computeTerrainShadowsCached(
   bounds: LngLatBounds,
   sunAzimuth: number,
   sunAltitude: number,
-  quality: ShadowQuality = 'medium',
   onProgress?: (progress: number) => void
 ): Promise<ShadowComputeResult | null> {
-  const cacheKey = getCacheKey(bounds, sunAzimuth, sunAltitude, quality);
+  const cacheKey = getCacheKey(bounds, sunAzimuth, sunAltitude);
 
   // Check cache
   const cached = shadowCache.get(cacheKey);
@@ -360,14 +463,14 @@ export async function computeTerrainShadowsCached(
   }
 
   // Compute new result
-  const result = await computeTerrainShadows(bounds, sunAzimuth, sunAltitude, quality, onProgress);
+  const result = await computeTerrainShadows(bounds, sunAzimuth, sunAltitude, onProgress);
 
   // Cache result
   if (result) {
     shadowCache.set(cacheKey, result);
 
     // Limit cache size
-    if (shadowCache.size > 20) {
+    if (shadowCache.size > 30) {
       const firstKey = shadowCache.keys().next().value;
       if (firstKey) {
         shadowCache.delete(firstKey);

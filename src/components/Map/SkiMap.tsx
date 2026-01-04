@@ -495,7 +495,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     const sunPos = getSunPosition(selectedTime, skiArea.latitude, skiArea.longitude);
 
     // Create params key to check if we need to recompute
-    const paramsKey = `${skiArea.id}_${Math.round(sunPos.azimuthDegrees / 5) * 5}_${Math.round(sunPos.altitudeDegrees / 5) * 5}_${planningMode.shadowSettings.quality}`;
+    const paramsKey = `${skiArea.id}_${Math.round(sunPos.azimuthDegrees / 5) * 5}_${Math.round(sunPos.altitudeDegrees / 5) * 5}`;
 
     // Skip if params haven't changed significantly
     if (paramsKey === lastShadowParamsRef.current && shadowImageRef.current) {
@@ -528,7 +528,6 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       bounds,
       sunPos.azimuthDegrees,
       sunPos.altitudeDegrees,
-      planningMode.shadowSettings.quality,
       (progress) => setShadowProgress(progress)
     )
       .then((result) => {
@@ -598,7 +597,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         console.error('[PlanningMode] Shadow computation failed:', err);
         setIsShadowComputing(false);
       });
-  }, [skiArea, selectedTime, mapLoaded, planningMode?.enabled, planningMode?.shadowSettings?.enabled, planningMode?.shadowSettings?.quality, planningMode?.shadowSettings?.opacity]);
+  }, [skiArea, selectedTime, mapLoaded, planningMode?.enabled, planningMode?.shadowSettings?.enabled, planningMode?.shadowSettings?.opacity]);
 
   // Initialize layers when ski area changes
   useEffect(() => {
