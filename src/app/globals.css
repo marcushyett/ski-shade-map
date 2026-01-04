@@ -381,6 +381,40 @@ h5.ant-typography {
   z-index: 10;
 }
 
+/* Planning Mode Panel - Dark theme styling */
+.planning-mode-collapse .ant-collapse-header {
+  color: white !important;
+}
+
+.planning-mode-collapse .ant-collapse-expand-icon {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.planning-mode-collapse .ant-collapse-content {
+  background: transparent !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.planning-mode-collapse .ant-collapse-content-box {
+  padding: 8px 16px !important;
+}
+
+.planning-mode-collapse .ant-checkbox-wrapper {
+  color: white;
+}
+
+.planning-mode-collapse .ant-slider-rail {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.planning-mode-collapse .ant-slider-track {
+  background-color: #1890ff !important;
+}
+
+.planning-mode-collapse .ant-slider-handle::after {
+  box-shadow: 0 0 0 2px #1890ff !important;
+}
+
 /* ============================================================================
    Map Control Buttons - Unified styling for all map overlay buttons
    Use .map-control-btn class on any button that should match MapLibre controls

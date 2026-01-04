@@ -2,14 +2,13 @@
 
 import { memo, useCallback } from 'react';
 import { Typography, Checkbox, Slider, Switch, Alert, Spin, Collapse } from 'antd';
-import { DownOutlined, RightOutlined, LoadingOutlined } from '@ant-design/icons';
+import { LoadingOutlined } from '@ant-design/icons';
 import type { PlanningModeState, YesterdayStatusResponse } from '@/lib/planning-mode-types';
 import {
   ALL_DIFFICULTIES,
   DIFFICULTY_LABELS,
   LIFT_TYPES,
   LIFT_TYPE_LABELS,
-  type ShadowQuality,
 } from '@/lib/planning-mode-types';
 import type { RunDifficulty } from '@/lib/types';
 
@@ -23,24 +22,6 @@ interface PlanningModePanelProps {
   isLoadingYesterday: boolean;
   onClose: () => void;
 }
-
-const QUALITY_MARKS: Record<number, string> = {
-  0: 'Low',
-  50: 'Med',
-  100: 'High',
-};
-
-const QUALITY_VALUES: Record<number, ShadowQuality> = {
-  0: 'low',
-  50: 'medium',
-  100: 'high',
-};
-
-const QUALITY_TO_NUMBER: Record<ShadowQuality, number> = {
-  low: 0,
-  medium: 50,
-  high: 100,
-};
 
 /**
  * Panel for controlling Planning Mode settings.
@@ -107,15 +88,6 @@ function PlanningModePanelInner({
     [onFiltersChange]
   );
 
-  // Shadow quality change
-  const handleQualityChange = useCallback(
-    (value: number) => {
-      const quality = QUALITY_VALUES[value] || 'medium';
-      onShadowSettingsChange({ quality });
-    },
-    [onShadowSettingsChange]
-  );
-
   // Shadow opacity change
   const handleOpacityChange = useCallback(
     (value: number) => {
@@ -159,17 +131,18 @@ function PlanningModePanelInner({
         top: 50,
         left: 10,
         width: 280,
-        maxHeight: 'calc(100vh - 120px)',
+        maxHeight: 'calc(100vh - 180px)',
         overflow: 'auto',
-        background: 'white',
+        background: 'rgba(0, 0, 0, 0.85)',
         borderRadius: 8,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
         zIndex: 10,
+        color: 'white',
       }}
     >
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Title level={5} style={{ margin: 0, fontSize: 13 }}>
+          <Title level={5} style={{ margin: 0, fontSize: 13, color: 'white' }}>
             Planning Mode
           </Title>
           <button
@@ -179,7 +152,7 @@ function PlanningModePanelInner({
               border: 'none',
               cursor: 'pointer',
               fontSize: 18,
-              color: '#999',
+              color: 'rgba(255,255,255,0.6)',
               padding: 0,
               lineHeight: 1,
             }}
@@ -188,7 +161,7 @@ function PlanningModePanelInner({
             &times;
           </button>
         </div>
-        <Text type="secondary" style={{ fontSize: 10 }}>
+        <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
           Plan your ski day - all runs shown as open
         </Text>
       </div>
@@ -198,11 +171,12 @@ function PlanningModePanelInner({
         ghost
         expandIconPosition="start"
         style={{ fontSize: 11 }}
+        className="planning-mode-collapse"
       >
         {/* Run Difficulty Filter */}
         <Collapse.Panel
           key="runs"
-          header={<Text strong style={{ fontSize: 11 }}>Run Difficulty</Text>}
+          header={<span style={{ fontSize: 11, fontWeight: 600, color: 'white' }}>Run Difficulty</span>}
         >
           <div style={{ paddingBottom: 8 }}>
             <Checkbox
@@ -211,7 +185,7 @@ function PlanningModePanelInner({
               onChange={(e) => handleAllDifficultiesToggle(e.target.checked)}
               style={{ fontSize: 10 }}
             >
-              <Text style={{ fontSize: 10 }}>All difficulties</Text>
+              <span style={{ fontSize: 10, color: 'white' }}>All difficulties</span>
             </Checkbox>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 16 }}>
@@ -222,7 +196,7 @@ function PlanningModePanelInner({
                 onChange={(e) => handleDifficultyToggle(difficulty, e.target.checked)}
                 style={{ fontSize: 10, marginInlineStart: 0 }}
               >
-                <Text style={{ fontSize: 10 }}>{DIFFICULTY_LABELS[difficulty]}</Text>
+                <span style={{ fontSize: 10, color: 'white' }}>{DIFFICULTY_LABELS[difficulty]}</span>
               </Checkbox>
             ))}
           </div>
@@ -231,7 +205,7 @@ function PlanningModePanelInner({
         {/* Lift Type Filter */}
         <Collapse.Panel
           key="lifts"
-          header={<Text strong style={{ fontSize: 11 }}>Lift Type</Text>}
+          header={<span style={{ fontSize: 11, fontWeight: 600, color: 'white' }}>Lift Type</span>}
         >
           <div style={{ paddingBottom: 8 }}>
             <Checkbox
@@ -240,7 +214,7 @@ function PlanningModePanelInner({
               onChange={(e) => handleAllLiftTypesToggle(e.target.checked)}
               style={{ fontSize: 10 }}
             >
-              <Text style={{ fontSize: 10 }}>All lift types</Text>
+              <span style={{ fontSize: 10, color: 'white' }}>All lift types</span>
             </Checkbox>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 16 }}>
@@ -251,7 +225,7 @@ function PlanningModePanelInner({
                 onChange={(e) => handleLiftTypeToggle(liftType, e.target.checked)}
                 style={{ fontSize: 10, marginInlineStart: 0 }}
               >
-                <Text style={{ fontSize: 10 }}>{LIFT_TYPE_LABELS[liftType] || liftType}</Text>
+                <span style={{ fontSize: 10, color: 'white' }}>{LIFT_TYPE_LABELS[liftType] || liftType}</span>
               </Checkbox>
             ))}
           </div>
@@ -260,7 +234,7 @@ function PlanningModePanelInner({
         {/* Yesterday Filter */}
         <Collapse.Panel
           key="yesterday"
-          header={<Text strong style={{ fontSize: 11 }}>Historical Data</Text>}
+          header={<span style={{ fontSize: 11, fontWeight: 600, color: 'white' }}>Historical Data</span>}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <Switch
@@ -269,18 +243,18 @@ function PlanningModePanelInner({
               disabled={yesterdayFilterDisabled || isLoadingYesterday}
               onChange={handleOnlyOpenYesterdayToggle}
             />
-            <Text style={{ fontSize: 10 }}>Only show open yesterday</Text>
-            {isLoadingYesterday && <Spin indicator={<LoadingOutlined style={{ fontSize: 12 }} />} />}
+            <span style={{ fontSize: 10, color: 'white' }}>Only show open yesterday</span>
+            {isLoadingYesterday && <Spin indicator={<LoadingOutlined style={{ fontSize: 12, color: 'white' }} />} />}
           </div>
-          <Text type="secondary" style={{ fontSize: 9, display: 'block' }}>
+          <span style={{ fontSize: 9, display: 'block', color: 'rgba(255,255,255,0.6)' }}>
             {yesterdayFilterMessage}
-          </Text>
+          </span>
         </Collapse.Panel>
 
         {/* Shadow Settings */}
         <Collapse.Panel
           key="shadows"
-          header={<Text strong style={{ fontSize: 11 }}>Terrain Shadows</Text>}
+          header={<span style={{ fontSize: 11, fontWeight: 600, color: 'white' }}>Terrain Shadows</span>}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <Switch
@@ -288,42 +262,26 @@ function PlanningModePanelInner({
               checked={shadowSettings.enabled}
               onChange={handleShadowEnabledToggle}
             />
-            <Text style={{ fontSize: 10 }}>Show shadow overlay</Text>
+            <span style={{ fontSize: 10, color: 'white' }}>Show shadow overlay</span>
             {planningMode.shadowsLoading && (
-              <Spin indicator={<LoadingOutlined style={{ fontSize: 12 }} />} />
+              <Spin indicator={<LoadingOutlined style={{ fontSize: 12, color: 'white' }} />} />
             )}
           </div>
 
           {shadowSettings.enabled && (
-            <>
-              <div style={{ marginBottom: 12 }}>
-                <Text style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>Quality</Text>
-                <Slider
-                  min={0}
-                  max={100}
-                  step={50}
-                  marks={QUALITY_MARKS}
-                  value={QUALITY_TO_NUMBER[shadowSettings.quality]}
-                  onChange={handleQualityChange}
-                  tooltip={{ formatter: null }}
-                  style={{ margin: '0 8px' }}
-                />
-              </div>
-
-              <div>
-                <Text style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>
-                  Opacity: {Math.round(shadowSettings.opacity * 100)}%
-                </Text>
-                <Slider
-                  min={0}
-                  max={100}
-                  value={Math.round(shadowSettings.opacity * 100)}
-                  onChange={handleOpacityChange}
-                  tooltip={{ formatter: (value) => `${value}%` }}
-                  style={{ margin: '0 8px' }}
-                />
-              </div>
-            </>
+            <div>
+              <span style={{ fontSize: 10, display: 'block', marginBottom: 4, color: 'white' }}>
+                Opacity: {Math.round(shadowSettings.opacity * 100)}%
+              </span>
+              <Slider
+                min={0}
+                max={100}
+                value={Math.round(shadowSettings.opacity * 100)}
+                onChange={handleOpacityChange}
+                tooltip={{ formatter: (value) => `${value}%` }}
+                style={{ margin: '0 8px' }}
+              />
+            </div>
           )}
         </Collapse.Panel>
       </Collapse>

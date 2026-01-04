@@ -12,12 +12,15 @@ interface SupportedResort {
 
 /**
  * Get the resort ID for an OpenSkiMap ID
+ * Matches the pattern used in lift-status API and analytics-query
  */
 function getResortIdForOpenskimapId(openskimapId: string): string | null {
   const resorts = getSupportedResorts() as SupportedResort[];
   const resort = resorts.find((r) => {
     if (Array.isArray(r.openskimap_id)) {
-      return r.openskimap_id.map(String).includes(openskimapId);
+      // Convert all IDs to strings for comparison (handles number vs string)
+      const ids = r.openskimap_id.map((id) => String(id));
+      return ids.includes(openskimapId);
     }
     return String(r.openskimap_id) === openskimapId;
   });
@@ -101,11 +104,17 @@ export async function GET(request: NextRequest) {
     `;
 
     // Filter for assets that were open
+    // Handle various status formats from the database
     const openRuns: string[] = [];
     for (const record of runRecords) {
       const statusInfo = record.statusInfo as RunStatus;
-      const status = statusInfo.status?.toLowerCase();
-      if (status === 'open') {
+      // Handle both direct status and potential nested structures
+      const status = (statusInfo?.status || '').toString().toLowerCase();
+      // Also check openingStatus and operating flag as fallbacks
+      const openingStatus = (statusInfo?.openingStatus || '').toString().toLowerCase();
+      const isOperating = statusInfo?.operating === true;
+
+      if (status === 'open' || openingStatus === 'open' || (isOperating && status !== 'closed')) {
         openRuns.push(record.assetId);
       }
     }
@@ -113,8 +122,11 @@ export async function GET(request: NextRequest) {
     const openLifts: string[] = [];
     for (const record of liftRecords) {
       const statusInfo = record.statusInfo as LiftStatus;
-      const status = statusInfo.status?.toLowerCase();
-      if (status === 'open') {
+      const status = (statusInfo?.status || '').toString().toLowerCase();
+      const openingStatus = (statusInfo?.openingStatus || '').toString().toLowerCase();
+      const isOperating = statusInfo?.operating === true;
+
+      if (status === 'open' || openingStatus === 'open' || (isOperating && status !== 'closed')) {
         openLifts.push(record.assetId);
       }
     }

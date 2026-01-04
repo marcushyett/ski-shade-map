@@ -38,12 +38,6 @@ export const ALL_DIFFICULTIES: RunDifficulty[] = [
 ];
 
 /**
- * Shadow quality levels - affects DEM tile zoom level
- * low = zoom 10, medium = zoom 12, high = zoom 14
- */
-export type ShadowQuality = 'low' | 'medium' | 'high';
-
-/**
  * Filters available in planning mode
  */
 export interface PlanningModeFilters {
@@ -63,8 +57,6 @@ export interface ShadowSettings {
   enabled: boolean;
   /** Opacity of shadow overlay (0-1) */
   opacity: number;
-  /** Quality level affecting resolution */
-  quality: ShadowQuality;
 }
 
 /**
@@ -107,8 +99,7 @@ export const DEFAULT_PLANNING_MODE_STATE: PlanningModeState = {
   },
   shadowSettings: {
     enabled: true,
-    opacity: 0.5,
-    quality: 'medium',
+    opacity: 0.8, // 80% opacity by default
   },
   shadowsLoading: false,
 };

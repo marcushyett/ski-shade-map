@@ -2848,9 +2848,9 @@ export default function Home() {
           )}
         </div>
 
-        {/* Legend and action buttons */}
+        {/* Legend and action buttons - hide legend when planning mode is active */}
         <div className="legend-container hidden md:flex md:items-start md:gap-3">
-          <Legend />
+          {!planningMode.enabled && <Legend />}
           {skiAreaDetails && (
             <div className="flex gap-2">
               <CacheButton
