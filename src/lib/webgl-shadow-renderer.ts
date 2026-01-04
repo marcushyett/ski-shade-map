@@ -26,9 +26,10 @@ const FRAGMENT_SHADER = `
   uniform sampler2D u_elevation;
   uniform vec2 u_sunDir;        // Normalized direction toward sun (x, y in texture space)
   uniform float u_sunTanAlt;    // tan(sun altitude angle)
-  uniform vec2 u_texelSize;     // 1.0 / texture dimensions
+  uniform vec2 u_texelSize;     // 1.0 / texture dimensions (full grid including buffer)
   uniform float u_metersPerPixel;
-  uniform vec2 u_elevationRange; // min, max elevation for normalization
+  uniform vec2 u_textureOffset; // Offset into texture for visible area (accounts for buffer tiles)
+  uniform vec2 u_textureScale;  // Scale factor to map visible area to full texture
 
   varying vec2 v_texCoord;
 
@@ -38,8 +39,12 @@ const FRAGMENT_SHADER = `
   }
 
   void main() {
+    // Map output texture coords (0-1) to position in full elevation texture
+    // This accounts for the buffer tiles around the visible area
+    vec2 elevTexCoord = u_textureOffset + v_texCoord * u_textureScale;
+
     // Get base elevation at current pixel
-    vec4 baseColor = texture2D(u_elevation, v_texCoord);
+    vec4 baseColor = texture2D(u_elevation, elevTexCoord);
     float baseElevation = decodeElevation(baseColor);
 
     // Skip if no valid elevation data
@@ -53,7 +58,7 @@ const FRAGMENT_SHADER = `
     float maxSteps = 500.0;
     float maxDistance = 8000.0; // meters
 
-    vec2 pos = v_texCoord;
+    vec2 pos = elevTexCoord;
     float distance = 0.0;
     bool inShadow = false;
 
@@ -63,10 +68,10 @@ const FRAGMENT_SHADER = `
       distance += stepSize * u_metersPerPixel;
       if (distance >= maxDistance) break;
 
-      // Move along sun direction
+      // Move along sun direction in texture space
       pos += u_sunDir * u_texelSize * stepSize;
 
-      // Check bounds
+      // Check bounds (entire texture, including buffer for shadow casting)
       if (pos.x < 0.0 || pos.x > 1.0 || pos.y < 0.0 || pos.y > 1.0) {
         break;
       }
@@ -368,13 +373,25 @@ export class WebGLShadowRenderer {
     const sunDirY = -Math.cos(sunAzimuthRad); // Flip Y for texture coordinates
     const sunTanAlt = Math.tan((sunAltitude * Math.PI) / 180);
 
-    // Calculate meters per pixel
+    // Calculate meters per pixel based on the TILE resolution (not output resolution)
+    // This is important for correct shadow distance calculation
     const centerLat = (bounds.north + bounds.south) / 2;
     const metersPerDegLat = 111320;
     const metersPerDegLng = 111320 * Math.cos((centerLat * Math.PI) / 180);
-    const degreesPerPixelX = (bounds.east - bounds.west) / outputWidth;
-    const degreesPerPixelY = (bounds.north - bounds.south) / outputHeight;
-    const metersPerPixel = ((degreesPerPixelX * metersPerDegLng) + (degreesPerPixelY * metersPerDegLat)) / 2;
+
+    // Calculate the geographic extent of the full tile grid (including buffer)
+    const gridBoundsTopLeft = tileToBounds(startX, startY, zoom);
+    const gridBoundsBottomRight = tileToBounds(endX + 1, endY + 1, zoom);
+    const gridDegreesX = gridBoundsBottomRight.east - gridBoundsTopLeft.west;
+    const gridDegreesY = gridBoundsTopLeft.north - gridBoundsBottomRight.south;
+    const metersPerPixel = ((gridDegreesX / gridWidth) * metersPerDegLng + (gridDegreesY / gridHeight) * metersPerDegLat) / 2;
+
+    // Calculate texture offset and scale to map visible area to full grid
+    // The buffer tiles are at the edges, visible tiles are in the center
+    const textureOffsetX = (buffer * tileSize) / gridWidth;
+    const textureOffsetY = (buffer * tileSize) / gridHeight;
+    const textureScaleX = outputWidth / gridWidth;
+    const textureScaleY = outputHeight / gridHeight;
 
     // Set up shader uniforms
     gl.useProgram(program);
@@ -384,6 +401,8 @@ export class WebGLShadowRenderer {
     gl.uniform1f(gl.getUniformLocation(program, 'u_sunTanAlt'), sunTanAlt);
     gl.uniform2f(gl.getUniformLocation(program, 'u_texelSize'), 1.0 / gridWidth, 1.0 / gridHeight);
     gl.uniform1f(gl.getUniformLocation(program, 'u_metersPerPixel'), metersPerPixel);
+    gl.uniform2f(gl.getUniformLocation(program, 'u_textureOffset'), textureOffsetX, textureOffsetY);
+    gl.uniform2f(gl.getUniformLocation(program, 'u_textureScale'), textureScaleX, textureScaleY);
 
     // Enable blending for transparency
     gl.enable(gl.BLEND);

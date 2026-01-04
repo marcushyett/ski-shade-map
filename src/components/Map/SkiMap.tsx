@@ -692,7 +692,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, [selectedTime, skiArea, mapLoaded, planningMode?.enabled, planningMode?.filters, yesterdayOpenRuns]);
+  }, [selectedTime, skiArea, mapLoaded, planningMode?.enabled, planningMode?.filters?.difficulties, planningMode?.filters?.onlyOpenYesterday, yesterdayOpenRuns]);
 
   // Initialize all layers for a ski area
   const initializeLayers = useCallback((area: SkiAreaDetails, time: Date) => {
@@ -1375,7 +1375,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
     setupClickHandlers();
     layersInitialized.current = true;
-  }, [planningMode?.enabled, planningMode?.filters, yesterdayOpenRuns]);
+  }, [planningMode?.enabled, planningMode?.filters?.difficulties, planningMode?.filters?.onlyOpenYesterday, yesterdayOpenRuns]);
 
   // Handle highlighted feature with orange glow and popup
   useEffect(() => {
@@ -2061,7 +2061,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
         liftsSource.setData(liftsGeoJSON);
       }
     }
-  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, runsWithStatus, liftsWithStatus, runsWithLiveStatus, liftsWithLiveStatus, mapLoaded, selectedTime, planningMode?.enabled, planningMode?.filters, yesterdayOpenRuns]);
+  }, [skiArea?.id, skiArea?.runs.length, skiArea?.lifts.length, runsWithStatus, liftsWithStatus, runsWithLiveStatus, liftsWithLiveStatus, mapLoaded, selectedTime, planningMode?.enabled, planningMode?.filters?.difficulties, planningMode?.filters?.onlyOpenYesterday, yesterdayOpenRuns]);
 
   // Update lifts when planning mode changes
   // In planning mode: filter by lift type, filter by yesterday's open, show all as open
@@ -2127,7 +2127,87 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       }),
     };
     liftsSource.setData(liftsGeoJSON);
-  }, [skiArea, mapLoaded, planningMode?.enabled, planningMode?.filters, yesterdayOpenLifts]);
+  }, [skiArea, mapLoaded, planningMode?.enabled, planningMode?.filters?.liftTypes, planningMode?.filters?.onlyOpenYesterday, yesterdayOpenLifts]);
+
+  // Update runs/segments when planning mode changes
+  // In planning mode: filter by difficulty, filter by yesterday's open, show all as open
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !skiArea || !layersInitialized.current) return;
+
+    const segmentsSource = map.current.getSource('ski-segments') as maplibregl.GeoJSONSource | undefined;
+    if (!segmentsSource) return;
+
+    // Use createRunSegments with planning mode options
+    const segments = createRunSegments(skiArea, selectedTime, skiArea.latitude, skiArea.longitude, {
+      planningMode: planningMode?.enabled ? {
+        enabled: true,
+        filters: planningMode.filters,
+      } : undefined,
+      yesterdayOpenRuns,
+    });
+    segmentsSource.setData(segments);
+
+    // Also update polygon runs
+    const polygonSource = map.current.getSource('ski-runs-polygons') as maplibregl.GeoJSONSource | undefined;
+    if (polygonSource) {
+      const sunPos = getSunPosition(selectedTime, skiArea.latitude, skiArea.longitude);
+      const isNight = sunPos.altitudeDegrees <= 0;
+
+      const polygonRunsGeoJSON = {
+        type: 'FeatureCollection' as const,
+        features: skiArea.runs
+          .filter(run => {
+            if (run.geometry.type !== 'Polygon') return false;
+
+            // Apply planning mode filters
+            if (planningMode?.enabled) {
+              // Filter by difficulty
+              if (run.difficulty && !planningMode.filters.difficulties.includes(run.difficulty)) {
+                return false;
+              }
+              // Filter by yesterday's open
+              if (planningMode.filters.onlyOpenYesterday && yesterdayOpenRuns) {
+                const runNameLower = run.name?.toLowerCase();
+                if (!runNameLower || !yesterdayOpenRuns.has(runNameLower)) {
+                  return false;
+                }
+              }
+            }
+            return true;
+          })
+          .map(run => {
+            const ring = run.geometry.coordinates[0] as number[][];
+            let minLat = Infinity, maxLat = -Infinity;
+            for (const [, lat] of ring) {
+              minLat = Math.min(minLat, lat);
+              maxLat = Math.max(maxLat, lat);
+            }
+            const latRange = maxLat - minLat;
+            const slopeAspect = latRange > 0 ? 90 : 0;
+            const isShaded = isNight ? true : calculateSegmentShade(slopeAspect, sunPos.azimuthDegrees, sunPos.altitudeDegrees);
+
+            // In planning mode, always show as open
+            const isClosed = planningMode?.enabled ? false : (run.status === 'closed');
+
+            return {
+              type: 'Feature' as const,
+              properties: {
+                id: run.id,
+                name: run.name,
+                difficulty: run.difficulty,
+                status: planningMode?.enabled ? 'open' : run.status,
+                isClosed,
+                isShaded,
+                sunnyColor: getDifficultyColorSunny(run.difficulty),
+                shadedColor: getDifficultyColorShaded(run.difficulty),
+              },
+              geometry: run.geometry,
+            };
+          }),
+      };
+      polygonSource.setData(polygonRunsGeoJSON);
+    }
+  }, [skiArea, selectedTime, mapLoaded, planningMode?.enabled, planningMode?.filters?.difficulties, planningMode?.filters?.onlyOpenYesterday, yesterdayOpenRuns]);
 
   // Update POI source when pois change
   useEffect(() => {
