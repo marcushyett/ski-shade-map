@@ -369,20 +369,24 @@ export class WebGLShadowRenderer {
     gl.viewport(0, 0, outputWidth, outputHeight);
 
     // Create texture from tile canvas
+    // Flip Y so texture coords match geographic coords (Y=0 is south, Y=1 is north)
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tileCanvas);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // Reset to default
 
     onProgress?.(0.5);
 
     // Calculate sun direction in texture space
+    // With UNPACK_FLIP_Y, texture Y increases going north, so sun Y direction is now positive for north
     const sunAzimuthRad = (sunAzimuth * Math.PI) / 180;
     const sunDirX = Math.sin(sunAzimuthRad);
-    const sunDirY = -Math.cos(sunAzimuthRad); // Flip Y for texture coordinates
+    const sunDirY = Math.cos(sunAzimuthRad); // Positive Y = north in texture space
     const sunTanAlt = Math.tan((sunAltitude * Math.PI) / 180);
 
     // Calculate meters per pixel based on the TILE resolution (not output resolution)
@@ -399,9 +403,11 @@ export class WebGLShadowRenderer {
     const metersPerPixel = ((gridDegreesX / gridWidth) * metersPerDegLng + (gridDegreesY / gridHeight) * metersPerDegLat) / 2;
 
     // Calculate texture offset and scale to map exact input bounds to tile grid
-    // This ensures the output aligns perfectly with the map viewport
+    // With UNPACK_FLIP_Y: texture Y=0 is south (gridBoundsBottomRight.south), Y=1 is north
+    // v_texCoord.y=0 (screen bottom) should sample bounds.south
+    // v_texCoord.y=1 (screen top) should sample bounds.north
     const textureOffsetX = (bounds.west - gridBoundsTopLeft.west) / gridDegreesX;
-    const textureOffsetY = (gridBoundsTopLeft.north - bounds.north) / gridDegreesY;
+    const textureOffsetY = (bounds.south - gridBoundsBottomRight.south) / gridDegreesY;
     const textureScaleX = (bounds.east - bounds.west) / gridDegreesX;
     const textureScaleY = (bounds.north - bounds.south) / gridDegreesY;
 
