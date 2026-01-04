@@ -20,6 +20,7 @@ import type { LineString, Feature, FeatureCollection, Point } from 'geojson';
 import type { NavigationRoute } from '@/lib/navigation';
 import type { PlanningModeState } from '@/lib/planning-mode-types';
 import { computeWebGLShadows } from '@/lib/webgl-shadow-renderer';
+import { createFuzzyMatcher } from '@/lib/fuzzy-match';
 
 interface CloudCover {
   total: number;
@@ -532,8 +533,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       return;
     }
 
-    // Get map bounds for shadow computation
+    // Get map bounds and zoom for shadow computation
     const mapBounds = map.current.getBounds();
+    const mapZoom = map.current.getZoom();
     const bounds = {
       west: mapBounds.getWest(),
       south: mapBounds.getSouth(),
@@ -547,7 +549,7 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
     // Start shadow computation
     onShadowLoadingChangeRef.current?.(true);
 
-    computeWebGLShadows(bounds, sunPos.azimuthDegrees, sunPos.altitudeDegrees)
+    computeWebGLShadows(bounds, sunPos.azimuthDegrees, sunPos.altitudeDegrees, mapZoom)
       .then((result) => {
         // Check if this computation is still the most recent
         if (computationId !== shadowComputationIdRef.current) {
@@ -2075,6 +2077,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
     // Apply planning mode filters
     if (planningMode?.enabled) {
+      // Create fuzzy matcher once for efficiency
+      const fuzzyMatchYesterday = yesterdayOpenLifts ? createFuzzyMatcher(yesterdayOpenLifts) : null;
+
       liftsToShow = skiArea.lifts.filter(lift => {
         // Filter by lift type
         const liftType = lift.liftType || 'unknown';
@@ -2085,10 +2090,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
 
         if (!typeMatches) return false;
 
-        // Filter by "only open yesterday"
-        if (planningMode.filters.onlyOpenYesterday && yesterdayOpenLifts) {
-          const liftNameLower = lift.name?.toLowerCase();
-          if (!liftNameLower || !yesterdayOpenLifts.has(liftNameLower)) {
+        // Filter by "only open yesterday" using fuzzy matching
+        if (planningMode.filters.onlyOpenYesterday && fuzzyMatchYesterday) {
+          if (!lift.name || !fuzzyMatchYesterday(lift.name)) {
             return false;
           }
         }
@@ -2153,6 +2157,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
       const sunPos = getSunPosition(selectedTime, skiArea.latitude, skiArea.longitude);
       const isNight = sunPos.altitudeDegrees <= 0;
 
+      // Create fuzzy matcher once for efficiency
+      const fuzzyMatchYesterday = yesterdayOpenRuns ? createFuzzyMatcher(yesterdayOpenRuns) : null;
+
       const polygonRunsGeoJSON = {
         type: 'FeatureCollection' as const,
         features: skiArea.runs
@@ -2165,10 +2172,9 @@ export default function SkiMap({ skiArea, selectedTime, is3D, onMapReady, highli
               if (run.difficulty && !planningMode.filters.difficulties.includes(run.difficulty)) {
                 return false;
               }
-              // Filter by yesterday's open
-              if (planningMode.filters.onlyOpenYesterday && yesterdayOpenRuns) {
-                const runNameLower = run.name?.toLowerCase();
-                if (!runNameLower || !yesterdayOpenRuns.has(runNameLower)) {
+              // Filter by yesterday's open using fuzzy matching
+              if (planningMode.filters.onlyOpenYesterday && fuzzyMatchYesterday) {
+                if (!run.name || !fuzzyMatchYesterday(run.name)) {
                   return false;
                 }
               }
@@ -3037,6 +3043,9 @@ function createRunSegments(
   const planningMode = options?.planningMode;
   const yesterdayOpenRuns = options?.yesterdayOpenRuns;
 
+  // Create fuzzy matcher once for efficiency
+  const fuzzyMatchYesterday = yesterdayOpenRuns ? createFuzzyMatcher(yesterdayOpenRuns) : null;
+
   const features: Feature<LineString, SegmentProperties>[] = [];
 
   for (const run of area.runs) {
@@ -3053,10 +3062,9 @@ function createRunSegments(
         continue; // Skip this run
       }
 
-      // Filter by "only open yesterday"
-      if (planningMode.filters.onlyOpenYesterday && yesterdayOpenRuns) {
-        const runNameLower = run.name?.toLowerCase();
-        if (!runNameLower || !yesterdayOpenRuns.has(runNameLower)) {
+      // Filter by "only open yesterday" using fuzzy matching
+      if (planningMode.filters.onlyOpenYesterday && fuzzyMatchYesterday) {
+        if (!run.name || !fuzzyMatchYesterday(run.name)) {
           continue; // Skip runs not open yesterday
         }
       }

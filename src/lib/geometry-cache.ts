@@ -13,6 +13,7 @@
 import type { RunData, OperationStatus, RunDifficulty } from './types';
 import { getDifficultyColorSunny, getDifficultyColorShaded } from './shade-calculator';
 import type { PlanningModeFilters } from './planning-mode-types';
+import { createFuzzyMatcher } from './fuzzy-match';
 
 /**
  * Options for generating GeoJSON with planning mode support
@@ -301,6 +302,9 @@ export function generateShadedGeoJSON(
   const planningMode = options?.planningMode;
   const yesterdayOpenRuns = options?.yesterdayOpenRuns;
 
+  // Create fuzzy matcher once for efficiency
+  const fuzzyMatchYesterday = yesterdayOpenRuns ? createFuzzyMatcher(yesterdayOpenRuns) : null;
+
   cache.segments.forEach((segments) => {
     for (const segment of segments) {
       // Planning mode filtering
@@ -311,10 +315,9 @@ export function generateShadedGeoJSON(
           continue; // Skip this segment
         }
 
-        // Filter by "only open yesterday"
-        if (planningMode.filters.onlyOpenYesterday && yesterdayOpenRuns) {
-          const runNameLower = segment.runName?.toLowerCase();
-          if (!runNameLower || !yesterdayOpenRuns.has(runNameLower)) {
+        // Filter by "only open yesterday" using fuzzy matching
+        if (planningMode.filters.onlyOpenYesterday && fuzzyMatchYesterday) {
+          if (!segment.runName || !fuzzyMatchYesterday(segment.runName)) {
             continue; // Skip runs not open yesterday
           }
         }
