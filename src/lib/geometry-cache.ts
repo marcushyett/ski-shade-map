@@ -10,8 +10,23 @@
  * - Lazy computation doesn't slow down initial load
  */
 
-import type { RunData, OperationStatus } from './types';
+import type { RunData, OperationStatus, RunDifficulty } from './types';
 import { getDifficultyColorSunny, getDifficultyColorShaded } from './shade-calculator';
+import type { PlanningModeFilters } from './planning-mode-types';
+
+/**
+ * Options for generating GeoJSON with planning mode support
+ */
+export interface GenerateShadedGeoJSONOptions {
+  runStatusMap?: Map<string, OperationStatus>;
+  runMinutesUntilCloseMap?: Map<string, number | undefined>;
+  planningMode?: {
+    enabled: boolean;
+    filters: PlanningModeFilters;
+  };
+  /** Set of run names (lowercase) that were open yesterday */
+  yesterdayOpenRuns?: Set<string>;
+}
 
 export interface PrecomputedSegment {
   runId: string;
@@ -267,30 +282,68 @@ export function calculateSegmentShadeFromCache(
 /**
  * Generate GeoJSON from cached geometry with current shade state
  * Much faster than recreating all geometry data
+ *
+ * Supports planning mode which:
+ * - Shows all runs as open (no closed styling)
+ * - Filters by difficulty
+ * - Filters by yesterday's open status
  */
 export function generateShadedGeoJSON(
   cache: GeometryCache,
   sunAzimuth: number,
   sunAltitude: number,
   runStatusMap?: Map<string, OperationStatus>,
-  runMinutesUntilCloseMap?: Map<string, number | undefined>
+  runMinutesUntilCloseMap?: Map<string, number | undefined>,
+  options?: GenerateShadedGeoJSONOptions
 ): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
 
+  const planningMode = options?.planningMode;
+  const yesterdayOpenRuns = options?.yesterdayOpenRuns;
+
   cache.segments.forEach((segments) => {
     for (const segment of segments) {
+      // Planning mode filtering
+      if (planningMode?.enabled) {
+        // Filter by difficulty
+        const difficulty = segment.difficulty as RunDifficulty | null;
+        if (difficulty && !planningMode.filters.difficulties.includes(difficulty)) {
+          continue; // Skip this segment
+        }
+
+        // Filter by "only open yesterday"
+        if (planningMode.filters.onlyOpenYesterday && yesterdayOpenRuns) {
+          const runNameLower = segment.runName?.toLowerCase();
+          if (!runNameLower || !yesterdayOpenRuns.has(runNameLower)) {
+            continue; // Skip runs not open yesterday
+          }
+        }
+      }
+
       const isShaded = calculateSegmentShadeFromCache(
         segment.slopeAspect,
         sunAzimuth,
         sunAltitude
       );
 
-      // Use live status if available, fallback to cached status
-      const status = runStatusMap?.get(segment.runId) ?? segment.status;
-      const isClosed = status === 'closed';
+      // In planning mode, always show as open
+      // Otherwise, use live status if available, fallback to cached status
+      let status: OperationStatus | null;
+      let isClosed: boolean;
+
+      if (planningMode?.enabled) {
+        status = 'open';
+        isClosed = false;
+      } else {
+        status = runStatusMap?.get(segment.runId) ?? segment.status;
+        isClosed = status === 'closed';
+      }
 
       // Check if closing soon (within 60 minutes, but still open)
-      const minutesUntilClose = runMinutesUntilCloseMap?.get(segment.runId);
+      // In planning mode, nothing is closing soon
+      const minutesUntilClose = planningMode?.enabled
+        ? undefined
+        : runMinutesUntilCloseMap?.get(segment.runId);
       const closingSoon = typeof minutesUntilClose === 'number' && minutesUntilClose > 0 && minutesUntilClose <= 60;
 
       features.push({
