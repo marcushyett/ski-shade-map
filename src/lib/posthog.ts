@@ -123,7 +123,12 @@ export type AnalyticsEvent =
 
   // Resort messages
   | 'message_acknowledged'
-  | 'all_messages_acknowledged';
+  | 'all_messages_acknowledged'
+
+  // Planning mode
+  | 'planning_mode_enabled'
+  | 'planning_mode_disabled'
+  | 'planning_mode_button_clicked';
 
 export interface AnalyticsProperties {
   // Common properties

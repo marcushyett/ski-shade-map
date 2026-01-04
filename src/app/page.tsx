@@ -72,6 +72,11 @@ import { fetchResortStatus, hasLiveStatus, enrichLiftsWithStatus, enrichRunsWith
 import type { ResortStatus, EnrichedLiftData, EnrichedRunData } from '@/lib/lift-status-types';
 import MessageInbox from '@/components/MessageInbox';
 import { useResortMessages } from '@/hooks/useResortMessages';
+import { useIsDesktop } from '@/hooks/useIsDesktop';
+import { usePlanningMode } from '@/hooks/usePlanningMode';
+import PlanningModeButton from '@/components/Controls/PlanningModeButton';
+import PlanningModePanel from '@/components/Controls/PlanningModePanel';
+import type { YesterdayStatusResponse } from '@/lib/planning-mode-types';
 
 const { Text } = Typography;
 
@@ -617,6 +622,52 @@ export default function Home() {
     acknowledgeMessage,
     acknowledgeAllMessages,
   } = useResortMessages(skiAreaDetails?.id || null, resortStatus);
+
+  // Planning Mode (desktop only)
+  const isDesktop = useIsDesktop();
+  const {
+    planningMode,
+    togglePlanningMode,
+    setFilters: setPlanningModeFilters,
+    setShadowSettings: setPlanningModeShadowSettings,
+    disablePlanningMode,
+  } = usePlanningMode();
+  const [yesterdayStatus, setYesterdayStatus] = useState<YesterdayStatusResponse | null>(null);
+  const [isLoadingYesterday, setIsLoadingYesterday] = useState(false);
+
+  // Fetch yesterday's open status when planning mode is enabled and filter is on
+  useEffect(() => {
+    if (!planningMode.enabled || !skiAreaDetails?.osmId) {
+      return;
+    }
+
+    // Always fetch when planning mode is enabled (we need to know if data exists)
+    setIsLoadingYesterday(true);
+    fetch(`/api/planning/yesterday-status?osmId=${skiAreaDetails.osmId}`)
+      .then((res) => res.json())
+      .then((data: YesterdayStatusResponse) => {
+        setYesterdayStatus(data);
+      })
+      .catch((err) => {
+        console.error('[PlanningMode] Failed to fetch yesterday status:', err);
+        setYesterdayStatus({ hasData: false, date: '', openRuns: [], openLifts: [] });
+      })
+      .finally(() => {
+        setIsLoadingYesterday(false);
+      });
+  }, [planningMode.enabled, skiAreaDetails?.osmId]);
+
+  // Create a set of yesterday's open run names for filtering
+  const yesterdayOpenRunsSet = useMemo(() => {
+    if (!yesterdayStatus?.openRuns) return undefined;
+    return new Set(yesterdayStatus.openRuns.map((name) => name.toLowerCase()));
+  }, [yesterdayStatus?.openRuns]);
+
+  // Create a set of yesterday's open lift names for filtering
+  const yesterdayOpenLiftsSet = useMemo(() => {
+    if (!yesterdayStatus?.openLifts) return undefined;
+    return new Set(yesterdayStatus.openLifts.map((name) => name.toLowerCase()));
+  }, [yesterdayStatus?.openLifts]);
 
   // Register service worker and clear expired cache
   useEffect(() => {
@@ -2634,7 +2685,7 @@ export default function Home() {
           </div>
         )}
 
-        <SkiMap 
+        <SkiMap
           skiArea={enrichedSkiAreaDetails}
           selectedTime={selectedTime}
           is3D={is3D}
@@ -2668,6 +2719,9 @@ export default function Home() {
           navigationDestination={navigationDestinationMarker}
           navigationReturnPoint={navReturnPoint}
           pois={pois}
+          planningMode={isDesktop ? planningMode : undefined}
+          yesterdayOpenRuns={yesterdayOpenRunsSet}
+          yesterdayOpenLifts={yesterdayOpenLiftsSet}
         />
 
         {/* Run detail overlay - shows when a run is clicked */}
@@ -2700,7 +2754,7 @@ export default function Home() {
 
         {/* Search bar on map - desktop only */}
         {skiAreaDetails && (
-          <div className="map-search-container hidden md:block">
+          <div className="map-search-container hidden md:flex items-center gap-2">
             <SearchBar
               runs={skiAreaDetails.runs}
               lifts={skiAreaDetails.lifts}
@@ -2710,7 +2764,25 @@ export default function Home() {
               onSelectLift={handleSelectLift}
               onSelectPlace={handleSelectPlace}
             />
+            {isDesktop && (
+              <PlanningModeButton
+                enabled={planningMode.enabled}
+                onToggle={togglePlanningMode}
+              />
+            )}
           </div>
+        )}
+
+        {/* Planning Mode Panel - desktop only, shown when planning mode is enabled */}
+        {isDesktop && planningMode.enabled && skiAreaDetails && (
+          <PlanningModePanel
+            planningMode={planningMode}
+            onFiltersChange={setPlanningModeFilters}
+            onShadowSettingsChange={setPlanningModeShadowSettings}
+            yesterdayStatus={yesterdayStatus}
+            isLoadingYesterday={isLoadingYesterday}
+            onClose={disablePlanningMode}
+          />
         )}
 
 
