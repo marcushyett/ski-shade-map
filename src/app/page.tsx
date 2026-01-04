@@ -630,6 +630,7 @@ export default function Home() {
     togglePlanningMode,
     setFilters: setPlanningModeFilters,
     setShadowSettings: setPlanningModeShadowSettings,
+    setShadowsLoading,
     disablePlanningMode,
   } = usePlanningMode();
   const [yesterdayStatus, setYesterdayStatus] = useState<YesterdayStatusResponse | null>(null);
@@ -2722,6 +2723,7 @@ export default function Home() {
           planningMode={isDesktop ? planningMode : undefined}
           yesterdayOpenRuns={yesterdayOpenRunsSet}
           yesterdayOpenLifts={yesterdayOpenLiftsSet}
+          onShadowLoadingChange={setShadowsLoading}
         />
 
         {/* Run detail overlay - shows when a run is clicked */}
