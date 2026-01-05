@@ -6,7 +6,7 @@ import {
   PlayCircleOutlined,
   PauseOutlined,
   CloseOutlined,
-  CarOutlined,
+  TruckOutlined,
   WarningOutlined,
   EnvironmentOutlined,
   EyeOutlined,
@@ -240,7 +240,7 @@ const ActionButton = memo(function ActionButton({
   );
 });
 
-// Vehicle HUD component
+// Vehicle HUD component - compact version with JetBrains Mono
 const VehicleHUD = memo(function VehicleHUD({
   vehicle,
   score,
@@ -248,88 +248,80 @@ const VehicleHUD = memo(function VehicleHUD({
   vehicle: VehicleState;
   score: GameScore;
 }) {
-  const speedKmh = Math.abs(vehicle.speed * 3.6).toFixed(1);
-  const fuelPercent = Math.max(0, 100 - (score.fuelUsed / 200) * 100); // Assume 200L tank
+  const speedKmh = Math.abs(vehicle.speed * 3.6).toFixed(0);
+  const fuelPercent = Math.max(0, 100 - (score.fuelUsed / 200) * 100);
 
   return (
     <div
       style={{
         position: 'absolute',
-        top: 60,
-        left: 10,
-        padding: '10px 15px',
-        background: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 8,
+        top: 56,
+        left: 8,
+        padding: '6px 10px',
+        background: 'rgba(0, 0, 0, 0.75)',
+        borderRadius: 6,
         color: '#fff',
-        fontSize: 12,
-        minWidth: 150,
+        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+        fontSize: 10,
+        minWidth: 120,
+        lineHeight: 1.3,
       }}
     >
-      {/* Speedometer */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ color: '#888', marginBottom: 2 }}>SPEED</div>
-        <div style={{ fontSize: 24, fontWeight: 'bold', fontFamily: 'monospace' }}>
-          {speedKmh} <span style={{ fontSize: 12, color: '#888' }}>km/h</span>
+      {/* Speed + Fuel row */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 4 }}>
+        <div>
+          <span style={{ color: '#666', fontSize: 8 }}>SPD </span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{speedKmh}</span>
+          <span style={{ color: '#666', fontSize: 8 }}> km/h</span>
         </div>
-      </div>
-
-      {/* Fuel gauge */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ color: '#888', marginBottom: 2 }}>FUEL</div>
-        <Progress
-          percent={fuelPercent}
-          size="small"
-          strokeColor={fuelPercent < 20 ? '#ff4d4f' : '#52c41a'}
-          showInfo={false}
-        />
+        <div>
+          <span style={{ color: '#666', fontSize: 8 }}>FUEL </span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: fuelPercent < 20 ? '#ff4d4f' : '#52c41a' }}>
+            {fuelPercent.toFixed(0)}%
+          </span>
+        </div>
       </div>
 
       {/* Blade status */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ color: '#888', marginBottom: 2 }}>BLADE</div>
-        <div style={{
-          color: vehicle.blade.lowered ? '#ffaa00' : '#666',
-          fontWeight: vehicle.blade.lowered ? 'bold' : 'normal',
-        }}>
-          {vehicle.blade.lowered ? 'LOWERED - GROOMING' : 'RAISED'}
-        </div>
+      <div style={{
+        padding: '2px 4px',
+        marginBottom: 4,
+        borderRadius: 3,
+        background: vehicle.blade.lowered ? 'rgba(255, 170, 0, 0.3)' : 'transparent',
+        border: `1px solid ${vehicle.blade.lowered ? '#ffaa00' : '#444'}`,
+        color: vehicle.blade.lowered ? '#ffaa00' : '#666',
+        fontSize: 9,
+        textAlign: 'center',
+      }}>
+        {vehicle.blade.lowered ? '▼ GROOMING' : '▲ RAISED'}
       </div>
 
-      {/* Lights */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <div style={{
-          padding: '2px 6px',
-          borderRadius: 4,
-          background: vehicle.lights.headlights ? '#ffff00' : '#333',
-          color: vehicle.lights.headlights ? '#000' : '#666',
-          fontSize: 10,
-        }}>
-          HEAD
-        </div>
-        <div style={{
-          padding: '2px 6px',
-          borderRadius: 4,
-          background: vehicle.lights.workLights ? '#ffffaa' : '#333',
-          color: vehicle.lights.workLights ? '#000' : '#666',
-          fontSize: 10,
-        }}>
-          WORK
-        </div>
-        <div style={{
-          padding: '2px 6px',
-          borderRadius: 4,
-          background: vehicle.lights.beacon ? '#ffaa00' : '#333',
-          color: vehicle.lights.beacon ? '#000' : '#666',
-          fontSize: 10,
-        }}>
-          BEACON
-        </div>
+      {/* Lights row */}
+      <div style={{ display: 'flex', gap: 3, fontSize: 8 }}>
+        <span style={{
+          padding: '1px 4px',
+          borderRadius: 2,
+          background: vehicle.lights.headlights ? '#ffff00' : '#222',
+          color: vehicle.lights.headlights ? '#000' : '#555',
+        }}>H</span>
+        <span style={{
+          padding: '1px 4px',
+          borderRadius: 2,
+          background: vehicle.lights.workLights ? '#ffffaa' : '#222',
+          color: vehicle.lights.workLights ? '#000' : '#555',
+        }}>W</span>
+        <span style={{
+          padding: '1px 4px',
+          borderRadius: 2,
+          background: vehicle.lights.beacon ? '#ffaa00' : '#222',
+          color: vehicle.lights.beacon ? '#000' : '#555',
+        }}>B</span>
       </div>
     </div>
   );
 });
 
-// Score panel component
+// Score panel component - compact version with JetBrains Mono
 const ScorePanel = memo(function ScorePanel({
   score,
   runStates,
@@ -337,84 +329,67 @@ const ScorePanel = memo(function ScorePanel({
   score: GameScore;
   runStates: Map<string, RunGroomingState>;
 }) {
-  // Get top runs by progress
   const sortedRuns = Array.from(runStates.values())
     .filter(r => r.groomingProgress > 0)
     .sort((a, b) => b.groomingProgress - a.groomingProgress)
-    .slice(0, 5);
+    .slice(0, 3);
 
   return (
     <div
       style={{
         position: 'absolute',
-        top: 60,
-        right: 10,
-        padding: '10px 15px',
-        background: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 8,
+        top: 56,
+        right: 8,
+        padding: '6px 10px',
+        background: 'rgba(0, 0, 0, 0.75)',
+        borderRadius: 6,
         color: '#fff',
-        fontSize: 12,
-        minWidth: 180,
+        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+        fontSize: 9,
+        minWidth: 100,
+        lineHeight: 1.3,
       }}
     >
       {/* Score */}
-      <div style={{ marginBottom: 15 }}>
-        <div style={{ color: '#888', marginBottom: 2 }}>SCORE</div>
-        <div style={{ fontSize: 28, fontWeight: 'bold', color: '#ffaa00' }}>
+      <div style={{ textAlign: 'center', marginBottom: 4, borderBottom: '1px solid #333', paddingBottom: 4 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: '#ffaa00' }}>
           {score.totalPoints.toLocaleString()}
         </div>
+        <div style={{ color: '#666', fontSize: 8 }}>PTS</div>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 15 }}>
-        <div>
-          <div style={{ color: '#888', fontSize: 10 }}>RUNS</div>
-          <div style={{ fontSize: 16, fontWeight: 'bold' }}>{score.runsGroomed}</div>
-        </div>
-        <div>
-          <div style={{ color: '#888', fontSize: 10 }}>DISTANCE</div>
-          <div style={{ fontSize: 16, fontWeight: 'bold' }}>
-            {(score.totalDistance / 1000).toFixed(1)}km
-          </div>
-        </div>
-        <div>
-          <div style={{ color: '#888', fontSize: 10 }}>TIME</div>
-          <div style={{ fontSize: 16, fontWeight: 'bold' }}>
-            {Math.floor(score.timeElapsed / 60)}:{String(Math.floor(score.timeElapsed % 60)).padStart(2, '0')}
-          </div>
-        </div>
-        <div>
-          <div style={{ color: '#888', fontSize: 10 }}>FUEL</div>
-          <div style={{ fontSize: 16, fontWeight: 'bold' }}>
-            {score.fuelUsed.toFixed(0)}L
-          </div>
-        </div>
+      {/* Compact stats grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 6px', marginBottom: sortedRuns.length > 0 ? 4 : 0 }}>
+        <div><span style={{ color: '#666' }}>RUN </span><span style={{ fontWeight: 600 }}>{score.runsGroomed}</span></div>
+        <div><span style={{ color: '#666' }}>DST </span><span style={{ fontWeight: 600 }}>{(score.totalDistance / 1000).toFixed(1)}k</span></div>
+        <div><span style={{ color: '#666' }}>TIM </span><span style={{ fontWeight: 600 }}>{Math.floor(score.timeElapsed / 60)}:{String(Math.floor(score.timeElapsed % 60)).padStart(2, '0')}</span></div>
+        <div><span style={{ color: '#666' }}>FUL </span><span style={{ fontWeight: 600 }}>{score.fuelUsed.toFixed(0)}L</span></div>
       </div>
 
-      {/* Run progress */}
+      {/* Run progress - compact */}
       {sortedRuns.length > 0 && (
-        <div>
-          <div style={{ color: '#888', marginBottom: 6, fontSize: 10 }}>GROOMING PROGRESS</div>
+        <div style={{ borderTop: '1px solid #333', paddingTop: 4 }}>
           {sortedRuns.map((run) => (
-            <div key={run.runId} style={{ marginBottom: 4 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+            <div key={run.runId} style={{ marginBottom: 2 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8 }}>
                 <span style={{
                   color: run.difficulty ? DIFFICULTY_COLORS[run.difficulty] : '#888',
-                  maxWidth: 100,
+                  maxWidth: 60,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}>
-                  {run.runName || 'Unknown'}
+                  {run.runName || '?'}
                 </span>
-                <span>{Math.round(run.groomingProgress * 100)}%</span>
+                <span style={{ color: '#888' }}>{Math.round(run.groomingProgress * 100)}%</span>
               </div>
-              <Progress
-                percent={run.groomingProgress * 100}
-                size="small"
-                strokeColor={run.difficulty ? DIFFICULTY_COLORS[run.difficulty] : '#888'}
-                showInfo={false}
-              />
+              <div style={{ height: 2, background: '#333', borderRadius: 1, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${run.groomingProgress * 100}%`,
+                  background: run.difficulty ? DIFFICULTY_COLORS[run.difficulty] : '#888',
+                }} />
+              </div>
             </div>
           ))}
         </div>
@@ -423,7 +398,7 @@ const ScorePanel = memo(function ScorePanel({
   );
 });
 
-// Control instructions
+// Control instructions - compact with JetBrains Mono
 const ControlInstructions = memo(function ControlInstructions({ isMobile }: { isMobile: boolean }) {
   if (isMobile) return null;
 
@@ -431,23 +406,25 @@ const ControlInstructions = memo(function ControlInstructions({ isMobile }: { is
     <div
       style={{
         position: 'absolute',
-        bottom: 10,
+        bottom: 8,
         left: '50%',
         transform: 'translateX(-50%)',
-        padding: '8px 16px',
+        padding: '4px 12px',
         background: 'rgba(0, 0, 0, 0.6)',
-        borderRadius: 8,
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontSize: 11,
+        borderRadius: 4,
+        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontSize: 9,
         display: 'flex',
-        gap: 20,
+        gap: 12,
       }}
     >
-      <span><b>W/S</b> or <b>Up/Down</b> - Drive</span>
-      <span><b>A/D</b> or <b>Left/Right</b> - Steer</span>
-      <span><b>Space</b> - Lower/Raise Blade</span>
-      <span><b>M</b> - Toggle Map</span>
-      <span><b>ESC</b> - Pause</span>
+      <span><b>W/S</b> Drive</span>
+      <span><b>A/D</b> Steer</span>
+      <span><b>Space</b> Blade</span>
+      <span><b>M</b> Map</span>
+      <span><b>O</b> Overlay</span>
+      <span><b>ESC</b> Pause</span>
     </div>
   );
 });
@@ -916,7 +893,7 @@ export default function PisteBasherGame({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <CarOutlined style={{ fontSize: 20, color: '#ff4444' }} />
+            <TruckOutlined style={{ fontSize: 20, color: '#ff4444' }} />
             <span style={{ color: '#fff', fontWeight: 'bold' }}>
               PISTE BASHER
             </span>
@@ -978,7 +955,7 @@ export default function PisteBasherGame({
               zIndex: 50,
             }}
           >
-            <CarOutlined style={{ fontSize: 80, color: '#ff4444', marginBottom: 20 }} />
+            <TruckOutlined style={{ fontSize: 80, color: '#ff4444', marginBottom: 20 }} />
             <h1 style={{ color: '#fff', fontSize: 36, margin: 0, fontWeight: 'bold' }}>
               PISTE BASHER
             </h1>
