@@ -4,6 +4,7 @@ import type {
   GameRun,
   GameLift,
   GameBuilding,
+  GameTree,
   VehicleState,
   VehiclePhysics,
   ControlInput,
@@ -42,6 +43,11 @@ export class PisteBasherEngine {
   private groomingTrailMeshes: Map<string, THREE.Mesh> = new Map();
   private buildingMeshes: THREE.Group[] = [];
   private liftMeshes: THREE.Group[] = [];
+  private treeMeshes: THREE.Group[] = [];
+  private pisteOverlayMesh: THREE.Mesh | null = null;
+  private corduroyTrailMesh: THREE.Mesh | null = null;
+  private corduroyTrailPoints: Array<{ x: number; y: number; z: number; rotation: number }> = [];
+  private snowPileParticles: THREE.Points | null = null;
 
   // Lights
   private moonLight: THREE.DirectionalLight | null = null;
@@ -277,23 +283,35 @@ export class PisteBasherEngine {
       this.createBuildingMesh(building);
     }
 
+    // Create trees
+    for (const tree of world.trees) {
+      this.createTreeMesh(tree);
+    }
+
+    // Create piste overlay (initially hidden)
+    this.createPisteOverlay();
+
     // Create vehicle
     this.createVehicle();
 
     // Create snow particles
     this.createSnowParticles();
 
-    // Position vehicle at first run start
+    // Create grooming effects
+    this.createCorduroyTrail();
+    this.createSnowPileParticles();
+
+    // Find best starting position - prefer wide, easy runs at high elevation
     if (world.runs.length > 0) {
-      const firstRun = world.runs[0];
-      const startPoint = firstRun.path[0];
+      const startRun = this.findBestStartingRun(world.runs);
+      const startPoint = startRun.path[0];
       this.vehicle.position = { ...startPoint };
       this.vehicle.position.y += 1; // Above ground
 
       // Face down the run
-      if (firstRun.path.length > 1) {
-        const dx = firstRun.path[1].x - firstRun.path[0].x;
-        const dz = firstRun.path[1].z - firstRun.path[0].z;
+      if (startRun.path.length > 1) {
+        const dx = startRun.path[1].x - startRun.path[0].x;
+        const dz = startRun.path[1].z - startRun.path[0].z;
         this.vehicle.rotation.y = Math.atan2(dx, dz);
       }
     }
@@ -331,6 +349,16 @@ export class PisteBasherEngine {
     }
     this.liftMeshes = [];
 
+    for (const group of this.treeMeshes) {
+      this.scene.remove(group);
+    }
+    this.treeMeshes = [];
+
+    if (this.pisteOverlayMesh) {
+      this.scene.remove(this.pisteOverlayMesh);
+      this.pisteOverlayMesh = null;
+    }
+
     if (this.vehicleMesh) {
       this.scene.remove(this.vehicleMesh);
       this.vehicleMesh = null;
@@ -339,6 +367,21 @@ export class PisteBasherEngine {
     if (this.snowParticles) {
       this.scene.remove(this.snowParticles);
       this.snowParticles = null;
+    }
+
+    if (this.corduroyTrailMesh) {
+      this.scene.remove(this.corduroyTrailMesh);
+      this.corduroyTrailMesh.geometry.dispose();
+      (this.corduroyTrailMesh.material as THREE.Material).dispose();
+      this.corduroyTrailMesh = null;
+    }
+    this.corduroyTrailPoints = [];
+
+    if (this.snowPileParticles) {
+      this.scene.remove(this.snowPileParticles);
+      this.snowPileParticles.geometry.dispose();
+      (this.snowPileParticles.material as THREE.Material).dispose();
+      this.snowPileParticles = null;
     }
   }
 
@@ -581,6 +624,165 @@ export class PisteBasherEngine {
   }
 
   /**
+   * Create a tree mesh
+   */
+  private createTreeMesh(tree: GameTree): void {
+    const group = new THREE.Group();
+
+    // Trunk
+    const trunkHeight = tree.height * 0.25;
+    const trunkRadius = tree.radius * 0.15;
+    const trunkGeometry = new THREE.CylinderGeometry(
+      trunkRadius * 0.6,
+      trunkRadius,
+      trunkHeight,
+      8
+    );
+    const trunkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4a3728,
+      roughness: 0.9,
+      metalness: 0.0,
+    });
+    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+    trunk.position.y = trunkHeight / 2;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    // Foliage - cone shape for alpine trees
+    const foliageHeight = tree.height * 0.8;
+    const foliageRadius = tree.radius;
+
+    // Create multiple layers of cones for more realistic look
+    const numLayers = 3;
+    for (let i = 0; i < numLayers; i++) {
+      const layerHeight = foliageHeight / numLayers * 1.2;
+      const layerRadius = foliageRadius * (1 - i * 0.15);
+      const layerY = trunkHeight + (i * foliageHeight / numLayers * 0.7);
+
+      const coneGeometry = new THREE.ConeGeometry(layerRadius, layerHeight, 8);
+      const coneMaterial = new THREE.MeshStandardMaterial({
+        color: tree.type === 'pine' ? 0x1a3d1a :
+               tree.type === 'fir' ? 0x1a4d2a :
+               0x1a3d2a, // spruce
+        roughness: 0.9,
+        metalness: 0.0,
+      });
+      const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+      cone.position.y = layerY + layerHeight / 2;
+      cone.castShadow = true;
+      group.add(cone);
+    }
+
+    // Add a tiny bit of snow on the tree (white patches on top)
+    const snowCapGeometry = new THREE.ConeGeometry(foliageRadius * 0.3, foliageHeight * 0.1, 6);
+    const snowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.8,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const snowCap = new THREE.Mesh(snowCapGeometry, snowMaterial);
+    snowCap.position.y = trunkHeight + foliageHeight * 0.95;
+    group.add(snowCap);
+
+    group.position.set(tree.position.x, tree.position.y, tree.position.z);
+
+    this.scene.add(group);
+    this.treeMeshes.push(group);
+  }
+
+  /**
+   * Create piste overlay that shows runs on the terrain
+   */
+  private createPisteOverlay(): void {
+    if (!this.world) return;
+
+    // Create a large plane above the terrain that shows the piste map
+    const bounds = this.world.bounds;
+    const width = bounds.maxX - bounds.minX;
+    const depth = bounds.maxZ - bounds.minZ;
+
+    // Create geometry for the overlay
+    const geometry = new THREE.PlaneGeometry(width, depth, 1, 1);
+
+    // Create a canvas to draw the piste map
+    const canvas = document.createElement('canvas');
+    const canvasSize = 1024;
+    canvas.width = canvasSize;
+    canvas.height = canvasSize;
+    const ctx = canvas.getContext('2d')!;
+
+    // Clear with transparent background
+    ctx.clearRect(0, 0, canvasSize, canvasSize);
+
+    // Draw runs on the canvas
+    for (const run of this.world.runs) {
+      if (run.path.length < 2) continue;
+
+      ctx.beginPath();
+      ctx.strokeStyle = run.difficulty ? COLORS[run.difficulty] : '#888888';
+      ctx.lineWidth = Math.max(2, (run.averageWidth / width) * canvasSize * 0.5);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = 0.6;
+
+      const firstPoint = run.path[0];
+      const x0 = ((firstPoint.x - bounds.minX) / width) * canvasSize;
+      const y0 = ((firstPoint.z - bounds.minZ) / depth) * canvasSize;
+      ctx.moveTo(x0, y0);
+
+      for (let i = 1; i < run.path.length; i++) {
+        const point = run.path[i];
+        const x = ((point.x - bounds.minX) / width) * canvasSize;
+        const y = ((point.z - bounds.minZ) / depth) * canvasSize;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    // Create material with transparency
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+
+    this.pisteOverlayMesh = new THREE.Mesh(geometry, material);
+    this.pisteOverlayMesh.rotation.x = -Math.PI / 2;
+    this.pisteOverlayMesh.position.set(
+      (bounds.minX + bounds.maxX) / 2,
+      bounds.maxY + 5, // Slightly above highest point
+      (bounds.minZ + bounds.maxZ) / 2
+    );
+    this.pisteOverlayMesh.visible = false; // Hidden by default
+
+    this.scene.add(this.pisteOverlayMesh);
+  }
+
+  /**
+   * Toggle the piste overlay visibility
+   */
+  togglePisteOverlay(): void {
+    if (this.pisteOverlayMesh) {
+      this.pisteOverlayMesh.visible = !this.pisteOverlayMesh.visible;
+    }
+  }
+
+  /**
+   * Get piste overlay visibility
+   */
+  isPisteOverlayVisible(): boolean {
+    return this.pisteOverlayMesh?.visible ?? false;
+  }
+
+  /**
    * Create the piste basher vehicle
    */
   private createVehicle(): void {
@@ -739,6 +941,315 @@ export class PisteBasherEngine {
   }
 
   /**
+   * Create the corduroy trail mesh for groomed snow effect
+   */
+  private createCorduroyTrail(): void {
+    // Create a canvas texture for corduroy pattern
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+
+    // Draw corduroy lines pattern
+    ctx.fillStyle = '#e8eef8';
+    ctx.fillRect(0, 0, 128, 128);
+
+    ctx.strokeStyle = '#d0d8e8';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 128; i += 4) {
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(128, i);
+      ctx.stroke();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 10);
+
+    // Create initial empty geometry
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(6000 * 3); // Max 2000 quads * 3 verts * 3 coords
+    const uvs = new Float32Array(6000 * 2);
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setDrawRange(0, 0);
+
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+
+    this.corduroyTrailMesh = new THREE.Mesh(geometry, material);
+    this.corduroyTrailMesh.renderOrder = 1;
+    this.scene.add(this.corduroyTrailMesh);
+  }
+
+  /**
+   * Create snow pile particles for when blade is grooming
+   */
+  private createSnowPileParticles(): void {
+    const particleCount = 200;
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const velocities = new Float32Array(particleCount * 3);
+    const lifetimes = new Float32Array(particleCount);
+
+    for (let i = 0; i < particleCount; i++) {
+      positions[i * 3] = 0;
+      positions[i * 3 + 1] = -100; // Start hidden below ground
+      positions[i * 3 + 2] = 0;
+      velocities[i * 3] = 0;
+      velocities[i * 3 + 1] = 0;
+      velocities[i * 3 + 2] = 0;
+      lifetimes[i] = 0;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+    geometry.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
+
+    const material = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.8,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+
+    this.snowPileParticles = new THREE.Points(geometry, material);
+    this.scene.add(this.snowPileParticles);
+  }
+
+  /**
+   * Update corduroy trail when grooming
+   */
+  private updateCorduroyTrail(): void {
+    if (!this.corduroyTrailMesh || !this.vehicle.blade.lowered) return;
+
+    // Add new point at vehicle rear position
+    const bladeWidth = this.physics.bladeWidth;
+    const rearOffset = -5; // Behind the vehicle
+
+    // Calculate rear position in world space
+    const forward = new THREE.Vector3(0, 0, 1);
+    forward.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.vehicle.rotation.y);
+
+    const newPoint = {
+      x: this.vehicle.position.x + forward.x * rearOffset,
+      y: this.vehicle.position.y - 0.5,
+      z: this.vehicle.position.z + forward.z * rearOffset,
+      rotation: this.vehicle.rotation.y,
+    };
+
+    // Only add if moved enough from last point
+    const lastPoint = this.corduroyTrailPoints[this.corduroyTrailPoints.length - 1];
+    if (lastPoint) {
+      const dist = Math.sqrt(
+        (newPoint.x - lastPoint.x) ** 2 +
+        (newPoint.z - lastPoint.z) ** 2
+      );
+      if (dist < 1) return; // Need at least 1m movement
+    }
+
+    this.corduroyTrailPoints.push(newPoint);
+
+    // Limit trail length
+    if (this.corduroyTrailPoints.length > 500) {
+      this.corduroyTrailPoints.shift();
+    }
+
+    // Rebuild trail mesh
+    if (this.corduroyTrailPoints.length < 2) return;
+
+    const positions = this.corduroyTrailMesh.geometry.attributes.position as THREE.BufferAttribute;
+    const uvs = this.corduroyTrailMesh.geometry.attributes.uv as THREE.BufferAttribute;
+
+    let vertIndex = 0;
+    for (let i = 0; i < this.corduroyTrailPoints.length - 1 && vertIndex < 5994; i++) {
+      const p1 = this.corduroyTrailPoints[i];
+      const p2 = this.corduroyTrailPoints[i + 1];
+
+      // Calculate perpendicular for width
+      const dx = p2.x - p1.x;
+      const dz = p2.z - p1.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len === 0) continue;
+
+      const perpX = -dz / len * bladeWidth / 2;
+      const perpZ = dx / len * bladeWidth / 2;
+
+      // Create quad (2 triangles)
+      // Triangle 1
+      positions.setXYZ(vertIndex, p1.x - perpX, p1.y, p1.z - perpZ);
+      uvs.setXY(vertIndex, 0, i * 0.1);
+      vertIndex++;
+      positions.setXYZ(vertIndex, p1.x + perpX, p1.y, p1.z + perpZ);
+      uvs.setXY(vertIndex, 1, i * 0.1);
+      vertIndex++;
+      positions.setXYZ(vertIndex, p2.x - perpX, p2.y, p2.z - perpZ);
+      uvs.setXY(vertIndex, 0, (i + 1) * 0.1);
+      vertIndex++;
+
+      // Triangle 2
+      positions.setXYZ(vertIndex, p1.x + perpX, p1.y, p1.z + perpZ);
+      uvs.setXY(vertIndex, 1, i * 0.1);
+      vertIndex++;
+      positions.setXYZ(vertIndex, p2.x + perpX, p2.y, p2.z + perpZ);
+      uvs.setXY(vertIndex, 1, (i + 1) * 0.1);
+      vertIndex++;
+      positions.setXYZ(vertIndex, p2.x - perpX, p2.y, p2.z - perpZ);
+      uvs.setXY(vertIndex, 0, (i + 1) * 0.1);
+      vertIndex++;
+    }
+
+    positions.needsUpdate = true;
+    uvs.needsUpdate = true;
+    this.corduroyTrailMesh.geometry.setDrawRange(0, vertIndex);
+  }
+
+  /**
+   * Update snow pile particles when grooming
+   */
+  private updateSnowPileParticles(deltaTime: number): void {
+    if (!this.snowPileParticles) return;
+
+    const positions = this.snowPileParticles.geometry.attributes.position as THREE.BufferAttribute;
+    const velocities = this.snowPileParticles.geometry.attributes.velocity as THREE.BufferAttribute;
+    const lifetimes = this.snowPileParticles.geometry.attributes.lifetime as THREE.BufferAttribute;
+
+    const bladeWidth = this.physics.bladeWidth;
+    const isGrooming = this.vehicle.blade.lowered && Math.abs(this.vehicle.speed) > 0.5;
+
+    // Calculate blade front position
+    const forward = new THREE.Vector3(0, 0, 1);
+    forward.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.vehicle.rotation.y);
+    const right = new THREE.Vector3(forward.z, 0, -forward.x);
+
+    const bladeFrontX = this.vehicle.position.x + forward.x * 4;
+    const bladeFrontY = this.vehicle.position.y;
+    const bladeFrontZ = this.vehicle.position.z + forward.z * 4;
+
+    for (let i = 0; i < positions.count; i++) {
+      let lifetime = lifetimes.getX(i);
+
+      if (lifetime <= 0 && isGrooming) {
+        // Respawn particle at blade front
+        const offset = (Math.random() - 0.5) * bladeWidth;
+        positions.setXYZ(
+          i,
+          bladeFrontX + right.x * offset,
+          bladeFrontY + 0.3 + Math.random() * 0.5,
+          bladeFrontZ + right.z * offset
+        );
+
+        // Spray forward and up
+        const speed = 2 + Math.random() * 3;
+        velocities.setXYZ(
+          i,
+          forward.x * speed + (Math.random() - 0.5) * 2,
+          1 + Math.random() * 2,
+          forward.z * speed + (Math.random() - 0.5) * 2
+        );
+
+        lifetime = 0.5 + Math.random() * 0.5;
+      } else if (lifetime > 0) {
+        // Update particle
+        let x = positions.getX(i);
+        let y = positions.getY(i);
+        let z = positions.getZ(i);
+
+        let vx = velocities.getX(i);
+        let vy = velocities.getY(i);
+        let vz = velocities.getZ(i);
+
+        // Apply gravity
+        vy -= 9.8 * deltaTime;
+
+        // Update position
+        x += vx * deltaTime;
+        y += vy * deltaTime;
+        z += vz * deltaTime;
+
+        // Ground collision
+        if (y < this.vehicle.position.y - 0.5) {
+          y = this.vehicle.position.y - 0.5;
+          vy = 0;
+          vx *= 0.5;
+          vz *= 0.5;
+        }
+
+        positions.setXYZ(i, x, y, z);
+        velocities.setXYZ(i, vx, vy, vz);
+
+        lifetime -= deltaTime;
+      }
+
+      lifetimes.setX(i, lifetime);
+    }
+
+    positions.needsUpdate = true;
+    velocities.needsUpdate = true;
+    lifetimes.needsUpdate = true;
+  }
+
+  /**
+   * Find the best run to start on - prefer wide, easy runs at high elevation
+   */
+  private findBestStartingRun(runs: GameRun[]): GameRun {
+    if (runs.length === 0) throw new Error('No runs available');
+    if (runs.length === 1) return runs[0];
+
+    // Score each run for starting suitability
+    let bestRun = runs[0];
+    let bestScore = -Infinity;
+
+    for (const run of runs) {
+      let score = 0;
+
+      // Prefer wider runs (easier to navigate)
+      score += run.averageWidth * 2;
+
+      // Prefer easier difficulties
+      const difficultyScores: Record<string, number> = {
+        novice: 100,
+        easy: 80,
+        intermediate: 60,
+        advanced: 30,
+        expert: 10,
+      };
+      score += difficultyScores[run.difficulty || 'intermediate'] || 50;
+
+      // Prefer higher starting elevation
+      if (run.path.length > 0) {
+        score += run.path[0].y * 0.05;
+      }
+
+      // Prefer longer runs (more to groom)
+      score += Math.min(run.length / 50, 20);
+
+      // Prefer runs that go generally downhill (first point higher than last)
+      if (run.path.length >= 2) {
+        const elevDrop = run.path[0].y - run.path[run.path.length - 1].y;
+        if (elevDrop > 0) {
+          score += Math.min(elevDrop * 0.1, 30);
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestRun = run;
+      }
+    }
+
+    return bestRun;
+  }
+
+  /**
    * Update control input
    */
   setControlInput(input: Partial<ControlInput>): void {
@@ -762,6 +1273,10 @@ export class PisteBasherEngine {
 
     // Update grooming
     this.updateGrooming();
+
+    // Update grooming effects (corduroy trail and snow spray)
+    this.updateCorduroyTrail();
+    this.updateSnowPileParticles(deltaTime);
 
     // Update effects
     this.updateEffects(deltaTime);
