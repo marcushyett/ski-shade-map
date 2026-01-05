@@ -13,6 +13,7 @@ import {
   EnvironmentOutlined,
   HomeOutlined,
   ThunderboltOutlined,
+  CarOutlined,
 } from '@ant-design/icons';
 import SkiMap from '@/components/Map';
 import type { MapRef, UserLocationMarker, MountainHomeMarker, SharedLocationMarker } from '@/components/Map/SkiMap';
@@ -48,6 +49,12 @@ const NavigationPanel = dynamic(() => import('@/components/NavigationPanel').the
 
 // Lazy load MaxOptimality - only needed when user opens from advanced menu
 const MaxOptimality = dynamic(() => import('@/components/MaxOptimality').then(mod => mod.MaxOptimality), {
+  ssr: false,
+  loading: () => null,
+});
+
+// Lazy load PisteBasherGame - only needed when user opens from advanced menu
+const PisteBasherGame = dynamic(() => import('@/components/PisteBasherGame'), {
   ssr: false,
   loading: () => null,
 });
@@ -201,6 +208,7 @@ const ControlsContent = memo(function ControlsContent({
   mountainHome,
   onMountainHomeChange,
   onMaxOptimalityOpen,
+  onPisteBasherOpen,
 }: {
   selectedArea: SkiAreaSummary | null;
   skiAreaDetails: SkiAreaDetails | null;
@@ -232,6 +240,7 @@ const ControlsContent = memo(function ControlsContent({
   mountainHome: MountainHome | null;
   onMountainHomeChange: (home: MountainHome | null) => void;
   onMaxOptimalityOpen: () => void;
+  onPisteBasherOpen: () => void;
 }) {
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
@@ -411,6 +420,29 @@ const ControlsContent = memo(function ControlsContent({
               Plan a route covering the most runs
             </span>
 
+            {/* Piste Basher Game */}
+            {skiAreaDetails && (
+              <>
+                <button
+                  onClick={onPisteBasherOpen}
+                  className="flex items-center gap-1.5 py-1 px-2 rounded hover:bg-white/10 transition-colors text-left"
+                  style={{
+                    fontSize: 10,
+                    color: '#ff4444',
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 68, 68, 0.3)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <CarOutlined style={{ fontSize: 10 }} />
+                  Piste Basher
+                </button>
+                <span style={{ fontSize: 9, color: '#555', paddingLeft: 4 }}>
+                  Drive a snow groomer at night
+                </span>
+              </>
+            )}
+
             <button
               onClick={handleReset}
               className="flex items-center gap-1.5 py-1 px-2 rounded hover:bg-white/10 transition-colors text-left"
@@ -585,7 +617,10 @@ export default function Home() {
   // Max Optimality feature state
   const [isMaxOptimalityOpen, setIsMaxOptimalityOpen] = useState(false);
   const [maxOptimalityPlan, setMaxOptimalityPlan] = useState<MaxOptimalityPlan | null>(null);
-  
+
+  // Piste Basher game state
+  const [isPisteBasherOpen, setIsPisteBasherOpen] = useState(false);
+
   // Effective user location - uses fake location for debugging if set
   const effectiveUserLocation = useMemo<UserLocation | null>(() => {
     if (fakeLocation) {
@@ -2639,6 +2674,7 @@ export default function Home() {
           mountainHome={mountainHome}
           onMountainHomeChange={setMountainHome}
           onMaxOptimalityOpen={() => setIsMaxOptimalityOpen(true)}
+          onPisteBasherOpen={() => setIsPisteBasherOpen(true)}
         />
       </Drawer>
 
@@ -2675,6 +2711,7 @@ export default function Home() {
           mountainHome={mountainHome}
           onMountainHomeChange={setMountainHome}
           onMaxOptimalityOpen={() => setIsMaxOptimalityOpen(true)}
+          onPisteBasherOpen={() => setIsPisteBasherOpen(true)}
         />
       </div>
 
@@ -2974,6 +3011,18 @@ export default function Home() {
         }}
         mountainHome={mountainHome}
       />
+
+      {/* Piste Basher Game */}
+      {skiAreaDetails && skiAreaDetails.bounds && (
+        <PisteBasherGame
+          visible={isPisteBasherOpen}
+          onClose={() => setIsPisteBasherOpen(false)}
+          runs={skiAreaDetails.runs}
+          lifts={skiAreaDetails.lifts}
+          bounds={skiAreaDetails.bounds}
+          skiAreaName={skiAreaDetails.name}
+        />
+      )}
 
     </div>
   );
