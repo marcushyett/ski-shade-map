@@ -43,11 +43,16 @@ export class PisteBasherEngine {
   private groomingTrailMeshes: Map<string, THREE.Mesh> = new Map();
   private buildingMeshes: THREE.Group[] = [];
   private liftMeshes: THREE.Group[] = [];
-  private treeMeshes: THREE.Group[] = [];
+  private treeInstances: THREE.InstancedMesh | null = null; // Use instancing for trees
   private pisteOverlayMesh: THREE.Mesh | null = null;
   private corduroyTrailMesh: THREE.Mesh | null = null;
   private corduroyTrailPoints: Array<{ x: number; y: number; z: number; rotation: number }> = [];
   private snowPileParticles: THREE.Points | null = null;
+
+  // Performance optimization - throttle expensive operations
+  private lastGroomingCheck = 0;
+  private lastCorduroyUpdate = 0;
+  private frameCount = 0;
 
   // Lights
   private moonLight: THREE.DirectionalLight | null = null;
@@ -165,18 +170,18 @@ export class PisteBasherEngine {
     this.ambientLight = new THREE.AmbientLight(0x2244aa, 0.15);
     this.scene.add(this.ambientLight);
 
-    // Moon light
+    // Moon light - reduced shadow map size for performance
     this.moonLight = new THREE.DirectionalLight(0x8899bb, 0.4);
     this.moonLight.position.set(100, 200, 50);
     this.moonLight.castShadow = true;
-    this.moonLight.shadow.mapSize.width = 2048;
-    this.moonLight.shadow.mapSize.height = 2048;
+    this.moonLight.shadow.mapSize.width = 1024; // Reduced from 2048
+    this.moonLight.shadow.mapSize.height = 1024;
     this.moonLight.shadow.camera.near = 0.5;
-    this.moonLight.shadow.camera.far = 1000;
-    this.moonLight.shadow.camera.left = -500;
-    this.moonLight.shadow.camera.right = 500;
-    this.moonLight.shadow.camera.top = 500;
-    this.moonLight.shadow.camera.bottom = -500;
+    this.moonLight.shadow.camera.far = 500; // Reduced from 1000
+    this.moonLight.shadow.camera.left = -200; // Tighter frustum
+    this.moonLight.shadow.camera.right = 200;
+    this.moonLight.shadow.camera.top = 200;
+    this.moonLight.shadow.camera.bottom = -200;
     this.scene.add(this.moonLight);
 
     // Create star field
@@ -220,18 +225,18 @@ export class PisteBasherEngine {
   }
 
   /**
-   * Create snow particles effect
+   * Create snow particles effect - reduced count for performance
    */
   private createSnowParticles(): void {
-    const particleCount = 5000;
+    const particleCount = 1000; // Reduced from 5000 for performance
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
     const velocities = new Float32Array(particleCount * 3);
 
     for (let i = 0; i < particleCount; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 500;
-      positions[i * 3 + 1] = Math.random() * 200;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 500;
+      positions[i * 3] = (Math.random() - 0.5) * 300; // Smaller area
+      positions[i * 3 + 1] = Math.random() * 150;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 300;
 
       velocities[i * 3] = (Math.random() - 0.5) * 0.5;
       velocities[i * 3 + 1] = -Math.random() * 2 - 1;
@@ -243,7 +248,7 @@ export class PisteBasherEngine {
 
     const material = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 0.5,
+      size: 0.8, // Slightly larger to compensate for fewer particles
       transparent: true,
       opacity: 0.6,
       depthWrite: false,
@@ -283,10 +288,8 @@ export class PisteBasherEngine {
       this.createBuildingMesh(building);
     }
 
-    // Create trees
-    for (const tree of world.trees) {
-      this.createTreeMesh(tree);
-    }
+    // Create trees using instancing for better performance
+    this.createTreeInstances(world.trees);
 
     // Create piste overlay (initially hidden)
     this.createPisteOverlay();
@@ -349,10 +352,13 @@ export class PisteBasherEngine {
     }
     this.liftMeshes = [];
 
-    for (const group of this.treeMeshes) {
-      this.scene.remove(group);
+    // Clean up instanced tree mesh
+    if (this.treeInstances) {
+      this.scene.remove(this.treeInstances);
+      this.treeInstances.geometry.dispose();
+      (this.treeInstances.material as THREE.Material).dispose();
+      this.treeInstances = null;
     }
-    this.treeMeshes = [];
 
     if (this.pisteOverlayMesh) {
       this.scene.remove(this.pisteOverlayMesh);
@@ -624,72 +630,55 @@ export class PisteBasherEngine {
   }
 
   /**
-   * Create a tree mesh
+   * Create instanced mesh for all trees - MAJOR PERFORMANCE OPTIMIZATION
+   * Uses a single draw call for all trees instead of individual meshes
    */
-  private createTreeMesh(tree: GameTree): void {
-    const group = new THREE.Group();
+  private createTreeInstances(trees: GameTree[]): void {
+    if (trees.length === 0) return;
 
-    // Trunk
-    const trunkHeight = tree.height * 0.25;
-    const trunkRadius = tree.radius * 0.15;
-    const trunkGeometry = new THREE.CylinderGeometry(
-      trunkRadius * 0.6,
-      trunkRadius,
-      trunkHeight,
-      8
-    );
-    const trunkMaterial = new THREE.MeshStandardMaterial({
-      color: 0x4a3728,
+    // Limit max trees for performance
+    const maxTrees = 200;
+    const treesToRender = trees.slice(0, maxTrees);
+
+    // Create a simple tree geometry - single cone is efficient and looks good
+    const treeHeight = 12; // Average height
+    const treeRadius = 3;
+
+    // Simple cone shape for trees - much more efficient than multiple meshes
+    const geometry = new THREE.ConeGeometry(treeRadius, treeHeight, 6);
+    geometry.translate(0, treeHeight / 2, 0);
+
+    // Create instanced mesh with forest green color
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x1a3d1a,
       roughness: 0.9,
       metalness: 0.0,
     });
-    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-    trunk.position.y = trunkHeight / 2;
-    trunk.castShadow = true;
-    group.add(trunk);
 
-    // Foliage - cone shape for alpine trees
-    const foliageHeight = tree.height * 0.8;
-    const foliageRadius = tree.radius;
+    this.treeInstances = new THREE.InstancedMesh(geometry, material, treesToRender.length);
+    this.treeInstances.castShadow = true;
+    this.treeInstances.receiveShadow = false; // Trees don't need to receive shadows
 
-    // Create multiple layers of cones for more realistic look
-    const numLayers = 3;
-    for (let i = 0; i < numLayers; i++) {
-      const layerHeight = foliageHeight / numLayers * 1.2;
-      const layerRadius = foliageRadius * (1 - i * 0.15);
-      const layerY = trunkHeight + (i * foliageHeight / numLayers * 0.7);
+    // Set up each instance's transform
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < treesToRender.length; i++) {
+      const tree = treesToRender[i];
 
-      const coneGeometry = new THREE.ConeGeometry(layerRadius, layerHeight, 8);
-      const coneMaterial = new THREE.MeshStandardMaterial({
-        color: tree.type === 'pine' ? 0x1a3d1a :
-               tree.type === 'fir' ? 0x1a4d2a :
-               0x1a3d2a, // spruce
-        roughness: 0.9,
-        metalness: 0.0,
-      });
-      const cone = new THREE.Mesh(coneGeometry, coneMaterial);
-      cone.position.y = layerY + layerHeight / 2;
-      cone.castShadow = true;
-      group.add(cone);
+      dummy.position.set(tree.position.x, tree.position.y, tree.position.z);
+
+      // Random rotation for variety
+      dummy.rotation.y = Math.random() * Math.PI * 2;
+
+      // Scale based on tree size
+      const scale = tree.height / treeHeight;
+      dummy.scale.set(scale, scale, scale);
+
+      dummy.updateMatrix();
+      this.treeInstances.setMatrixAt(i, dummy.matrix);
     }
 
-    // Add a tiny bit of snow on the tree (white patches on top)
-    const snowCapGeometry = new THREE.ConeGeometry(foliageRadius * 0.3, foliageHeight * 0.1, 6);
-    const snowMaterial = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.8,
-      metalness: 0.0,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const snowCap = new THREE.Mesh(snowCapGeometry, snowMaterial);
-    snowCap.position.y = trunkHeight + foliageHeight * 0.95;
-    group.add(snowCap);
-
-    group.position.set(tree.position.x, tree.position.y, tree.position.z);
-
-    this.scene.add(group);
-    this.treeMeshes.push(group);
+    this.treeInstances.instanceMatrix.needsUpdate = true;
+    this.scene.add(this.treeInstances);
   }
 
   /**
@@ -912,7 +901,7 @@ export class PisteBasherEngine {
       const light = new THREE.SpotLight(0xffffee, 50, 100, Math.PI / 6, 0.5, 2);
       light.position.set(pos.x, pos.y, pos.z);
       light.target.position.set(pos.x, 0, pos.z + 30);
-      light.castShadow = true;
+      light.castShadow = false; // Disabled for performance
       this.vehicleMesh.add(light);
       this.vehicleMesh.add(light.target);
       this.vehicleHeadlights.push(light);
@@ -990,10 +979,10 @@ export class PisteBasherEngine {
   }
 
   /**
-   * Create snow pile particles for when blade is grooming
+   * Create snow pile particles for when blade is grooming - reduced count for performance
    */
   private createSnowPileParticles(): void {
-    const particleCount = 200;
+    const particleCount = 50; // Reduced from 200 for performance
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
     const velocities = new Float32Array(particleCount * 3);
@@ -1015,7 +1004,7 @@ export class PisteBasherEngine {
 
     const material = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 0.8,
+      size: 1.2, // Larger to compensate for fewer particles
       transparent: true,
       opacity: 0.9,
       depthWrite: false,
@@ -1257,29 +1246,44 @@ export class PisteBasherEngine {
   }
 
   /**
-   * Main game loop update
+   * Main game loop update - optimized with throttling for expensive operations
    */
   update(deltaTime: number): void {
     if (this.gameState !== 'playing') return;
 
-    // Update vehicle physics
+    this.frameCount++;
+    const currentTime = performance.now();
+
+    // Update vehicle physics - every frame (essential)
     this.updateVehiclePhysics(deltaTime);
 
-    // Update camera
+    // Update camera - every frame (essential)
     this.updateCamera();
 
-    // Update vehicle mesh position
+    // Update vehicle mesh position - every frame (essential)
     this.updateVehicleMesh();
 
-    // Update grooming
-    this.updateGrooming();
+    // Update grooming - throttled to every 100ms for performance
+    if (currentTime - this.lastGroomingCheck > 100) {
+      this.updateGrooming();
+      this.lastGroomingCheck = currentTime;
+    }
 
-    // Update grooming effects (corduroy trail and snow spray)
-    this.updateCorduroyTrail();
-    this.updateSnowPileParticles(deltaTime);
+    // Update grooming effects - throttled
+    // Corduroy trail: every 3 frames when moving
+    if (this.frameCount % 3 === 0) {
+      this.updateCorduroyTrail();
+    }
 
-    // Update effects
-    this.updateEffects(deltaTime);
+    // Snow pile particles: every frame but only if grooming
+    if (this.vehicle.blade.lowered && Math.abs(this.vehicle.speed) > 0.5) {
+      this.updateSnowPileParticles(deltaTime);
+    }
+
+    // Update effects - every other frame for particles
+    if (this.frameCount % 2 === 0) {
+      this.updateEffects(deltaTime * 2); // Compensate for skipped frames
+    }
 
     // Update score
     this.score.timeElapsed += deltaTime;

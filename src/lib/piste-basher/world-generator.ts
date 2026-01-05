@@ -608,8 +608,8 @@ export async function fetchOSMBuildings(bounds: BoundingBox): Promise<GameBuildi
 }
 
 /**
- * Generate trees near but not on runs
- * Trees are placed along the edges of runs to provide navigation and obstacles
+ * Generate trees near but not on runs - OPTIMIZED for performance
+ * Uses spatial grid for faster collision detection and limits total trees
  */
 export function generateTrees(
   runs: GameRun[],
@@ -618,6 +618,7 @@ export function generateTrees(
 ): GameTree[] {
   const trees: GameTree[] = [];
   const treeTypes: Array<'pine' | 'fir' | 'spruce'> = ['pine', 'fir', 'spruce'];
+  const MAX_TREES = 200; // Hard limit for performance
 
   // Simple seeded random for reproducibility
   let seed = 12345;
@@ -626,24 +627,41 @@ export function generateTrees(
     return seed / 0x7fffffff;
   };
 
-  // Collect all run path points with their widths for clearance checking
-  const runPoints: Array<{ x: number; z: number; clearance: number }> = [];
+  // Use a spatial grid for faster run collision detection
+  const gridSize = 50; // 50m grid cells
+  const gridWidth = Math.ceil((bounds.maxX - bounds.minX) / gridSize);
+  const gridHeight = Math.ceil((bounds.maxZ - bounds.minZ) / gridSize);
+  const runGrid = new Set<number>();
+
+  // Mark grid cells that contain runs (with buffer)
   for (const run of runs) {
     for (let i = 0; i < run.path.length; i++) {
       const point = run.path[i];
       const width = run.widths[i] || run.averageWidth;
-      runPoints.push({
-        x: point.x,
-        z: point.z,
-        clearance: width / 2 + 10, // Half width plus 10m buffer
-      });
+      const buffer = width / 2 + 15;
+
+      // Mark surrounding cells
+      const minGX = Math.max(0, Math.floor((point.x - buffer - bounds.minX) / gridSize));
+      const maxGX = Math.min(gridWidth - 1, Math.floor((point.x + buffer - bounds.minX) / gridSize));
+      const minGZ = Math.max(0, Math.floor((point.z - buffer - bounds.minZ) / gridSize));
+      const maxGZ = Math.min(gridHeight - 1, Math.floor((point.z + buffer - bounds.minZ) / gridSize));
+
+      for (let gx = minGX; gx <= maxGX; gx++) {
+        for (let gz = minGZ; gz <= maxGZ; gz++) {
+          runGrid.add(gz * gridWidth + gx);
+        }
+      }
     }
   }
 
-  // Generate trees in clusters along run edges
+  // Generate trees in clusters along run edges - sparser for performance
   for (const run of runs) {
-    // Place tree clusters along the run path
-    for (let i = 0; i < run.path.length - 1; i += 3) {
+    if (trees.length >= MAX_TREES) break;
+
+    // Place tree clusters less frequently (every 5th path point instead of 3rd)
+    for (let i = 0; i < run.path.length - 1; i += 5) {
+      if (trees.length >= MAX_TREES) break;
+
       const point = run.path[i];
       const width = run.widths[i] || run.averageWidth;
 
@@ -660,12 +678,16 @@ export function generateTrees(
 
       // Place trees on both sides of the run
       for (const side of [-1, 1]) {
-        const numTrees = Math.floor(random() * 4) + 2; // 2-5 trees per cluster
+        if (trees.length >= MAX_TREES) break;
+
+        const numTrees = Math.floor(random() * 2) + 1; // 1-2 trees per cluster (reduced)
 
         for (let t = 0; t < numTrees; t++) {
+          if (trees.length >= MAX_TREES) break;
+
           // Distance from run center (beyond the run width plus buffer)
-          const baseOffset = (width / 2) + 15 + random() * 50; // 15-65m from run edge
-          const lateralOffset = (random() - 0.5) * 20; // ±10m spread
+          const baseOffset = (width / 2) + 20 + random() * 40; // 20-60m from run edge
+          const lateralOffset = (random() - 0.5) * 15;
 
           const treeX = point.x + perpX * side * baseOffset + dx / len * lateralOffset;
           const treeZ = point.z + perpZ * side * baseOffset + dz / len * lateralOffset;
@@ -676,28 +698,12 @@ export function generateTrees(
             continue;
           }
 
-          // Check clearance from all run points
-          let tooClose = false;
-          for (const rp of runPoints) {
-            const distSq = (treeX - rp.x) ** 2 + (treeZ - rp.z) ** 2;
-            if (distSq < rp.clearance ** 2) {
-              tooClose = true;
-              break;
-            }
+          // Fast grid-based run collision check
+          const gx = Math.floor((treeX - bounds.minX) / gridSize);
+          const gz = Math.floor((treeZ - bounds.minZ) / gridSize);
+          if (runGrid.has(gz * gridWidth + gx)) {
+            continue; // Skip trees in or near run grid cells
           }
-          if (tooClose) continue;
-
-          // Check clearance from other trees (minimum 5m spacing)
-          let nearOtherTree = false;
-          for (const existingTree of trees) {
-            const distSq = (treeX - existingTree.position.x) ** 2 +
-                          (treeZ - existingTree.position.z) ** 2;
-            if (distSq < 25) { // 5m minimum spacing
-              nearOtherTree = true;
-              break;
-            }
-          }
-          if (nearOtherTree) continue;
 
           // Get elevation from terrain
           const tx = Math.floor((treeX - bounds.minX) / terrain.resolution);
@@ -707,7 +713,7 @@ export function generateTrees(
 
           // Random tree properties
           const height = 8 + random() * 12; // 8-20m tall
-          const radius = height * 0.25 + random() * 1; // Crown radius based on height
+          const radius = height * 0.25 + random() * 1;
           const type = treeTypes[Math.floor(random() * treeTypes.length)];
 
           trees.push({
