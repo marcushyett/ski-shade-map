@@ -4,6 +4,7 @@ import type {
   GameRun,
   GameLift,
   GameBuilding,
+  GameTree,
   TerrainData,
 } from './types';
 import { DIFFICULTY_POINT_MULTIPLIERS as POINT_MULTIPLIERS } from './types';
@@ -607,6 +608,123 @@ export async function fetchOSMBuildings(bounds: BoundingBox): Promise<GameBuildi
 }
 
 /**
+ * Generate trees near but not on runs
+ * Trees are placed along the edges of runs to provide navigation and obstacles
+ */
+export function generateTrees(
+  runs: GameRun[],
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
+  terrain: TerrainData
+): GameTree[] {
+  const trees: GameTree[] = [];
+  const treeTypes: Array<'pine' | 'fir' | 'spruce'> = ['pine', 'fir', 'spruce'];
+
+  // Simple seeded random for reproducibility
+  let seed = 12345;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+
+  // Collect all run path points with their widths for clearance checking
+  const runPoints: Array<{ x: number; z: number; clearance: number }> = [];
+  for (const run of runs) {
+    for (let i = 0; i < run.path.length; i++) {
+      const point = run.path[i];
+      const width = run.widths[i] || run.averageWidth;
+      runPoints.push({
+        x: point.x,
+        z: point.z,
+        clearance: width / 2 + 10, // Half width plus 10m buffer
+      });
+    }
+  }
+
+  // Generate trees in clusters along run edges
+  for (const run of runs) {
+    // Place tree clusters along the run path
+    for (let i = 0; i < run.path.length - 1; i += 3) {
+      const point = run.path[i];
+      const width = run.widths[i] || run.averageWidth;
+
+      // Get direction perpendicular to the run
+      const nextPoint = run.path[i + 1];
+      const dx = nextPoint.x - point.x;
+      const dz = nextPoint.z - point.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len === 0) continue;
+
+      // Perpendicular vector (normalized)
+      const perpX = -dz / len;
+      const perpZ = dx / len;
+
+      // Place trees on both sides of the run
+      for (const side of [-1, 1]) {
+        const numTrees = Math.floor(random() * 4) + 2; // 2-5 trees per cluster
+
+        for (let t = 0; t < numTrees; t++) {
+          // Distance from run center (beyond the run width plus buffer)
+          const baseOffset = (width / 2) + 15 + random() * 50; // 15-65m from run edge
+          const lateralOffset = (random() - 0.5) * 20; // ±10m spread
+
+          const treeX = point.x + perpX * side * baseOffset + dx / len * lateralOffset;
+          const treeZ = point.z + perpZ * side * baseOffset + dz / len * lateralOffset;
+
+          // Check if within bounds
+          if (treeX < bounds.minX + 20 || treeX > bounds.maxX - 20 ||
+              treeZ < bounds.minZ + 20 || treeZ > bounds.maxZ - 20) {
+            continue;
+          }
+
+          // Check clearance from all run points
+          let tooClose = false;
+          for (const rp of runPoints) {
+            const distSq = (treeX - rp.x) ** 2 + (treeZ - rp.z) ** 2;
+            if (distSq < rp.clearance ** 2) {
+              tooClose = true;
+              break;
+            }
+          }
+          if (tooClose) continue;
+
+          // Check clearance from other trees (minimum 5m spacing)
+          let nearOtherTree = false;
+          for (const existingTree of trees) {
+            const distSq = (treeX - existingTree.position.x) ** 2 +
+                          (treeZ - existingTree.position.z) ** 2;
+            if (distSq < 25) { // 5m minimum spacing
+              nearOtherTree = true;
+              break;
+            }
+          }
+          if (nearOtherTree) continue;
+
+          // Get elevation from terrain
+          const tx = Math.floor((treeX - bounds.minX) / terrain.resolution);
+          const tz = Math.floor((treeZ - bounds.minZ) / terrain.resolution);
+          const heightIndex = tz * terrain.width + tx;
+          const treeY = terrain.heightmap[heightIndex] || terrain.minElevation;
+
+          // Random tree properties
+          const height = 8 + random() * 12; // 8-20m tall
+          const radius = height * 0.25 + random() * 1; // Crown radius based on height
+          const type = treeTypes[Math.floor(random() * treeTypes.length)];
+
+          trees.push({
+            position: { x: treeX, y: treeY, z: treeZ },
+            height,
+            radius,
+            type,
+          });
+        }
+      }
+    }
+  }
+
+  return trees;
+}
+
+/**
  * Generate the complete game world from ski area data
  */
 export async function generateGameWorld(
@@ -681,10 +799,14 @@ export async function generateGameWorld(
     buildings = await fetchOSMBuildings(bounds);
   }
 
+  // Generate trees near but not on runs
+  const trees = generateTrees(gameRuns, { minX, maxX, minZ, maxZ }, terrain);
+
   return {
     runs: gameRuns,
     lifts: gameLifts,
     buildings,
+    trees,
     terrain,
     bounds: { minX, maxX, minY, maxY, minZ, maxZ },
   };

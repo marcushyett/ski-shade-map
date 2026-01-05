@@ -4,6 +4,7 @@ import type {
   GameRun,
   GameLift,
   GameBuilding,
+  GameTree,
   VehicleState,
   VehiclePhysics,
   ControlInput,
@@ -42,6 +43,8 @@ export class PisteBasherEngine {
   private groomingTrailMeshes: Map<string, THREE.Mesh> = new Map();
   private buildingMeshes: THREE.Group[] = [];
   private liftMeshes: THREE.Group[] = [];
+  private treeMeshes: THREE.Group[] = [];
+  private pisteOverlayMesh: THREE.Mesh | null = null;
 
   // Lights
   private moonLight: THREE.DirectionalLight | null = null;
@@ -277,23 +280,31 @@ export class PisteBasherEngine {
       this.createBuildingMesh(building);
     }
 
+    // Create trees
+    for (const tree of world.trees) {
+      this.createTreeMesh(tree);
+    }
+
+    // Create piste overlay (initially hidden)
+    this.createPisteOverlay();
+
     // Create vehicle
     this.createVehicle();
 
     // Create snow particles
     this.createSnowParticles();
 
-    // Position vehicle at first run start
+    // Find best starting position - prefer wide, easy runs at high elevation
     if (world.runs.length > 0) {
-      const firstRun = world.runs[0];
-      const startPoint = firstRun.path[0];
+      const startRun = this.findBestStartingRun(world.runs);
+      const startPoint = startRun.path[0];
       this.vehicle.position = { ...startPoint };
       this.vehicle.position.y += 1; // Above ground
 
       // Face down the run
-      if (firstRun.path.length > 1) {
-        const dx = firstRun.path[1].x - firstRun.path[0].x;
-        const dz = firstRun.path[1].z - firstRun.path[0].z;
+      if (startRun.path.length > 1) {
+        const dx = startRun.path[1].x - startRun.path[0].x;
+        const dz = startRun.path[1].z - startRun.path[0].z;
         this.vehicle.rotation.y = Math.atan2(dx, dz);
       }
     }
@@ -330,6 +341,16 @@ export class PisteBasherEngine {
       this.scene.remove(group);
     }
     this.liftMeshes = [];
+
+    for (const group of this.treeMeshes) {
+      this.scene.remove(group);
+    }
+    this.treeMeshes = [];
+
+    if (this.pisteOverlayMesh) {
+      this.scene.remove(this.pisteOverlayMesh);
+      this.pisteOverlayMesh = null;
+    }
 
     if (this.vehicleMesh) {
       this.scene.remove(this.vehicleMesh);
@@ -581,6 +602,165 @@ export class PisteBasherEngine {
   }
 
   /**
+   * Create a tree mesh
+   */
+  private createTreeMesh(tree: GameTree): void {
+    const group = new THREE.Group();
+
+    // Trunk
+    const trunkHeight = tree.height * 0.25;
+    const trunkRadius = tree.radius * 0.15;
+    const trunkGeometry = new THREE.CylinderGeometry(
+      trunkRadius * 0.6,
+      trunkRadius,
+      trunkHeight,
+      8
+    );
+    const trunkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4a3728,
+      roughness: 0.9,
+      metalness: 0.0,
+    });
+    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+    trunk.position.y = trunkHeight / 2;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    // Foliage - cone shape for alpine trees
+    const foliageHeight = tree.height * 0.8;
+    const foliageRadius = tree.radius;
+
+    // Create multiple layers of cones for more realistic look
+    const numLayers = 3;
+    for (let i = 0; i < numLayers; i++) {
+      const layerHeight = foliageHeight / numLayers * 1.2;
+      const layerRadius = foliageRadius * (1 - i * 0.15);
+      const layerY = trunkHeight + (i * foliageHeight / numLayers * 0.7);
+
+      const coneGeometry = new THREE.ConeGeometry(layerRadius, layerHeight, 8);
+      const coneMaterial = new THREE.MeshStandardMaterial({
+        color: tree.type === 'pine' ? 0x1a3d1a :
+               tree.type === 'fir' ? 0x1a4d2a :
+               0x1a3d2a, // spruce
+        roughness: 0.9,
+        metalness: 0.0,
+      });
+      const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+      cone.position.y = layerY + layerHeight / 2;
+      cone.castShadow = true;
+      group.add(cone);
+    }
+
+    // Add a tiny bit of snow on the tree (white patches on top)
+    const snowCapGeometry = new THREE.ConeGeometry(foliageRadius * 0.3, foliageHeight * 0.1, 6);
+    const snowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.8,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const snowCap = new THREE.Mesh(snowCapGeometry, snowMaterial);
+    snowCap.position.y = trunkHeight + foliageHeight * 0.95;
+    group.add(snowCap);
+
+    group.position.set(tree.position.x, tree.position.y, tree.position.z);
+
+    this.scene.add(group);
+    this.treeMeshes.push(group);
+  }
+
+  /**
+   * Create piste overlay that shows runs on the terrain
+   */
+  private createPisteOverlay(): void {
+    if (!this.world) return;
+
+    // Create a large plane above the terrain that shows the piste map
+    const bounds = this.world.bounds;
+    const width = bounds.maxX - bounds.minX;
+    const depth = bounds.maxZ - bounds.minZ;
+
+    // Create geometry for the overlay
+    const geometry = new THREE.PlaneGeometry(width, depth, 1, 1);
+
+    // Create a canvas to draw the piste map
+    const canvas = document.createElement('canvas');
+    const canvasSize = 1024;
+    canvas.width = canvasSize;
+    canvas.height = canvasSize;
+    const ctx = canvas.getContext('2d')!;
+
+    // Clear with transparent background
+    ctx.clearRect(0, 0, canvasSize, canvasSize);
+
+    // Draw runs on the canvas
+    for (const run of this.world.runs) {
+      if (run.path.length < 2) continue;
+
+      ctx.beginPath();
+      ctx.strokeStyle = run.difficulty ? COLORS[run.difficulty] : '#888888';
+      ctx.lineWidth = Math.max(2, (run.averageWidth / width) * canvasSize * 0.5);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = 0.6;
+
+      const firstPoint = run.path[0];
+      const x0 = ((firstPoint.x - bounds.minX) / width) * canvasSize;
+      const y0 = ((firstPoint.z - bounds.minZ) / depth) * canvasSize;
+      ctx.moveTo(x0, y0);
+
+      for (let i = 1; i < run.path.length; i++) {
+        const point = run.path[i];
+        const x = ((point.x - bounds.minX) / width) * canvasSize;
+        const y = ((point.z - bounds.minZ) / depth) * canvasSize;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    // Create material with transparency
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+
+    this.pisteOverlayMesh = new THREE.Mesh(geometry, material);
+    this.pisteOverlayMesh.rotation.x = -Math.PI / 2;
+    this.pisteOverlayMesh.position.set(
+      (bounds.minX + bounds.maxX) / 2,
+      bounds.maxY + 5, // Slightly above highest point
+      (bounds.minZ + bounds.maxZ) / 2
+    );
+    this.pisteOverlayMesh.visible = false; // Hidden by default
+
+    this.scene.add(this.pisteOverlayMesh);
+  }
+
+  /**
+   * Toggle the piste overlay visibility
+   */
+  togglePisteOverlay(): void {
+    if (this.pisteOverlayMesh) {
+      this.pisteOverlayMesh.visible = !this.pisteOverlayMesh.visible;
+    }
+  }
+
+  /**
+   * Get piste overlay visibility
+   */
+  isPisteOverlayVisible(): boolean {
+    return this.pisteOverlayMesh?.visible ?? false;
+  }
+
+  /**
    * Create the piste basher vehicle
    */
   private createVehicle(): void {
@@ -736,6 +916,58 @@ export class PisteBasherEngine {
       this.vehicleMesh.add(light);
       this.vehicleWorkLights.push(light);
     }
+  }
+
+  /**
+   * Find the best run to start on - prefer wide, easy runs at high elevation
+   */
+  private findBestStartingRun(runs: GameRun[]): GameRun {
+    if (runs.length === 0) throw new Error('No runs available');
+    if (runs.length === 1) return runs[0];
+
+    // Score each run for starting suitability
+    let bestRun = runs[0];
+    let bestScore = -Infinity;
+
+    for (const run of runs) {
+      let score = 0;
+
+      // Prefer wider runs (easier to navigate)
+      score += run.averageWidth * 2;
+
+      // Prefer easier difficulties
+      const difficultyScores: Record<string, number> = {
+        novice: 100,
+        easy: 80,
+        intermediate: 60,
+        advanced: 30,
+        expert: 10,
+      };
+      score += difficultyScores[run.difficulty || 'intermediate'] || 50;
+
+      // Prefer higher starting elevation
+      if (run.path.length > 0) {
+        score += run.path[0].y * 0.05;
+      }
+
+      // Prefer longer runs (more to groom)
+      score += Math.min(run.length / 50, 20);
+
+      // Prefer runs that go generally downhill (first point higher than last)
+      if (run.path.length >= 2) {
+        const elevDrop = run.path[0].y - run.path[run.path.length - 1].y;
+        if (elevDrop > 0) {
+          score += Math.min(elevDrop * 0.1, 30);
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestRun = run;
+      }
+    }
+
+    return bestRun;
   }
 
   /**

@@ -73,6 +73,7 @@ export interface GameWorld {
   runs: GameRun[];
   lifts: GameLift[];
   buildings: GameBuilding[];
+  trees: GameTree[];
   terrain: TerrainData;
   bounds: {
     minX: number;
@@ -117,6 +118,13 @@ export interface GameBuilding {
   position: { x: number; y: number; z: number };
   dimensions: { width: number; depth: number; height: number };
   rotation: number;
+}
+
+export interface GameTree {
+  position: { x: number; y: number; z: number };
+  height: number; // Tree height in meters
+  radius: number; // Crown radius in meters
+  type: 'pine' | 'fir' | 'spruce'; // Common alpine tree types
 }
 
 export interface TerrainData {

@@ -8,6 +8,9 @@ import {
   CloseOutlined,
   CarOutlined,
   WarningOutlined,
+  EnvironmentOutlined,
+  EyeOutlined,
+  EyeInvisibleOutlined,
 } from '@ant-design/icons';
 import type { RunData, LiftData, BoundingBox } from '@/lib/types';
 import type { GameScore, GameState, VehicleState, RunGroomingState } from '@/lib/piste-basher/types';
@@ -443,8 +446,152 @@ const ControlInstructions = memo(function ControlInstructions({ isMobile }: { is
       <span><b>W/S</b> or <b>Up/Down</b> - Drive</span>
       <span><b>A/D</b> or <b>Left/Right</b> - Steer</span>
       <span><b>Space</b> - Lower/Raise Blade</span>
-      <span><b>L</b> - Toggle Lights</span>
+      <span><b>M</b> - Toggle Map</span>
       <span><b>ESC</b> - Pause</span>
+    </div>
+  );
+});
+
+// Minimap component showing position on ski area
+const Minimap = memo(function Minimap({
+  runs,
+  vehicle,
+  bounds,
+  visible,
+}: {
+  runs: RunData[];
+  vehicle: VehicleState | null;
+  bounds: BoundingBox;
+  visible: boolean;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Convert game coordinates to minimap coordinates
+  const gameToMinimap = useCallback((x: number, z: number, width: number, height: number) => {
+    // Game uses meters from center, we need to map to minimap
+    const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+    const centerLng = (bounds.minLng + bounds.maxLng) / 2;
+
+    // Approximate conversion (meters to lat/lng)
+    const EARTH_RADIUS = 6371000;
+    const latDiff = -z / (EARTH_RADIUS * Math.PI / 180);
+    const lngDiff = x / (EARTH_RADIUS * Math.PI / 180 * Math.cos(centerLat * Math.PI / 180));
+
+    const lat = centerLat + latDiff;
+    const lng = centerLng + lngDiff;
+
+    // Map to minimap coordinates
+    const mx = ((lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * width;
+    const my = ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat)) * height;
+
+    return { mx, my };
+  }, [bounds]);
+
+  useEffect(() => {
+    if (!visible || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Clear canvas
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw runs
+    for (const run of runs) {
+      if (!run.geometry || run.geometry.type !== 'LineString') continue;
+      const coords = run.geometry.coordinates as Array<[number, number]>;
+      if (coords.length < 2) continue;
+
+      ctx.beginPath();
+      ctx.strokeStyle = run.difficulty ? DIFFICULTY_COLORS[run.difficulty] : '#888888';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      const [lng0, lat0] = coords[0];
+      const x0 = ((lng0 - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * width;
+      const y0 = ((bounds.maxLat - lat0) / (bounds.maxLat - bounds.minLat)) * height;
+      ctx.moveTo(x0, y0);
+
+      for (let i = 1; i < coords.length; i++) {
+        const [lng, lat] = coords[i];
+        const x = ((lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * width;
+        const y = ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat)) * height;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // Draw vehicle position
+    if (vehicle) {
+      const { mx, my } = gameToMinimap(vehicle.position.x, vehicle.position.z, width, height);
+
+      // Vehicle direction indicator
+      ctx.save();
+      ctx.translate(mx, my);
+      ctx.rotate(vehicle.rotation.y);
+
+      // Draw arrow
+      ctx.beginPath();
+      ctx.fillStyle = '#ff4444';
+      ctx.moveTo(0, -8);
+      ctx.lineTo(-5, 6);
+      ctx.lineTo(0, 3);
+      ctx.lineTo(5, 6);
+      ctx.closePath();
+      ctx.fill();
+
+      // Outer glow
+      ctx.shadowColor = '#ff4444';
+      ctx.shadowBlur = 10;
+      ctx.fill();
+
+      ctx.restore();
+    }
+  }, [visible, runs, vehicle, bounds, gameToMinimap]);
+
+  if (!visible) return null;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 80,
+        left: 10,
+        width: 180,
+        height: 180,
+        background: 'rgba(0, 0, 0, 0.7)',
+        border: '2px solid rgba(255, 255, 255, 0.3)',
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{
+        position: 'absolute',
+        top: 4,
+        left: 4,
+        right: 4,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        color: 'rgba(255, 255, 255, 0.7)',
+        fontSize: 10,
+        zIndex: 1,
+      }}>
+        <EnvironmentOutlined />
+        <span>MAP</span>
+      </div>
+      <canvas
+        ref={canvasRef}
+        width={180}
+        height={180}
+        style={{ width: '100%', height: '100%' }}
+      />
     </div>
   );
 });
@@ -475,6 +622,8 @@ export default function PisteBasherGame({
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  const [showMinimap, setShowMinimap] = useState(true);
+  const [showPisteOverlay, setShowPisteOverlay] = useState(false);
 
   // Touch control state
   const [leftJoystick, setLeftJoystick] = useState({ x: 0, y: 0 });
@@ -526,19 +675,32 @@ export default function PisteBasherGame({
   const startGame = useCallback(async () => {
     if (!engineRef.current) return;
 
+    // Show loading immediately for responsiveness
     setLoading(true);
-    setLoadingMessage('Generating terrain...');
+    setLoadingMessage('Preparing ski area...');
+
+    // Give the UI a moment to update before heavy processing
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     try {
+      setLoadingMessage('Generating terrain...');
+
+      // Generate world without blocking on building fetch
       const world = await generateGameWorld(runs, lifts, bounds, {
         useRealElevation: false, // Use simulated for performance
-        fetchBuildings: true,
+        fetchBuildings: false, // Disabled for faster startup - buildings fetched in background
       });
+
+      setLoadingMessage('Planting trees...');
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       setLoadingMessage('Loading world...');
       await engineRef.current.loadWorld(world);
 
-      setLoadingMessage('Starting...');
+      setLoadingMessage('Positioning vehicle...');
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      setLoadingMessage('Starting engine...');
       engineRef.current.start();
       setGameState('playing');
     } catch (error) {
@@ -583,6 +745,20 @@ export default function PisteBasherGame({
           break;
         case 'l':
           // Toggle lights
+          break;
+        case 'm':
+          // Toggle minimap
+          setShowMinimap(prev => !prev);
+          break;
+        case 'o':
+          // Toggle piste overlay
+          setShowPisteOverlay(prev => {
+            const newVal = !prev;
+            if (engineRef.current) {
+              engineRef.current.togglePisteOverlay();
+            }
+            return newVal;
+          });
           break;
         case 'escape':
           engineRef.current.pause();
@@ -751,12 +927,33 @@ export default function PisteBasherGame({
 
           <div style={{ display: 'flex', gap: 10 }}>
             {gameState === 'playing' && (
-              <Button
-                icon={<PauseOutlined />}
-                onClick={togglePause}
-                type="text"
-                style={{ color: '#fff' }}
-              />
+              <>
+                <Button
+                  icon={<EnvironmentOutlined />}
+                  onClick={() => setShowMinimap(prev => !prev)}
+                  type="text"
+                  style={{ color: showMinimap ? '#ffaa00' : '#fff' }}
+                  title="Toggle minimap (M)"
+                />
+                <Button
+                  icon={showPisteOverlay ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+                  onClick={() => {
+                    setShowPisteOverlay(prev => !prev);
+                    if (engineRef.current) {
+                      engineRef.current.togglePisteOverlay();
+                    }
+                  }}
+                  type="text"
+                  style={{ color: showPisteOverlay ? '#ffaa00' : '#fff' }}
+                  title="Toggle piste overlay (O)"
+                />
+                <Button
+                  icon={<PauseOutlined />}
+                  onClick={togglePause}
+                  type="text"
+                  style={{ color: '#fff' }}
+                />
+              </>
             )}
             <Button
               icon={<CloseOutlined />}
@@ -902,6 +1099,7 @@ export default function PisteBasherGame({
           <>
             <VehicleHUD vehicle={vehicle} score={score} />
             <ScorePanel score={score} runStates={runStates} />
+            <Minimap runs={runs} vehicle={vehicle} bounds={bounds} visible={showMinimap} />
             <ControlInstructions isMobile={isMobile} />
 
             {/* Mobile touch controls */}
